@@ -1,7 +1,7 @@
 from fastapi import FastAPI
-from backend.database import engine, Base
-from backend.routers import items, history, tasks, auth
-from backend.utils.scheduler import start_scheduler
+from database import engine, Base
+from routers import items, history, tasks, auth
+from utils.scheduler import start_scheduler
 from fastapi.middleware.cors import CORSMiddleware
 
 import asyncio
