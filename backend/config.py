@@ -9,8 +9,8 @@ load_dotenv(env_path)
 
 class Settings:
     # Обязательные параметры без значений по умолчанию
-    SECRET_KEY: str = os.environ["SECRET_KEY"]
-    POSTGRES_URL: str = os.environ["POSTGRES_URL"]
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "default_secret_key")
+    POSTGRES_URL: str = os.getenv("POSTGRES_URL")
 
     # Параметры с значениями по умолчанию
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
