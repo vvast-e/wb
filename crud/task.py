@@ -15,7 +15,8 @@ async def create_scheduled_task(
     action: str,
     payload: dict,
     scheduled_at: datetime,
-    user_id: int
+    user_id: int,
+    changes: dict
 )-> ScheduledTask:
     task = ScheduledTask(
         nm_id=nm_id,
@@ -23,7 +24,8 @@ async def create_scheduled_task(
         payload=payload,
         scheduled_at=scheduled_at,
         user_id=user_id,
-        status="pending"
+        status="pending",
+        changes=changes
     )
     db.add(task)
     await db.commit()

@@ -21,7 +21,6 @@ async def _get_wb_api_key_for_task(db: AsyncSession, task_id: int) -> str:
 async def process_scheduled_tasks():
     async for db in get_db():
         tasks = await task_crud.get_pending_tasks(db)
-        print(tasks)
         for task in tasks:
             try:
                 # Получаем API ключ из связанного пользователя
@@ -29,23 +28,20 @@ async def process_scheduled_tasks():
 
                 task.status = 'processing'
                 await db.commit()
-                print(task.status)
                 wb_client = WBAPIClient(api_key=wb_api_key)
 
                 if task.action == 'update_content':
                     result = await wb_client.update_card_content(task.nm_id, task.payload)
-                elif task.action == 'upload_media':
-                    result = await wb_client.upload_media(task.nm_id, task.payload.get('urls', []))
+                elif task.action == 'update_media':
+                    result = await wb_client.upload_media(task.nm_id, task.payload.get("media"))
 
                 task.status = 'completed' if result.success else 'error'
                 task.wb_response = result.wb_response
-                print("успешно")
 
             except Exception as e:
                 task.status = 'error'
                 task.error = str(e)
                 # Логируем ошибку для отладки
-                print(f"Error processing task {task.id}: {str(e)}")
 
             await db.commit()
 
@@ -54,7 +50,7 @@ def start_scheduler():
     scheduler.add_job(
         process_scheduled_tasks,
         'interval',
-        seconds=20,  # Проверяем каждую минуту (не seconds=10 для production)
+        seconds=5,
         max_instances=1,
         timezone='Europe/Moscow'
     )

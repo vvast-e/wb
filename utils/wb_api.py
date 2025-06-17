@@ -1,6 +1,7 @@
 import httpx
 from config import settings
 from schemas import WBApiResponse
+from utils.validate_image import validate_images
 from datetime import datetime
 import json
 
@@ -35,11 +36,6 @@ class WBAPIClient:
                     headers=headers,
                     **kwargs
                 )
-
-                # Логируем статус и текст ответа (полезно для дебага)
-                print(f"Request URL: {response.url}")
-                print(f"Status Code: {response.status_code}")
-                print(f"Response Text: {response.text[:500]}...")  # первые 500 символов
 
                 # Попытка распарсить JSON
                 try:
@@ -92,7 +88,7 @@ class WBAPIClient:
             endpoint="/content/v2/get/cards/list",
             json=payload or {
                 "settings": {
-                    "cursor": {"limit": 100},
+                    "cursor": {},
                     "filter": {"withPhoto": 1}
                 }
             }
@@ -106,11 +102,11 @@ class WBAPIClient:
 
         old_data = current_card.data
         vendor_code = old_data.get("vendorCode")
-
-        # Формируем payload только с разрешенными полями
+        print(next((c["value"] for c in old_data.get("characteristics", []) if c.get("name") == "Объем товара"), None))
         payload = [{
             "nmID": nm_id,
             "vendorCode": vendor_code,
+            "brand": content.get("brand", old_data.get("brand", "")),
             "title": content.get("title", old_data.get("title")),
             "description": content.get("description", old_data.get("description")),
             "dimensions": {
@@ -128,6 +124,7 @@ class WBAPIClient:
             ],
             "sizes": old_data.get("sizes", [])  # Берем оригинальные размеры
         }]
+        print(next((c["value"] for c in payload[0].get("characteristics", []) if c.get("id") == 89010), None))
 
         return await self._make_request(
             "POST",
@@ -135,11 +132,35 @@ class WBAPIClient:
             json=payload
         )
 
-    async def upload_media(self, nm_id: int, media_urls: list):
+    async def upload_media(self, nm_id: int, media_urls: list[str]):
+        current_card = await self.get_card_by_nm(nm_id)
+        if not current_card.success:
+            raise ValueError("Карточка не найдена")
+
+        # Валидация новых ссылок (если надо)
+        valid_urls = []
+        for url in media_urls:
+            if validate_images(url):
+                valid_urls.append(url)
+            else:
+                print(f"⚠️ Пропущено некорректное изображение: {url}")
+
+        if not valid_urls:
+            raise ValueError("Нет корректных ссылок для загрузки")
+
+        payload = {
+            "nmId": nm_id,
+            "data": valid_urls
+        }
+
+        print("📤 Отправляем медиа:")
+        for url in valid_urls:
+            print(url)
+
         return await self._make_request(
             "POST",
             "/content/v3/media/save",
-            json={"nmId": nm_id, "data": media_urls}
+            json=payload
         )
 
     async def get_card_by_nm(self, nm_id: int):

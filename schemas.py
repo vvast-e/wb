@@ -1,7 +1,7 @@
 from dateutil import tz
 from pydantic import BaseModel, validator
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from pydantic import ConfigDict
 
@@ -28,6 +28,7 @@ class TaskBase(BaseModel):
     action: str
     payload: dict = {}
     user_id: Optional[int] =None
+    changes: dict={}
 
     @validator('scheduled_at')
     def convert_to_msk(cls, v):
@@ -79,3 +80,8 @@ class WBApiResponse(BaseModel):
     data: Optional[Dict] = None
     error: Optional[str] = None
     wb_response: Optional[Any] = None
+
+class MediaTaskRequest(BaseModel):
+    nmId: int
+    media: List[str]
+    scheduled_at: datetime

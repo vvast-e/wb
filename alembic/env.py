@@ -6,9 +6,11 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-# Импортируйте Base из вашего приложения
-from backend.database import Base  # <-- замените на путь к вашему Base
-from backend.config import settings  # <-- если храните настройки там
+from models.user import User
+from models.task import ScheduledTask
+from models.history import ActionHistory
+from database import Base
+from config import settings
 
 # this is the Alembic Config object, which we get from the context module.
 config = context.config
@@ -36,6 +38,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_schemas=True
     )
 
     with context.begin_transaction():
@@ -55,7 +58,7 @@ async def run_migrations_online() -> None:
 
 
 def do_run_migrations(connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True, include_schemas=True)
 
     with context.begin_transaction():
         context.run_migrations()

@@ -14,7 +14,9 @@ app.include_router(tasks.router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://reputation-ecommerce.ru"],  # URL фронтенда
+    allow_origins=["https://reputation-ecommerce.ru",
+                   "http://localhost:3000"],  # URL фронтенда
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

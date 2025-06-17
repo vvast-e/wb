@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
@@ -6,7 +8,7 @@ from models.user import User
 from utils.wb_api import WBAPIClient
 from crud import history as history_crud
 from crud import task as task_crud
-from schemas import WBApiResponse, Task, TaskCreate
+from schemas import WBApiResponse, Task, TaskCreate, MediaTaskRequest
 from dependencies import get_db, get_current_user_with_wb_key, get_wb_api_key
 from crud.user import get_user_by_email, get_decrypted_wb_key
 
@@ -54,6 +56,7 @@ async def update_item_content(
         wb_api_key: str = Depends(get_wb_api_key),
         db: AsyncSession = Depends(get_db)
 ):
+
     wb_client = WBAPIClient(api_key=wb_api_key)
     result = await wb_client.update_card_content(nm_id, content)
 
@@ -70,8 +73,6 @@ async def update_item_content(
 
     return result
 
-from datetime import datetime
-
 @router.post("/{nm_id}/schedule", response_model=dict)
 async def schedule_content_update(
     nm_id: int,
@@ -81,13 +82,25 @@ async def schedule_content_update(
     wb_api_key: str = Depends(get_wb_api_key)
 ):
     wb_client = WBAPIClient(api_key=wb_api_key)
-
     current_card_response = await wb_client.get_card_by_nm(nm_id)
     if not current_card_response.success:
         raise HTTPException(status_code=404, detail="Карточка не найдена")
 
     current_card = current_card_response.data
     new_content = task_data.content or {}
+
+    changes = {}
+    for key, new_value in new_content.items():
+        old_value = current_card.get(key)
+
+        if compare_values(old_value, new_value):
+            continue
+        else:
+            changes[key] = new_value
+
+    print(current_card)
+    print("----------------------------------")
+    print(changes)
 
     payload = {
         key: value
@@ -111,13 +124,39 @@ async def schedule_content_update(
             action="update_content",
             payload=payload,
             scheduled_at=scheduled_at,
-            user_id=current_user.id
+            user_id=current_user.id,
+            changes=changes
         )
 
         return {"task_id": task.id, "scheduled_at": task.scheduled_at}
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Ошибка при создании задачи: {e}")
+
+@router.post("/{nm_id}/media")
+async def schedule_media_update(
+    nm_id: int,
+    request: MediaTaskRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_with_wb_key)
+):
+    if nm_id != request.nmId:
+        raise HTTPException(status_code=400, detail="nmId mismatch")
+
+    if not (1 <= len(request.media) <= 30):
+        raise HTTPException(status_code=400, detail="От 1 до 30 ссылок на фото")
+
+    task = await create_scheduled_task(
+        db=db,
+        nm_id=nm_id,
+        action="update_media",
+        payload={"media": request.media},
+        scheduled_at=request.scheduled_at,
+        user_id=current_user.id,
+        changes={"media": "Медиа обновлены"}
+    )
+
+    return {"task_id": task.id, "scheduled_at": task.scheduled_at}
 
 
 @router.get("/search/{nm_id}", response_model=WBApiResponse)
@@ -137,3 +176,43 @@ async def search_item(
         )
 
     return result
+
+
+def compare_values(old, new):
+    import copy
+
+    # Если строки — сравним с strip()
+    if isinstance(old, str) and isinstance(new, str):
+        return old.strip() == new.strip()
+
+    # Если словари — сравним по ключам, игнорируем ключи вроде 'isValid'
+    if isinstance(old, dict) and isinstance(new, dict):
+        # Скопируем словари и удалим ключи, которые не влияют
+        ignored_keys = {'isValid'}
+        old_copy = {k: v for k, v in old.items() if k not in ignored_keys}
+        new_copy = {k: v for k, v in new.items() if k not in ignored_keys}
+        return old_copy == new_copy
+
+    # Если списки словарей — сравним по содержимому, приведя к одинаковому виду и отсортируем по id
+    if isinstance(old, list) and isinstance(new, list):
+        def normalize(lst):
+            norm = []
+            for item in lst:
+                d = dict(item)  # копия
+                # Приведём value к списку строк для унификации
+                if 'value' in d:
+                    val = d['value']
+                    if not isinstance(val, list):
+                        val = [val]
+                    # Приведём все значения к строкам и обрежем пробелы
+                    val = [str(v).strip() for v in val]
+                    d['value'] = val
+                norm.append(d)
+            # Сортируем по id, потом по name
+            norm.sort(key=lambda x: (x.get('id', 0), x.get('name', '')))
+            return norm
+
+        return normalize(old) == normalize(new)
+
+    # Для всего остального — простое сравнение
+    return old == new

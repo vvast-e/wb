@@ -19,5 +19,6 @@ class ScheduledTask(Base):
     status = Column(String(10), default='pending')
     created_at = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    changes = Column(JSON, nullable=True)
 
     owner = relationship("User", back_populates="tasks")
