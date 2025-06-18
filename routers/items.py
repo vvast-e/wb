@@ -1,14 +1,16 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from crud.task import create_scheduled_task
+from models import ScheduledTask
 from models.user import User
 from utils.wb_api import WBAPIClient
 from crud import history as history_crud
 from crud import task as task_crud
-from schemas import WBApiResponse, Task, TaskCreate, MediaTaskRequest
+from schemas import WBApiResponse, Task, TaskCreate, MediaTaskRequest, MediaUploadResponse, UploadMediaRequest
 from dependencies import get_db, get_current_user_with_wb_key, get_wb_api_key
 from crud.user import get_user_by_email, get_decrypted_wb_key
 
@@ -98,10 +100,6 @@ async def schedule_content_update(
         else:
             changes[key] = new_value
 
-    print(current_card)
-    print("----------------------------------")
-    print(changes)
-
     payload = {
         key: value
         for key, value in new_content.items()
@@ -133,6 +131,7 @@ async def schedule_content_update(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Ошибка при создании задачи: {e}")
 
+
 @router.post("/{nm_id}/media")
 async def schedule_media_update(
     nm_id: int,
@@ -157,6 +156,67 @@ async def schedule_media_update(
     )
 
     return {"task_id": task.id, "scheduled_at": task.scheduled_at}
+
+
+@router.post("/{nm_id}/upload-media-file", response_model=WBApiResponse)
+async def upload_media_file(
+        nm_id: int,
+        file: UploadFile = File(...),
+        photo_number: int = Form(...),
+        media_type: str = Form('image'),
+        current_user: User = Depends(get_current_user_with_wb_key),
+        wb_api_key: str = Depends(get_wb_api_key),
+        db: AsyncSession = Depends(get_db)
+):
+    if not file:
+        raise HTTPException(status_code=422, detail="File is required")
+
+    if media_type == 'video':
+        if photo_number != 1:
+            raise HTTPException(status_code=422, detail="Video can only be uploaded to position 1")
+
+        # Проверяем, есть ли уже видео у этого товара
+        existing_tasks = await db.execute(
+            select(ScheduledTask).where(
+                ScheduledTask.nm_id == nm_id,
+                ScheduledTask.payload["media_type"].astext == 'video'
+            )
+        )
+        if existing_tasks.scalars().first():
+            raise HTTPException(status_code=422, detail="Only one video allowed per product")
+
+    if photo_number < 1 or photo_number > 30:
+        raise HTTPException(status_code=422, detail="Photo number must be between 1 and 30")
+
+    if media_type not in ['image', 'video']:
+        raise HTTPException(status_code=422, detail="Invalid media type")
+
+    file_data = await file.read()
+
+    # Создание задачи
+    task = await create_scheduled_task(
+        db=db,
+        nm_id=nm_id,
+        action="upload_media_file",
+        payload={
+            "file_data": file_data.decode('latin1'),
+            "photo_number": photo_number,
+            "filename": file.filename,
+            "media_type": media_type
+        },
+        scheduled_at=datetime.now(),
+        user_id=current_user.id,
+        changes={"media": f"Добавлено {media_type} {photo_number}"}
+    )
+
+    return WBApiResponse(
+        success=True,
+        data={"task_id": task.id}
+    )
+
+
+
+
 
 
 @router.get("/search/{nm_id}", response_model=WBApiResponse)

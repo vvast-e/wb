@@ -163,6 +163,48 @@ class WBAPIClient:
             json=payload
         )
 
+    async def upload_mediaFile(self, nm_id: int, file_data: bytes, photo_number: int,
+                               media_type: str = 'image') -> WBApiResponse:
+        if media_type == 'video' and photo_number != 1:
+            return WBApiResponse(
+                success=False,
+                error="Video can only be uploaded to position 1"
+            )
+
+        headers = {
+            "Authorization": self.api_key,
+            "X-Nm-Id": str(nm_id),
+            "X-Photo-Number": str(photo_number),
+        }
+
+        if media_type == 'video':
+            headers["X-Photo-Number"] = str(1)
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.base_url}/content/v3/media/file",
+                    headers=headers,
+                    files={"uploadfile": file_data}
+                )
+
+                if response.is_success:
+                    return WBApiResponse(
+                        success=True,
+                        data=response.json(),
+                        wb_response=response.json()
+                    )
+                return WBApiResponse(
+                    success=False,
+                    error=f"HTTP {response.status_code}",
+                    wb_response=response.text
+                )
+        except Exception as e:
+            return WBApiResponse(
+                success=False,
+                error=str(e)
+            )
+
     async def get_card_by_nm(self, nm_id: int):
         response = await self.get_cards_list()
 

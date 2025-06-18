@@ -23,7 +23,6 @@ async def process_scheduled_tasks():
         tasks = await task_crud.get_pending_tasks(db)
         for task in tasks:
             try:
-                # Получаем API ключ из связанного пользователя
                 wb_api_key = await _get_wb_api_key_for_task(db, task.id)
 
                 task.status = 'processing'
@@ -34,6 +33,14 @@ async def process_scheduled_tasks():
                     result = await wb_client.update_card_content(task.nm_id, task.payload)
                 elif task.action == 'update_media':
                     result = await wb_client.upload_media(task.nm_id, task.payload.get("media"))
+                elif task.action == 'upload_media_file':
+                    file_data = task.payload["file_data"].encode('latin1')
+                    result = await wb_client.upload_mediaFile(
+                        nm_id=task.nm_id,
+                        file_data=file_data,
+                        photo_number=task.payload["photo_number"],
+                        media_type=task.payload.get("media_type", "image")
+                    )
 
                 task.status = 'completed' if result.success else 'error'
                 task.wb_response = result.wb_response
@@ -41,7 +48,6 @@ async def process_scheduled_tasks():
             except Exception as e:
                 task.status = 'error'
                 task.error = str(e)
-                # Логируем ошибку для отладки
 
             await db.commit()
 

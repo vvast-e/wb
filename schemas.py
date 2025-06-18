@@ -1,4 +1,5 @@
 from dateutil import tz
+from fastapi import UploadFile, File
 from pydantic import BaseModel, validator
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -85,3 +86,11 @@ class MediaTaskRequest(BaseModel):
     nmId: int
     media: List[str]
     scheduled_at: datetime
+
+class MediaUploadResponse(WBApiResponse):
+    url: Optional[str] = None
+
+class UploadMediaRequest(BaseModel):
+    nmId: str
+    photoNumber: int
+    file: UploadFile = File(...)
