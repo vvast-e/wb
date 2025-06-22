@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from crud.task import get_pending_tasks, delete_task, get_tasks_with_pending
 from models.user import User
-from models.task import ScheduledTask
 from schemas import Task
 from dependencies import get_db, get_current_user_with_wb_key
 

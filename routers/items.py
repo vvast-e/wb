@@ -3,16 +3,12 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from config import settings
 from crud.task import create_scheduled_task
 from models import ScheduledTask
 from models.user import User
 from utils.wb_api import WBAPIClient
-from crud import history as history_crud
-from crud import task as task_crud
-from schemas import WBApiResponse, Task, TaskCreate, MediaTaskRequest, MediaUploadResponse, UploadMediaRequest
+from schemas import WBApiResponse, TaskCreate, MediaTaskRequest
 from dependencies import get_db, get_current_user_with_wb_key, get_wb_api_key
-from crud.user import get_user_by_email, get_decrypted_wb_key
 
 router = APIRouter(tags=["Items"], prefix="/api/items")
 

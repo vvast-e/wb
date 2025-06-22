@@ -6,8 +6,7 @@ from typing import Dict, List
 
 from crud.user import get_user_by_email
 from database import get_db
-from models import User
-from schemas import BrandCreate, BrandUpdate, BrandInDB, IsAdminResponse, UserResponse, UserCreate
+from schemas import BrandCreate, BrandUpdate, IsAdminResponse, UserResponse, UserCreate
 from crud.admin import (
     get_brands,
     create_brand,

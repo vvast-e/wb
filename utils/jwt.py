@@ -4,13 +4,10 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 from config import settings
-from crud.admin import get_admin_by_email
 from crud.user import get_user_by_email
 from database import get_db
 from models.user import User
-from models.admin import Admin
 from schemas import TokenData
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")

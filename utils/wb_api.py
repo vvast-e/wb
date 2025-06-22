@@ -2,7 +2,6 @@ import httpx
 from config import settings
 from schemas import WBApiResponse
 from utils.validate_image import validate_images
-from datetime import datetime
 import json
 
 def merge_card_data(old_data: dict, new_data: dict) -> dict:

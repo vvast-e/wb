@@ -1,13 +1,11 @@
 from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from crud import task as task_crud
 from utils.wb_api import WBAPIClient
 from dependencies import get_db, get_wb_api_key
-from models.user import User
 
 scheduler = AsyncIOScheduler()
 

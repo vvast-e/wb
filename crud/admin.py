@@ -8,7 +8,6 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from crud.user import get_user_by_email
 from models import User
-from models.admin import Admin
 from schemas import BrandCreate, BrandUpdate, UserCreate
 from utils.password import verify_password, get_password_hash, encrypt_api_dict, decrypt_api_dict, encrypt_api_key
 
@@ -145,21 +144,6 @@ async def delete_brand(
             status_code=500,
             detail=f"Failed to delete brand: {str(e)}"
         )
-
-
-async def get_admin_by_email(db: AsyncSession, email: str) -> Admin:
-    result = await db.execute(select(Admin).filter(Admin.email == email))
-    return result.scalars().first()
-
-
-async def authenticate_admin(db: AsyncSession, email: str, password: str) -> Admin:
-    admin = await get_admin_by_email(db, email)
-    if not admin:
-        return None
-    if not verify_password(password, admin.hashed_password):
-        return None
-    return admin
-
 
 async def register_new_user(db: AsyncSession, user: UserCreate) -> User:
     existing_user = await get_user_by_email(db, user.email)
