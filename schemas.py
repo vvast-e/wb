@@ -13,8 +13,10 @@ class HistoryBase(BaseModel):
     payload: Dict[str, Any]
     status: str
 
+
 class HistoryCreate(HistoryBase):
     user_id: int
+
 
 class History(HistoryBase):
     id: int
@@ -23,13 +25,14 @@ class History(HistoryBase):
     class Config:
         orm_mode = True
 
+
 class TaskBase(BaseModel):
     nm_id: int
     scheduled_at: datetime
     action: str
     payload: dict = {}
-    user_id: Optional[int] =None
-    changes: dict={}
+    user_id: Optional[int] = None
+    changes: dict = {}
 
     @validator('scheduled_at')
     def convert_to_msk(cls, v):
@@ -42,9 +45,11 @@ class Characteristic(BaseModel):
     id: int
     value: list[str]
 
+
 class TaskCreate(BaseModel):
     content: dict = {}
     scheduled_at: datetime
+
 
 class Task(TaskBase):
     id: Optional[int] = None  # Необязательное поле
@@ -55,26 +60,44 @@ class Task(TaskBase):
         orm_mode = True
 
 
+
+
 class UserBase(BaseModel):
     email: str
 
+
 class UserCreate(UserBase):
     password: str
-    wb_api_key: str  # Ключ Wildberries API
+    wb_api_key: Optional[Dict[str, str]] = {}
+    status: Optional[str]
+    owner_admin: Optional[str] = None  # Добавляем новое поле
+
+
+class IsAdminResponse(BaseModel):
+    status: str
+
 
 class UserResponse(UserBase):
     id: int
+    wb_api_key: Dict[str, Any]
+    status: Optional[str] = None
     created_at: Optional[datetime] = None
+    owner_admin: Optional[str] = None
+    brands: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
 
+
+# github vvast-e
 class Token(BaseModel):
     access_token: str
     token_type: str
 
+
 class TokenData(BaseModel):
     email: str | None = None
+
 
 class WBApiResponse(BaseModel):
     success: bool
@@ -82,15 +105,37 @@ class WBApiResponse(BaseModel):
     error: Optional[str] = None
     wb_response: Optional[Any] = None
 
+
 class MediaTaskRequest(BaseModel):
     nmId: int
     media: List[str]
     scheduled_at: datetime
 
+
 class MediaUploadResponse(WBApiResponse):
     url: Optional[str] = None
+
 
 class UploadMediaRequest(BaseModel):
     nmId: str
     photoNumber: int
     file: UploadFile = File(...)
+
+
+class BrandBase(BaseModel):
+    name: str
+    api_key: str
+
+
+class BrandCreate(BrandBase):
+    pass
+
+
+class BrandUpdate(BaseModel):
+    name: str
+    api_key: str
+
+
+class BrandInDB(BrandBase):
+    class Config:
+        orm_mode = True

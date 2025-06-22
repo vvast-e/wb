@@ -1,7 +1,11 @@
 from fastapi import FastAPI
-from database import engine, Base
+from sqlalchemy import select
+
+from database import engine, Base, AsyncSessionLocal
+from models.admin import Admin
 from routers import items, history, auth
-from routers import tasks
+from routers import tasks, admin
+from utils.password import get_password_hash
 from utils.scheduler import start_scheduler
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,6 +15,7 @@ app.include_router(items.router)
 app.include_router(history.router)
 app.include_router(auth.router)
 app.include_router(tasks.router)
+app.include_router(admin.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,6 +25,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 
 

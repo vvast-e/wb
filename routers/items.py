@@ -16,15 +16,36 @@ from crud.user import get_user_by_email, get_decrypted_wb_key
 
 router = APIRouter(tags=["Items"], prefix="/api/items")
 
+
 @router.get("/", response_model=WBApiResponse)
 async def get_items(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user_with_wb_key),
         wb_api_key: str = Depends(get_wb_api_key)
 ):
-    wb_client=WBAPIClient(api_key=wb_api_key)
-    result=await wb_client.get_cards_list()
-    return result
+    if not wb_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="WB API key not configured for this user"
+        )
+
+    try:
+        wb_client = WBAPIClient(api_key=wb_api_key)
+        result = await wb_client.get_cards_list()
+
+        if not result.success:
+            raise HTTPException(
+                status_code=400,
+                detail=result.error or "Failed to get cards from WB API"
+            )
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
 @router.get("/{nm_id}", response_model=WBApiResponse)
 async def get_item(
@@ -219,20 +240,20 @@ async def upload_media_file(
 
 
 
-@router.get("/search/{nm_id}", response_model=WBApiResponse)
+@router.get("/search/{vendor_code}", response_model=WBApiResponse)
 async def search_item(
-        nm_id: int,
+        vendor_code: str,
         current_user: User = Depends(get_current_user_with_wb_key),
         wb_api_key: str = Depends(get_wb_api_key),
         db: AsyncSession = Depends(get_db)
 ):
     wb_client = WBAPIClient(api_key=wb_api_key)
-    result = await wb_client.get_card_by_nm(nm_id)
+    result = await wb_client.get_card_by_vendor(vendor_code)
 
     if not result.success:
         raise HTTPException(
             status_code=404,
-            detail=f"Товар с артикулом {nm_id} не найден"
+            detail=f"Товар с vendorCode {vendor_code} не найден"
         )
 
     return result

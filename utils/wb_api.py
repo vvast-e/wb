@@ -51,7 +51,6 @@ class WBAPIClient:
                         wb_response=json_data
                     )
 
-                # Если ошибка, но JSON есть — используем его
                 if json_data:
                     return WBApiResponse(
                         success=False,
@@ -59,7 +58,6 @@ class WBAPIClient:
                         wb_response=json_data
                     )
 
-                # Если нет JSON, возвращаем ошибку с текстом
                 return WBApiResponse(
                     success=False,
                     data=None,
@@ -228,4 +226,41 @@ class WBAPIClient:
             success=False,
             error="Карточка не найдена"
         )
+
+    async def get_card_by_vendor(self, vendorCode: str) -> WBApiResponse:
+        try:
+            response = await self.get_cards_list()
+
+            if not response.success:
+                return WBApiResponse(
+                    success=False,
+                    error="Не удалось получить список карточек"
+                )
+
+            if not isinstance(response.data, dict):
+                return WBApiResponse(
+                    success=False,
+                    error="Неверный формат данных от API"
+                )
+
+            cards = response.data.get("cards", [])
+
+            for card in cards:
+                current_vc = card.get("vendorCode")
+                # Сравниваем как строки, игнорируя регистр
+                if str(current_vc).lower() == str(vendorCode).lower():
+                    return WBApiResponse(
+                        success=True,
+                        data=card
+                    )
+
+            return WBApiResponse(
+                success=False,
+                error=f"Карточка с vendorCode '{vendorCode}' не найдена"
+            )
+        except Exception as e:
+            return WBApiResponse(
+                success=False,
+                error=f"Ошибка при поиске: {str(e)}"
+            )
 

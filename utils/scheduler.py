@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +16,7 @@ async def _get_wb_api_key_for_task(db: AsyncSession, task_id: int) -> str:
     task = await task_crud.get_task_by_id(db, task_id)
     if not task or not task.owner:
         raise ValueError("Task or user not found")
-    wb_api_key = await get_wb_api_key(db, task.owner)
+    wb_api_key = await get_wb_api_key(task.owner, db)
     return wb_api_key
 
 
@@ -42,14 +44,27 @@ async def process_scheduled_tasks():
                         media_type=task.payload.get("media_type", "image")
                     )
 
-                task.status = 'completed' if result.success else 'error'
+                if result.success:
+                    task.status = 'completed'
+                else:
+                    # Если запрос не удался, переносим задачу на 5 минут вперед
+                    task.status = 'pending'
+                    task.scheduled_at = datetime.now() + timedelta(minutes=5)
+                    if hasattr(result, 'error'):
+                        task.error = result.error
+                    elif isinstance(result.wb_response, dict) and 'error' in result.wb_response:
+                        task.error = result.wb_response['error']
+                    else:
+                        task.error = "Unknown error"
+
                 task.wb_response = result.wb_response
 
             except Exception as e:
-                task.status = 'error'
+                task.status = 'pending'
+                task.scheduled_at = datetime.now() + timedelta(minutes=5)
                 task.error = str(e)
 
-            await db.commit()
+        await db.commit()
 
 
 def start_scheduler():

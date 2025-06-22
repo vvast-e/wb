@@ -16,7 +16,15 @@ async def get_current_user_with_wb_key(
     return current_user
 
 async def get_wb_api_key(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user_with_wb_key)
+    current_user: User = Depends(get_current_user_with_wb_key),
+    db: AsyncSession = Depends(get_db)
 ) -> str:
-    return await get_decrypted_wb_key(db, current_user)
+    try:
+        return await get_decrypted_wb_key(db, current_user)
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"API key decryption failed: {str(e)}"
+        )

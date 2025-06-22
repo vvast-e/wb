@@ -1,36 +1,39 @@
+from typing import Dict
+
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from utils.password import get_password_hash, verify_password, encrypt_api_key, decrypt_api_key
+
+from utils.password import get_password_hash, verify_password, decrypt_api_dict
 from models.user import User
 from schemas import UserCreate
 
 
 async def get_user_by_email(db: AsyncSession, email: str)->User:
     result = await db.execute(select(User).filter(User.email == email))
-    return result.scalars().first()  # Исправлено: добавлено .scalars()
+    return result.scalars().first()
 
 
 async def create_user(db: AsyncSession, user: UserCreate) -> User:
-    # Проверяем, существует ли пользователь
     existing_user = await get_user_by_email(db, user.email)
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
     # Хешируем пароль
     hashed_password = get_password_hash(user.password)
-    hashed_wb_api=encrypt_api_key(user.wb_api_key)
+    #hashed_wb_api=encrypt_api_key(user.wb_api_key)
 
     # Создаем пользователя
     db_user = User(
         email=user.email,
         hashed_password=hashed_password,
-        wb_api_key=hashed_wb_api
+        status="admin"
     )
     db.add(db_user)
     await db.commit()
     await db.refresh(db_user)
     return db_user
+
 
 
 async def authenticate_user(db: AsyncSession, email: str, password: str)-> User:
@@ -46,5 +49,20 @@ async def authenticate_user(db: AsyncSession, email: str, password: str)-> User:
 
 
 async def get_decrypted_wb_key(db: AsyncSession, user: User) -> str:
-    """Расшифровывает WB API ключ пользователя"""
-    return decrypt_api_key(user.wb_api_key)
+    if not user.wb_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="No API keys configured for this user"
+        )
+
+    decrypted_keys = decrypt_api_dict(user.wb_api_key)
+
+    for key in decrypted_keys.values():
+        if key:
+            return key
+
+    raise HTTPException(
+        status_code=400,
+        detail="No valid API keys found (decryption failed)"
+    )
+
