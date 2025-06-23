@@ -94,7 +94,7 @@ async def get_all_users(
     result = await db.execute(select(User).where(User.owner_admin == current_user.email))
     users = result.scalars().all()
 
-    print(users[0].wb_api_key)
+
 
     return [
         UserResponse(

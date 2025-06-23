@@ -236,7 +236,8 @@ async def search_item(
         vendor_code: str,
         current_user: User = Depends(get_current_user_with_wb_key),
         wb_api_key: str = Depends(get_wb_api_key),
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        brand: str = Query(..., description="Название бренда")
 ):
     wb_client = WBAPIClient(api_key=wb_api_key)
     result = await wb_client.get_card_by_vendor(vendor_code)
