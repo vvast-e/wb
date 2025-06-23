@@ -1,9 +1,11 @@
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.jwt import get_current_active_user
 from database import get_db
 from models.user import User
 from crud.user import get_decrypted_wb_key
+from utils.password import decrypt_api_dict
+
 
 async def get_current_user_with_wb_key(
     current_user: User = Depends(get_current_active_user)
@@ -16,11 +18,12 @@ async def get_current_user_with_wb_key(
     return current_user
 
 async def get_wb_api_key(
+    brand: str = Query(..., description="Название бренда"),
     current_user: User = Depends(get_current_user_with_wb_key),
     db: AsyncSession = Depends(get_db)
 ) -> str:
     try:
-        return await get_decrypted_wb_key(db, current_user)
+        return await get_decrypted_wb_key(db, current_user, brand)
     except HTTPException as he:
         raise he
     except Exception as e:

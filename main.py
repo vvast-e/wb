@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from sqlalchemy import select
 
 from database import engine, Base, AsyncSessionLocal
-from models.admin import Admin
 from routers import items, history, auth
 from routers import tasks, admin
 from utils.password import get_password_hash

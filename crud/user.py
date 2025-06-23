@@ -46,21 +46,21 @@ async def authenticate_user(db: AsyncSession, email: str, password: str)-> User:
     return user
 
 
-async def get_decrypted_wb_key(db: AsyncSession, user: User) -> str:
+async def get_decrypted_wb_key(db: AsyncSession, user: User, brand: str) -> str:
     if not user.wb_api_key:
         raise HTTPException(
             status_code=400,
-            detail="No API keys configured for this user"
+            detail="У пользователя не настроены API-ключи"
         )
 
     decrypted_keys = decrypt_api_dict(user.wb_api_key)
 
-    for key in decrypted_keys.values():
-        if key:
-            return key
+    if brand not in decrypted_keys or not decrypted_keys[brand]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"API-ключ для бренда '{brand}' не найден или не расшифрован"
+        )
 
-    raise HTTPException(
-        status_code=400,
-        detail="No valid API keys found (decryption failed)"
-    )
+    return decrypted_keys[brand]
+
 

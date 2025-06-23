@@ -20,5 +20,6 @@ class ScheduledTask(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     changes = Column(JSON, nullable=True)
+    brand = Column(String, nullable=False)
 
     owner = relationship("User", back_populates="tasks")

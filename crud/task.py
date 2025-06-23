@@ -16,7 +16,8 @@ async def create_scheduled_task(
     payload: dict,
     scheduled_at: datetime,
     user_id: int,
-    changes: dict
+    changes: dict,
+    brand: str
 )-> ScheduledTask:
     task = ScheduledTask(
         nm_id=nm_id,
@@ -25,7 +26,8 @@ async def create_scheduled_task(
         scheduled_at=scheduled_at,
         user_id=user_id,
         status="pending",
-        changes=changes
+        changes=changes,
+        brand=brand
     )
     db.add(task)
     await db.commit()
@@ -38,7 +40,6 @@ from dateutil import tz
 
 
 async def get_pending_tasks(db: AsyncSession)->List[ScheduledTask]:
-    # Получаем текущее время в Москве
     msk_tz = tz.gettz('Europe/Moscow')
     now_msk = datetime.now(msk_tz)
 

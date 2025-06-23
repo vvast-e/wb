@@ -99,7 +99,7 @@ class WBAPIClient:
 
         old_data = current_card.data
         vendor_code = old_data.get("vendorCode")
-        print(next((c["value"] for c in old_data.get("characteristics", []) if c.get("name") == "Объем товара"), None))
+
         payload = [{
             "nmID": nm_id,
             "vendorCode": vendor_code,
@@ -119,15 +119,37 @@ class WBAPIClient:
                 }
                 for ch in content.get("characteristics", [])
             ],
-            "sizes": old_data.get("sizes", [])  # Берем оригинальные размеры
+            "sizes": old_data.get("sizes", [])
         }]
-        print(next((c["value"] for c in payload[0].get("characteristics", []) if c.get("id") == 89010), None))
 
-        return await self._make_request(
-            "POST",
-            "/content/v2/cards/update",
-            json=payload
-        )
+        print("Payload characteristics example value:",
+              next((c["value"] for c in payload[0].get("characteristics", []) if c.get("id") == 89010), None))
+
+        try:
+            response = await self._make_request(
+                "POST",
+                "/content/v2/cards/update",
+                json=payload
+            )
+        except Exception as e:
+            print(f"Exception during WB API request: {e}")
+            raise
+
+        print("WB API update response:", response)
+
+        if not response.get("success", False):
+            error_msg = response.get("error", "Неизвестная ошибка при обновлении карточки")
+            print(f"Ошибка при обновлении карточки: {error_msg}")
+            raise ValueError(f"Ошибка при обновлении карточки: {error_msg}")
+
+        if "data" in response and isinstance(response["data"], list):
+            for card_result in response["data"]:
+                if card_result.get("status") != "success":
+                    detail = card_result.get("error", "Неизвестная ошибка в результате обновления")
+                    print(f"Ошибка в карточке nmID={nm_id}: {detail}")
+                    raise ValueError(f"Ошибка в карточке nmID={nm_id}: {detail}")
+
+        return response
 
     async def upload_media(self, nm_id: int, media_urls: list[str]):
         current_card = await self.get_card_by_nm(nm_id)
@@ -163,44 +185,44 @@ class WBAPIClient:
     async def upload_mediaFile(self, nm_id: int, file_data: bytes, photo_number: int,
                                media_type: str = 'image') -> WBApiResponse:
         if media_type == 'video' and photo_number != 1:
-            return WBApiResponse(
-                success=False,
-                error="Video can only be uploaded to position 1"
-            )
+            return WBApiResponse(success=False, error="Video can only be uploaded to position 1")
 
         headers = {
             "Authorization": self.api_key,
             "X-Nm-Id": str(nm_id),
-            "X-Photo-Number": str(photo_number),
+            "X-Photo-Number": str(1 if media_type == "video" else photo_number),
         }
 
-        if media_type == 'video':
-            headers["X-Photo-Number"] = str(1)
+        filename = "upload.mp4" if media_type == "video" else "upload.jpg"
+        content_type = "video/mp4" if media_type == "video" else "image/jpeg"
 
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.base_url}/content/v3/media/file",
                     headers=headers,
-                    files={"uploadfile": file_data}
+                    files={"uploadfile": (filename, file_data, content_type)}
                 )
 
-                if response.is_success:
-                    return WBApiResponse(
-                        success=True,
-                        data=response.json(),
-                        wb_response=response.json()
-                    )
+            if response.is_success:
+                return WBApiResponse(
+                    success=True,
+                    data=response.json(),
+                    wb_response=response.json()
+                )
+            else:
                 return WBApiResponse(
                     success=False,
-                    error=f"HTTP {response.status_code}",
+                    error=f"HTTP {response.status_code}: {response.text}",
                     wb_response=response.text
                 )
+            print("Response status:", response.status_code)
+            print("Response text:", response.text)
+
+
         except Exception as e:
-            return WBApiResponse(
-                success=False,
-                error=str(e)
-            )
+            return WBApiResponse(success=False, error=str(e))
+
 
     async def get_card_by_nm(self, nm_id: int):
         response = await self.get_cards_list()

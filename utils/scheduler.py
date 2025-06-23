@@ -14,7 +14,11 @@ async def _get_wb_api_key_for_task(db: AsyncSession, task_id: int) -> str:
     task = await task_crud.get_task_by_id(db, task_id)
     if not task or not task.owner:
         raise ValueError("Task or user not found")
-    wb_api_key = await get_wb_api_key(task.owner, db)
+
+    if not task.brand:
+        raise ValueError("Brand not specified in task")
+
+    wb_api_key = await get_wb_api_key(task.brand, task.owner, db)  # передаем brand!
     return wb_api_key
 
 
@@ -45,7 +49,6 @@ async def process_scheduled_tasks():
                 if result.success:
                     task.status = 'completed'
                 else:
-                    # Если запрос не удался, переносим задачу на 5 минут вперед
                     task.status = 'pending'
                     task.scheduled_at = datetime.now() + timedelta(minutes=5)
                     if hasattr(result, 'error'):
