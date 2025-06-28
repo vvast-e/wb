@@ -8,7 +8,7 @@ from alembic import context
 
 from models.user import User
 from models.task import ScheduledTask
-from models.history import ActionHistory
+from models.history import History
 from database import Base
 from config import settings
 

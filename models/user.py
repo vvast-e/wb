@@ -12,6 +12,8 @@ class User(Base):
     wb_api_key = Column(JSON, default={})
     status = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    owner_admin = Column(String, nullable=True)  # Email админа, который создал пользователя
+    owner_admin = Column(String, nullable=True)
+    imagebb_key=Column(String, default="")
 
     tasks = relationship("ScheduledTask", back_populates="owner")
+    history = relationship("History", back_populates="user")

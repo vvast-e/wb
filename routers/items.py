@@ -1,8 +1,13 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
+import requests
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from crud.admin import get_imagebb_key
+from crud.history import create_history, upload_to_imgbb, convert_image_url_to_jpg_bytes
 from crud.task import create_scheduled_task
 from crud.user import get_decrypted_wb_key
 from models import ScheduledTask
@@ -10,6 +15,7 @@ from models.user import User
 from utils.wb_api import WBAPIClient
 from schemas import WBApiResponse, TaskCreate, MediaTaskRequest
 from dependencies import get_db, get_current_user_with_wb_key, get_wb_api_key
+from config import settings
 
 router = APIRouter(tags=["Items"], prefix="/api/items")
 
@@ -48,43 +54,7 @@ async def get_item(
     wb_client = WBAPIClient(api_key=wb_api_key)
     result = await wb_client.get_card_by_nm(nm_id)
 
-    # Логируем действие
-    # await history_crud.create_history_record(
-    #     db,
-    #     user_id=current_user["email"],
-    #     nm_id=nm_id,
-    #     action="get_item",
-    #     payload={"nm_id": nm_id},
-    #     status="success" if result.success else "error",
-    #     wb_response=result.wb_response
-    # )
-
     return result
-
-
-# @router.patch("/{nm_id}/content", response_model=WBApiResponse)
-# async def update_item_content(
-#         nm_id: int,
-#         content: dict,
-#         current_user: User = Depends(get_current_user_with_wb_key),
-#         wb_api_key: str = Depends(get_wb_api_key),
-#         db: AsyncSession = Depends(get_db)
-# ):
-#     wb_client = WBAPIClient(api_key=wb_api_key)
-#     result = await wb_client.update_card_content(nm_id, content)
-#
-#     # # Логируем действие
-#     # await history_crud.create_history_record(
-#     #     db,
-#     #     user_id=current_user["id"],
-#     #     nm_id=nm_id,
-#     #     action="update_content",
-#     #     payload=content,
-#     #     status="success" if result.success else "error",
-#     #     wb_response=result.wb_response
-#     # )
-#
-#     return result
 
 
 @router.post("/{nm_id}/schedule", response_model=dict)
@@ -119,6 +89,7 @@ async def schedule_content_update(
         if value is not None and value != current_card.get(key)
     }
 
+    now=datetime.now(ZoneInfo("Europe/Moscow"))
     if not payload:
         raise HTTPException(status_code=400, detail="Нет изменений для обновления")
 
@@ -137,7 +108,21 @@ async def schedule_content_update(
             scheduled_at=scheduled_at,
             user_id=current_user.id,
             changes=changes,
-            brand=brand
+            brand=brand,
+            created_at=now
+        )
+
+        await create_history(
+            db=db,
+            vendor_code=current_card.get("vendorCode"),
+            action="update_content",
+            payload=current_card,
+            scheduled_at=scheduled_at,
+            user_id=current_user.id,
+            changes=changes,
+            brand=brand,
+            status="pending",
+            created_at=now
         )
 
         return {"task_id": task.id, "scheduled_at": task.scheduled_at}
@@ -146,19 +131,76 @@ async def schedule_content_update(
         raise HTTPException(status_code=400, detail=f"Ошибка при создании задачи: {e}")
 
 
+@router.post("/{nm_id}/upload-imgbb", response_model=WBApiResponse)
+async def upload_file_to_imgbb(
+    nm_id: int,
+    brand: str = Query(..., description="Название бренда"),
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user_with_wb_key),
+    db: AsyncSession = Depends(get_db)
+):
+    if not file:
+        raise HTTPException(status_code=422, detail="File is required")
+
+    imagebb_key=await get_imagebb_key(db, current_user.id)
+    if not imagebb_key:
+        return HTTPException(status_code=404, detail="Not found imagebb_key")
+
+    try:
+        image_bytes = await file.read()
+        url = await upload_to_imgbb(imagebb_key, image_bytes)
+
+        return WBApiResponse(
+            success=True,
+            data={"url": url}
+        )
+    except requests.HTTPError as e:
+        raise HTTPException(status_code=400, detail=f"Ошибка загрузки на imgbb: {e.response.text}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Ошибка загрузки файла: {str(e)}")
+
+
 @router.post("/{nm_id}/media")
 async def schedule_media_update(
         nm_id: int,
         request: MediaTaskRequest,
         brand: str = Query(..., description="Название бренда"),
         db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(get_current_user_with_wb_key)
+        current_user: User = Depends(get_current_user_with_wb_key),
+        wb_api_key: str = Depends(get_wb_api_key)
 ):
+    wb_client = WBAPIClient(api_key=wb_api_key)
+    current_card_response = await wb_client.get_card_by_nm(nm_id)
+    if not current_card_response.success:
+        raise HTTPException(status_code=404, detail="Карточка не найдена")
+
+    imagebb_key = await get_imagebb_key(db, current_user.id)
+    if not imagebb_key:
+        return HTTPException(status_code=404, detail="Not found imagebb_key")
+
+    current_card = current_card_response.data
+
     if nm_id != request.nmId:
         raise HTTPException(status_code=400, detail="nmId mismatch")
 
     if not (1 <= len(request.media) <= 30):
         raise HTTPException(status_code=400, detail="От 1 до 30 ссылок на фото")
+    now = datetime.now(ZoneInfo("Europe/Moscow"))
+
+    old_converted_url=await convert_image_url_to_jpg_bytes(current_card.get("photos")[request.index]["big"])
+    old_url=await upload_to_imgbb(imagebb_key, old_converted_url)
+    await create_history(
+        db=db,
+        vendor_code=current_card.get("vendorCode"),
+        action="update_media",
+        payload={"media": [old_url, request.index]},
+        scheduled_at=request.scheduled_at,
+        user_id=current_user.id,
+        changes={"media": "Медиа обновлены"},
+        brand=brand,
+        status="pending",
+        created_at=now
+    )
 
     task = await create_scheduled_task(
         db=db,
@@ -168,7 +210,8 @@ async def schedule_media_update(
         scheduled_at=request.scheduled_at,
         user_id=current_user.id,
         changes={"media": "Медиа обновлены"},
-        brand=brand
+        brand=brand,
+        created_at=now
     )
 
     return {"task_id": task.id, "scheduled_at": task.scheduled_at}
@@ -178,6 +221,7 @@ async def schedule_media_update(
 async def upload_media_file(
         nm_id: int,
         brand: str = Query(..., description="Название бренда"),
+        scheduled_at: str = Form(...),
         file: UploadFile = File(...),
         photo_number: int = Form(...),
         media_type: str = Form('image'),
@@ -207,7 +251,14 @@ async def upload_media_file(
     if media_type not in ['image', 'video']:
         raise HTTPException(status_code=422, detail="Invalid media type")
 
+    try:
+        scheduled_dt = datetime.fromisoformat(scheduled_at)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Некорректный формат времени")
+
     file_data = await file.read()
+
+    now = datetime.now(ZoneInfo("Europe/Moscow"))
 
     task = await create_scheduled_task(
         db=db,
@@ -219,10 +270,11 @@ async def upload_media_file(
             "filename": file.filename,
             "media_type": media_type
         },
-        scheduled_at=datetime.now(),
+        scheduled_at=scheduled_dt,
         user_id=current_user.id,
         changes={"media": f"Добавлено {media_type} {photo_number}"},
-        brand=brand
+        brand=brand,
+        created_at=now
     )
 
     return WBApiResponse(

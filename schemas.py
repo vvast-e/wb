@@ -31,7 +31,7 @@ class TaskBase(BaseModel):
     scheduled_at: datetime
     action: str
     payload: dict = {}
-    user_id: Optional[int] = None
+    user_id: int
     changes: dict = {}
 
     @validator('scheduled_at')
@@ -46,20 +46,39 @@ class Characteristic(BaseModel):
     value: list[str]
 
 
+
+class HistoryResponse(BaseModel):
+    id: int
+    created_at: datetime
+    scheduled_at: datetime
+    vendor_code: str
+    changes: Dict[str, Any]
+    brand: str
+    action: str
+    user_email: str
+    status: str
+
+    class Config:
+        orm_mode = True
+
+
 class TaskCreate(BaseModel):
     content: dict = {}
     scheduled_at: datetime
 
 
 class Task(TaskBase):
-    id: Optional[int] = None  # Необязательное поле
-    status: Optional[str] = None  # Необязательное поле
-    created_at: Optional[datetime] = None  # Необязательное поле
+    id: Optional[int] = None
+    status: Optional[str] = None
+    brand: str
+    created_at: Optional[datetime] = None
 
     class Config:
         orm_mode = True
 
 
+class ImageBBUpdateRequest(BaseModel):
+    imagebb_key: str
 
 
 class UserBase(BaseModel):
@@ -69,6 +88,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
     wb_api_key: Optional[Dict[str, str]] = {}
+    imagebb_key: Optional[str] = ""
     status: Optional[str]
     owner_admin: Optional[str] = None  # Добавляем новое поле
 
@@ -109,6 +129,7 @@ class WBApiResponse(BaseModel):
 class MediaTaskRequest(BaseModel):
     nmId: int
     media: List[str]
+    index: int
     scheduled_at: datetime
 
 
@@ -122,14 +143,13 @@ class UploadMediaRequest(BaseModel):
     file: UploadFile = File(...)
 
 
+# Изменяем BrandBase и BrandUpdate
 class BrandBase(BaseModel):
     name: str
     api_key: str
 
-
 class BrandCreate(BrandBase):
     pass
-
 
 class BrandUpdate(BaseModel):
     name: str

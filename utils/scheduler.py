@@ -4,6 +4,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from crud import task as task_crud
+from crud.history import update_history_status
 from utils.wb_api import WBAPIClient
 from dependencies import get_db, get_wb_api_key
 
@@ -35,8 +36,12 @@ async def process_scheduled_tasks():
 
                 if task.action == 'update_content':
                     result = await wb_client.update_card_content(task.nm_id, task.payload)
+                    print()
+                    print(result)
                 elif task.action == 'update_media':
                     result = await wb_client.upload_media(task.nm_id, task.payload.get("media"))
+                    print()
+                    print(result)
                 elif task.action == 'upload_media_file':
                     file_data = task.payload["file_data"].encode('latin1')
                     result = await wb_client.upload_mediaFile(
@@ -45,10 +50,13 @@ async def process_scheduled_tasks():
                         photo_number=task.payload["photo_number"],
                         media_type=task.payload.get("media_type", "image")
                     )
-
+                print(result.success)
                 if result.success:
                     task.status = 'completed'
+                    await update_history_status(db, status='completed', user_id=task.user_id, created_at=task.created_at)
                 else:
+                    print(f"❌ Ошибка при откате изменений: {result.error}")
+                    print(f"🧾 Ответ WB: {result.wb_response}")
                     task.status = 'pending'
                     task.scheduled_at = datetime.now() + timedelta(minutes=5)
                     if hasattr(result, 'error'):

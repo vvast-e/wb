@@ -35,18 +35,15 @@ async def create_brand(
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Инициализация и проверка
         if not isinstance(user.wb_api_key, dict):
             user.wb_api_key = {}
 
         if brand_data.name in user.wb_api_key:
             raise HTTPException(status_code=400, detail="Brand already exists")
 
-        # Шифруем API ключ перед сохранением
-        encrypted_key = encrypt_api_key(brand_data.api_key)
+        encrypted_wb_key = encrypt_api_key(brand_data.api_key)
+        user.wb_api_key[brand_data.name] = encrypted_wb_key
 
-        # Обновляем данные
-        user.wb_api_key[brand_data.name] = encrypted_key
         flag_modified(user, "wb_api_key")
 
         await db.commit()
@@ -66,7 +63,7 @@ async def update_brand(
         user_id: int,
         brand_name: str,
         brand_data: BrandUpdate
-) -> Dict[str, str]:
+) -> dict[str, dict[str, str]]:
     try:
         result = await db.execute(select(User).filter(User.id == user_id))
         user = result.scalars().first()
@@ -75,25 +72,33 @@ async def update_brand(
 
         if not isinstance(user.wb_api_key, dict):
             user.wb_api_key = {}
+        if not isinstance(user.imagebb_key, dict):
+            user.imagebb_key = {}
 
         if brand_name not in user.wb_api_key:
             raise HTTPException(status_code=404, detail=f"Brand '{brand_name}' not found")
 
-        # Шифруем новый API ключ
-        encrypted_key = encrypt_api_key(brand_data.api_key)
+        # Шифруем новые ключи
+        encrypted_wb_key = encrypt_api_key(brand_data.api_key)
+        encrypted_imgbb_key = encrypt_api_key(brand_data.imagebb_key)
 
-        # Обновление с проверкой имени
         if brand_name != brand_data.name:
             if brand_data.name in user.wb_api_key:
                 raise HTTPException(status_code=400, detail=f"Brand '{brand_data.name}' already exists")
             del user.wb_api_key[brand_name]
+            del user.imagebb_key[brand_name]
 
-        user.wb_api_key[brand_data.name] = encrypted_key
+        user.wb_api_key[brand_data.name] = encrypted_wb_key
+        user.imagebb_key[brand_data.name] = encrypted_imgbb_key
         flag_modified(user, "wb_api_key")
+        flag_modified(user, "imagebb_key")
 
         await db.commit()
         await db.refresh(user)
-        return user.wb_api_key
+        return {
+            "wb_api_key": user.wb_api_key,
+            "imagebb_key": user.imagebb_key
+        }
 
     except Exception as e:
         await db.rollback()
@@ -165,3 +170,24 @@ async def register_new_user(db: AsyncSession, user: UserCreate) -> User:
     await db.commit()
     await db.refresh(db_user)
     return db_user
+
+
+async def get_imagebb_key(db: AsyncSession, user_id: int) -> str:
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user.imagebb_key or ""
+
+
+async def set_imagebb_key(db: AsyncSession, user_id: int, key: str) -> str:
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.imagebb_key = key
+    await db.commit()
+    await db.refresh(user)
+    return user.imagebb_key
+

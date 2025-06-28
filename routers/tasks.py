@@ -16,7 +16,7 @@ async def get_tasks(db: AsyncSession = Depends(get_db),
                     ) -> List[Task]:
     tasks = []
     async for db in get_db():
-        tasks = await get_tasks_with_pending(db)
+        tasks = await get_tasks_with_pending(db, current_user.id)
     return [Task.from_orm(task) for task in tasks]
 
 

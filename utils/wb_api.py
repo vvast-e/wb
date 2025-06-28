@@ -49,6 +49,7 @@ class WBAPIClient:
                         data=json_data,
                         wb_response=json_data
                     )
+                print(WBApiResponse)
 
                 if json_data:
                     return WBApiResponse(
@@ -72,7 +73,6 @@ class WBAPIClient:
                     error=f"Network error: {str(e)}"
                 )
             except Exception as e:
-                # Любые другие исключения
                 print("Unexpected Error:", str(e))
                 return WBApiResponse(
                     success=False,
@@ -91,11 +91,11 @@ class WBAPIClient:
             }
         )
 
-    async def update_card_content(self, nm_id: int, content: dict):
-        """Обновление карточки с учетом ограничений WB API"""
+    async def update_card_content(self, nm_id: int, content: dict) -> WBApiResponse:
         current_card = await self.get_card_by_nm(nm_id)
         if not current_card.success:
-            raise ValueError("Карточка не найдена")
+            print(f"❌ Не удалось получить карточку nm_id={nm_id}: {current_card.error}")
+            return WBApiResponse(success=False, error="Карточка не найдена")
 
         old_data = current_card.data
         vendor_code = old_data.get("vendorCode")
@@ -122,50 +122,31 @@ class WBAPIClient:
             "sizes": old_data.get("sizes", [])
         }]
 
-        print("Payload characteristics example value:",
-              next((c["value"] for c in payload[0].get("characteristics", []) if c.get("id") == 89010), None))
+        print("📦 Payload для /cards/update:")
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
 
-        try:
-            response = await self._make_request(
-                "POST",
-                "/content/v2/cards/update",
-                json=payload
-            )
-        except Exception as e:
-            print(f"Exception during WB API request: {e}")
-            raise
-
-        print("WB API update response:", response)
-
-        if not response.get("success", False):
-            error_msg = response.get("error", "Неизвестная ошибка при обновлении карточки")
-            print(f"Ошибка при обновлении карточки: {error_msg}")
-            raise ValueError(f"Ошибка при обновлении карточки: {error_msg}")
-
-        if "data" in response and isinstance(response["data"], list):
-            for card_result in response["data"]:
-                if card_result.get("status") != "success":
-                    detail = card_result.get("error", "Неизвестная ошибка в результате обновления")
-                    print(f"Ошибка в карточке nmID={nm_id}: {detail}")
-                    raise ValueError(f"Ошибка в карточке nmID={nm_id}: {detail}")
-
+        response = await self._make_request(
+            "POST",
+            "/content/v2/cards/update",
+            json=payload
+        )
+        print("📬 Ответ от /cards/update:", response)
         return response
 
-    async def upload_media(self, nm_id: int, media_urls: list[str]):
+    async def upload_media(self, nm_id: int, media_urls: list[str]) -> WBApiResponse:
         current_card = await self.get_card_by_nm(nm_id)
         if not current_card.success:
-            raise ValueError("Карточка не найдена")
+            return WBApiResponse(success=False, error="Карточка не найдена")
 
-        # Валидация новых ссылок (если надо)
         valid_urls = []
         for url in media_urls:
-            if validate_images(url):
+            if url.startswith(('https://i.ibb.co', 'https://i.imgbb.com')) or validate_images(url):
                 valid_urls.append(url)
             else:
-                print(f"⚠️ Пропущено некорректное изображение: {url}")
+                print(f"⚠️ Пропущена некорректная ссылка: {url}")
 
         if not valid_urls:
-            raise ValueError("Нет корректных ссылок для загрузки")
+            return WBApiResponse(success=False, error="Нет корректных ссылок для загрузки")
 
         payload = {
             "nmId": nm_id,
@@ -176,11 +157,17 @@ class WBAPIClient:
         for url in valid_urls:
             print(url)
 
-        return await self._make_request(
-            "POST",
-            "/content/v3/media/save",
-            json=payload
-        )
+        try:
+            response = await self._make_request(
+                "POST",
+                "/content/v3/media/save",
+                json=payload
+            )
+            print("--------------------------------------------------------------------")
+            print(response)
+            return response
+        except Exception as e:
+            return WBApiResponse(success=False, error=str(e))
 
     async def upload_mediaFile(self, nm_id: int, file_data: bytes, photo_number: int,
                                media_type: str = 'image') -> WBApiResponse:
@@ -223,17 +210,18 @@ class WBAPIClient:
         except Exception as e:
             return WBApiResponse(success=False, error=str(e))
 
-
     async def get_card_by_nm(self, nm_id: int):
         response = await self.get_cards_list()
 
         if not response.success:
+            print(f"❌ Не удалось получить список карточек: {response.error}")
             raise Exception("Не удалось получить список карточек")
 
         if not isinstance(response.data, dict):
             raise ValueError("Неверный формат данных от API")
 
         cards = response.data.get("cards", [])
+        print(f"🔍 Получено карточек: {len(cards)}")
 
         for card in cards:
             current_nm_id = card.get("nmID")
@@ -242,7 +230,7 @@ class WBAPIClient:
                     success=True,
                     data=card
                 )
-
+        print(f"⚠️ Карточка с nmID={nm_id} не найдена в списке")
         return WBApiResponse(
             success=False,
             error="Карточка не найдена"

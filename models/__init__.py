@@ -1,3 +1,3 @@
 from models.user import User
 from models.task import ScheduledTask
-from models.history import ActionHistory
+from models.history import History

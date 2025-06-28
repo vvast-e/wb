@@ -6,24 +6,33 @@ from typing import Dict, List
 
 from crud.user import get_user_by_email
 from database import get_db
-from schemas import BrandCreate, BrandUpdate, IsAdminResponse, UserResponse, UserCreate
+from schemas import BrandCreate, BrandUpdate, IsAdminResponse, UserResponse, UserCreate, ImageBBUpdateRequest
 from crud.admin import (
     get_brands,
     create_brand,
     update_brand,
-    delete_brand, register_new_user
+    delete_brand, register_new_user, get_imagebb_key, set_imagebb_key
 )
 from models.user import User
 from utils.jwt import get_current_active_user
 
 router = APIRouter(tags=["brands"], prefix="/api/admin")
 
-@router.get("/brands/", response_model=Dict[str, str])
+
+@router.get("/brands/", response_model=Dict[str, Dict[str, str]])
 async def read_brands(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_active_user)
 ):
-    return await get_brands(db, current_user.id)
+    wb_keys = await get_brands(db, current_user.id)
+
+    # Объединяем ключи для каждого бренда
+    brands = {}
+    for brand_name in wb_keys.keys():
+        brands[brand_name] = {
+            "api_key": wb_keys[brand_name]
+        }
+    return brands
 
 @router.post("/brands/", response_model=Dict[str, str])
 async def add_new_brand(
@@ -32,6 +41,7 @@ async def add_new_brand(
     current_user: User = Depends(get_current_active_user)
 ):
     return await create_brand(db, current_user.id, brand_data)
+
 
 @router.put("/brands/{brand_name}", response_model=Dict[str, str])
 async def update_brand_api_key(
@@ -160,3 +170,25 @@ async def change_user_status(
         owner_admin=user_to_update.owner_admin,
         brands=list(user_to_update.wb_api_key.keys()) if user_to_update.wb_api_key else []
     )
+
+@router.get("/imagebb-key", response_model=Dict[str, str])
+async def read_imagebb_key(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    key = await get_imagebb_key(db, current_user.id)
+    return {"imagebb_key": key}
+
+
+@router.post("/imagebb-key", response_model=Dict[str, str])
+async def update_imagebb_key(
+    key_data: ImageBBUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    imagebb_key = key_data.imagebb_key
+    if not imagebb_key:
+        raise HTTPException(status_code=400, detail="ImageBB ключ обязателен")
+
+    updated_key = await set_imagebb_key(db, current_user.id, imagebb_key)
+    return {"imagebb_key": updated_key}
