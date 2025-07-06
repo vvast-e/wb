@@ -64,3 +64,8 @@ async def get_decrypted_wb_key(db: AsyncSession, user: User, brand: str) -> str:
     return decrypted_keys[brand]
 
 
+async def get_all_users(db: AsyncSession):
+    result = await db.execute(select(User))
+    return result.scalars().all()
+
+

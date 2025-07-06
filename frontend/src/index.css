@@ -1,0 +1,32 @@
+/* Основные цвета */
+:root {
+  --bs-green: #4ade80;
+  --bs-light-green: #86efac;
+  --bs-dark-green: #16a34a;
+  --bs-dark: #1a1a1a;
+  --bs-gray-dark: #212529;
+}
+
+/* Переопределение Bootstrap цветов */
+.bg-card {
+  background-color: var(--bs-dark);
+  border-color: var(--bs-green);
+}
+
+.text-accent {
+  color: var(--bs-green);
+}
+
+.border-accent {
+  border-color: var(--bs-green);
+}
+
+/* Анимации */
+.fade-in {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

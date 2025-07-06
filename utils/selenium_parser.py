@@ -1,0 +1,1 @@
+raise ImportError('selenium_parser.py больше не используется. Используйте wb_http_parser.py или ozon_http_parser.py')

@@ -1,12 +1,9 @@
 from zoneinfo import ZoneInfo
 from fastapi import HTTPException
-from fastapi.params import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from config import settings
 from crud.task import create_scheduled_task
-from dependencies import get_wb_api_key
 from models import User, ScheduledTask
 from models.history import History
 from datetime import datetime

@@ -7,6 +7,8 @@ from crud import task as task_crud
 from crud.history import update_history_status
 from utils.wb_api import WBAPIClient
 from dependencies import get_db, get_wb_api_key
+from crud.user import get_all_users
+from crud.analytics import parse_shop_feedbacks_crud
 
 scheduler = AsyncIOScheduler()
 
@@ -39,7 +41,7 @@ async def process_scheduled_tasks():
                     print()
                     print(result)
                 elif task.action == 'update_media':
-                    result = await wb_client.upload_media(task.nm_id, task.payload.get("media"))
+                    result = await wb_client.upload_meda(task.nm_id, task.payload.get("media"))
                     print()
                     print(result)
                 elif task.action == 'upload_media_file':
@@ -76,11 +78,37 @@ async def process_scheduled_tasks():
         await db.commit()
 
 
+async def parse_all_shops_feedbacks():
+    print(f"[SCHEDULER] >>> Запуск парсера отзывов: {datetime.now().isoformat()}")
+    async for db in get_db():
+        users = await get_all_users(db)
+        print(f"[SCHEDULER] Найдено пользователей: {len(users)}")
+        for user in users:
+            if not user.wb_api_key:
+                print(f"[SCHEDULER] Пропущен user_id={user.id} (нет wb_api_key)")
+                continue
+            for brand in (user.wb_api_key or {}).keys():
+                try:
+                    print(f"[SCHEDULER] Парсим отзывы для user_id={user.id}, brand={brand}, время: {datetime.now().isoformat()}")
+                    await parse_shop_feedbacks_crud(db, user.id, brand, max_count_per_product=1000, save_to_db=True)
+                    print(f"[SCHEDULER] Успешно: user_id={user.id}, brand={brand}")
+                except Exception as e:
+                    print(f"[SCHEDULER] Ошибка: user_id={user.id}, brand={brand}, error={e}")
+    print(f"[SCHEDULER] <<< Завершение парсера отзывов: {datetime.now().isoformat()}")
+
+
 def start_scheduler():
     scheduler.add_job(
         process_scheduled_tasks,
         'interval',
         seconds=5,
+        max_instances=1,
+        timezone='Europe/Moscow'
+    )
+    scheduler.add_job(
+        parse_all_shops_feedbacks,
+        'interval',
+        minutes=30,
         max_instances=1,
         timezone='Europe/Moscow'
     )

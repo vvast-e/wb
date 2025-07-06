@@ -16,6 +16,7 @@ from utils.wb_api import WBAPIClient
 from schemas import WBApiResponse, TaskCreate, MediaTaskRequest
 from dependencies import get_db, get_current_user_with_wb_key, get_wb_api_key
 from config import settings
+from utils.wb_nodriver_parser import parse_feedbacks_optimized
 
 router = APIRouter(tags=["Items"], prefix="/api/items")
 
@@ -332,3 +333,11 @@ def compare_values(old, new):
 
     # Для всего остального — простое сравнение
     return old == new
+
+
+@router.get("/feedbacks", tags=["Parser"])
+async def get_feedbacks(article: int = Query(..., description="Артикул товара")):
+    feedbacks = await parse_feedbacks_optimized(article)
+    if feedbacks is None:
+        raise HTTPException(status_code=500, detail="Ошибка парсинга отзывов")
+    return {"count": len(feedbacks), "feedbacks": feedbacks}

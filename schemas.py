@@ -106,7 +106,7 @@ class UserResponse(UserBase):
     brands: Optional[List[str]] = None
 
     class Config:
-        from_attributes = True
+        orm_mode = True
 
 
 # github vvast-e
@@ -159,3 +159,81 @@ class BrandUpdate(BaseModel):
 class BrandInDB(BrandBase):
     class Config:
         orm_mode = True
+
+
+class FeedbackBase(BaseModel):
+    article: int
+    brand: str
+    author: Optional[str] = None
+    rating: int
+    date: Optional[datetime] = None
+    status: Optional[str] = None
+    text: Optional[str] = None
+    main_text: Optional[str] = None
+    pros_text: Optional[str] = None
+    cons_text: Optional[str] = None
+
+
+class FeedbackCreate(FeedbackBase):
+    pass
+
+
+class FeedbackUpdate(BaseModel):
+    is_processed: Optional[int] = None
+    processing_notes: Optional[str] = None
+    sentiment_score: Optional[float] = None
+
+
+class FeedbackResponse(FeedbackBase):
+    id: int
+    sentiment_score: Optional[float] = None
+    is_negative: int
+    is_processed: int
+    processing_notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    user_id: Optional[int] = None
+    history_id: Optional[int] = None
+
+    class Config:
+        orm_mode = True
+
+
+class FeedbackAnalyticsResponse(BaseModel):
+    total_reviews: int
+    avg_rating: float
+    rating_distribution: Dict[int, int]
+    negative_count: int
+    processed_negative_count: int
+    unprocessed_negative_count: int
+    processing_rate: float
+
+
+class FeedbackListResponse(BaseModel):
+    items: List[FeedbackResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+
+
+class FeedbackFilterRequest(BaseModel):
+    article: Optional[int] = None
+    brand: Optional[str] = None
+    rating_min: Optional[int] = None
+    rating_max: Optional[int] = None
+    is_negative: Optional[int] = None
+    is_processed: Optional[int] = None
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    page: int = 1
+    per_page: int = 20
+    order_by: str = "created_at"
+    order_dir: str = "desc"
+
+
+class FeedbackParseRequest(BaseModel):
+    article: int
+    brand: str
+    max_count: Optional[int] = 1000
+    save_to_db: bool = True

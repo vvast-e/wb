@@ -25,3 +25,4 @@ class History(Base):
     action = Column(String(50), nullable=False)
 
     user = relationship("User", back_populates="history")
+    feedbacks = relationship("Feedback", back_populates="history")
