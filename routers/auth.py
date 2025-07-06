@@ -23,9 +23,9 @@ async def register(
         id=db_user.id,
         email=db_user.email,
         status=db_user.status,
-        wb_api_key=db_user.wb_api_key,
+        wb_api_key=db_user.wb_api_key if db_user.wb_api_key else None,
         created_at=db_user.created_at,
-        imagebb_key=db_user.imagebb_key
+        imagebb_key=db_user.imagebb_key if db_user.imagebb_key else None
     )
 
 

@@ -99,11 +99,12 @@ class IsAdminResponse(BaseModel):
 
 class UserResponse(UserBase):
     id: int
-    wb_api_key: Dict[str, Any]
+    wb_api_key: Optional[Dict[str, Any]] = None
     status: Optional[str] = None
     created_at: Optional[datetime] = None
     owner_admin: Optional[str] = None
     brands: Optional[List[str]] = None
+    imagebb_key: Optional[str] = None
 
     class Config:
         orm_mode = True
