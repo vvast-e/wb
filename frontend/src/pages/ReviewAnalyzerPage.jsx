@@ -22,14 +22,14 @@ const ReviewAnalyzerPage = () => {
         fetchShops();
     }, []); // Только загрузка магазинов при первой загрузке
 
-        // Применяем URL параметры к фильтрам
+    // Применяем URL параметры к фильтрам
     useEffect(() => {
         const shopFromUrl = searchParams.get('shop');
         const productFromUrl = searchParams.get('product');
         const negativeFromUrl = searchParams.get('negative');
-        
+
         console.log('URL параметры:', { shopFromUrl, productFromUrl, negativeFromUrl });
-        
+
         setFilters(prevFilters => ({
             ...prevFilters,
             shop: shopFromUrl || '',
@@ -53,6 +53,12 @@ const ReviewAnalyzerPage = () => {
             setProducts([]);
         }
     }, [filters.shop]);
+
+    useEffect(() => {
+        if (reviews && reviews.length > 0) {
+            console.log('Отзывы на странице:', reviews.map(r => r.id), reviews);
+        }
+    }, [reviews]);
 
     const fetchShops = async () => {
         try {
@@ -93,10 +99,19 @@ const ReviewAnalyzerPage = () => {
             if (filters.rating) params.rating = Number(filters.rating);
             if (filters.shop) params.shop = filters.shop;
             if (filters.product) params.product = filters.product;
-            if (filters.dateFrom) params.date_from = filters.dateFrom;
-            if (filters.dateTo) params.date_to = filters.dateTo;
+            if (filters.lastNDays && Number(filters.lastNDays) > 0) {
+                const now = new Date();
+                const from = new Date(now.getTime() - Number(filters.lastNDays) * 24 * 60 * 60 * 1000);
+                params.date_from = from.toISOString().slice(0, 10);
+            } else {
+                if (filters.dateFrom) params.date_from = filters.dateFrom;
+                if (filters.dateTo) params.date_to = filters.dateTo;
+            }
             if (filters.negative !== '' && filters.negative !== null && filters.negative !== undefined) {
                 params.negative = filters.negative === 'true' ? true : filters.negative === 'false' ? false : undefined;
+            }
+            if (filters.deleted !== '' && filters.deleted !== null && filters.deleted !== undefined) {
+                params.deleted = filters.deleted === 'true' ? true : filters.deleted === 'false' ? false : undefined;
             }
 
             console.log('Отправляем запрос с фильтрами:', params);
@@ -154,6 +169,24 @@ const ReviewAnalyzerPage = () => {
         return '★'.repeat(num);
     };
 
+    // Функция для парсинга текста отзыва на блоки
+    const parseReviewBlocks = (text) => {
+        if (!text) return {};
+        const blocks = {};
+        const regex = /(?:Комментарий: ([\s\S]*?))?(?:\n)?(?:Достоинства: ([\s\S]*?))?(?:\n)?(?:Недостатки: ([\s\S]*))?$/m;
+        const match = text.match(regex);
+        let found = false;
+        if (match) {
+            if (match[2] && match[2].trim()) { blocks.pros = match[2].trim(); found = true; }
+            if (match[3] && match[3].trim()) { blocks.cons = match[3].trim(); found = true; }
+            if (match[1] && match[1].trim()) { blocks.comment = match[1].trim(); found = true; }
+        }
+        if (!found) {
+            blocks.comment = text;
+        }
+        return blocks;
+    };
+
     if (loading && reviews.length === 0) {
         return (
             <Container className="d-flex justify-content-center mt-5">
@@ -188,7 +221,7 @@ const ReviewAnalyzerPage = () => {
             </div>
 
             {reviews.map((review) => (
-                <Card key={review.id} className="mb-3 bg-dark border-success">
+                <Card key={`${review.id}_${pagination.page}`} className="mb-3 bg-dark border-success">
                     <Card.Body>
                         <Row>
                             <Col md={8}>
@@ -223,9 +256,16 @@ const ReviewAnalyzerPage = () => {
                                     <strong>Товар:</strong> {review.product_name?.split(' ')[1] || review.product_name}
                                 </p>
 
-                                <p className="text-light mb-2">
-                                    {review.text}
-                                </p>
+                                {/* Новый раздельный вывод */}
+                                {review.pros_text && (
+                                    <p className="text-light mb-2"><strong>Достоинства:</strong> {review.pros_text.replace(/^Комментарий:/i, '').trim()}</p>
+                                )}
+                                {review.cons_text && (
+                                    <p className="text-light mb-2"><strong>Недостатки:</strong> {review.cons_text.replace(/^Комментарий:/i, '').trim()}</p>
+                                )}
+                                {review.main_text && (
+                                    <p className="text-light mb-2"><strong>Комментарий:</strong> {review.main_text.replace(/^Комментарий:/i, '').trim()}</p>
+                                )}
 
                                 <p className="text-light mb-2">
                                     <strong>Дата:</strong> {formatDate(review.created_at)}

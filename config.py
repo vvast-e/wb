@@ -17,6 +17,10 @@ class Settings:
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "5760"))
     WB_API_BASE_URL: str = os.getenv("WB_BASE_URL", "https://content-api.wildberries.ru")
     ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY")
+    
+    # Telegram Bot настройки
+    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_WEBHOOK_URL: str = os.getenv("TELEGRAM_WEBHOOK_URL", "")
 
 
 settings = Settings()

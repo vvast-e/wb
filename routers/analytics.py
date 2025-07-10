@@ -34,13 +34,14 @@ async def get_reviews_with_filters(
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     negative: Optional[bool] = Query(None),
+    deleted: Optional[bool] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user_with_wb_key)
 ):
     """Получение отзывов с расширенной фильтрацией"""
     return await get_reviews_with_filters_crud(
         db, current_user.id, page, per_page, search, 
-        rating, shop, product, date_from, date_to, negative
+        rating, shop, product, date_from, date_to, negative, deleted
     )
 
 

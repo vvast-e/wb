@@ -273,3 +273,43 @@ class WBAPIClient:
                 error=f"Ошибка при поиске: {str(e)}"
             )
 
+    async def get_all_cards(self, with_photo: int = -1, limit: int = 100):
+        all_cards = []
+        cursor = {}
+        while True:
+            payload = {
+                "settings": {
+                    "cursor": {
+                        "limit": limit,
+                        **cursor
+                    },
+                    "filter": {
+                        "withPhoto": with_photo
+                    }
+                }
+            }
+            response = await self._make_request(
+                method="POST",
+                endpoint="/content/v2/get/cards/list",
+                json=payload
+            )
+            if not response.success:
+                break  # или обработайте ошибку
+
+            data = response.data or {}
+            cards = data.get("cards", [])
+            all_cards.extend(cards)
+
+            # Если карточек меньше лимита — это последняя страница
+            if len(cards) < limit:
+                break
+
+            # Получаем параметры для следующего запроса
+            last_card = cards[-1]
+            cursor = {
+                "updatedAt": last_card.get("updatedAt"),
+                "nmID": last_card.get("nmID")
+            }
+
+        return all_cards
+

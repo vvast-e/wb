@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from typing import List, Dict, Any
 from utils.nodriver import Browser
 
@@ -108,6 +109,10 @@ async def _http_fallback_parser(article: int, max_count: int) -> List[Dict[str, 
                             
                             # Обрабатываем дату - убираем часовой пояс если есть
                             date_str = fb.get('updatedDate', '')
+                            # Логируем дату в файл для анализа
+                            log_path = os.path.join(os.path.dirname(__file__), 'wb_api_dates.log')
+                            with open(log_path, 'a', encoding='utf-8') as logf:
+                                logf.write(date_str + '\n')
                             if date_str and 'T' in date_str:
                                 # Убираем часовой пояс из ISO строки
                                 if '+' in date_str:
@@ -141,203 +146,220 @@ async def parse_feedbacks_optimized(article: int, max_count: int = 1000) -> List
     """
     Асинхронный парсер отзывов Wildberries с автоматическим выбором метода
     """
-    # Сначала пробуем HTTP парсер (он быстрее и стабильнее)
-    logger.info("Пробуем HTTP парсер...")
+    logger.info(f"=== НАЧАЛО ПАРСИНГА ДЛЯ АРТИКУЛА {article} ===")
+    logger.info(f"Максимальное количество отзывов: {max_count}")
+    try:
+        import aiohttp
+        logger.info("aiohttp доступен")
+    except ImportError as e:
+        logger.error(f"aiohttp не установлен: {e}")
+        return []
+    logger.info("Используем HTTP парсер...")
     http_feedbacks = await _http_fallback_parser(article, max_count)
-    
     if http_feedbacks:
         logger.info(f"HTTP парсер успешно нашел {len(http_feedbacks)} отзывов")
         return http_feedbacks
+    else:
+        logger.warning("HTTP парсер не нашел отзывов")
+        return []
     
-    # Если HTTP не сработал, пробуем nodriver
-    logger.info("HTTP парсер не сработал, пробуем nodriver...")
-    
-    all_feedbacks = []
-    seen = set()
-    
-    try:
-        # Пробуем запустить браузер с автоматическим поиском Chrome
-        logger.info("Запускаем Browser...")
-        async with Browser(headless=True) as browser:
-            logger.info("Browser запущен, создаем вкладку...")
-            # Создаем вкладку
-            tab = await browser.create_tab()
-            if not tab:
-                logger.error("Не удалось создать вкладку")
-                logger.info("Переключаемся на HTTP fallback парсер")
-                return await _http_fallback_parser(article, max_count)
-            
-            # Переходим на страницу отзывов
-            url = f"https://www.wildberries.ru/catalog/{article}/feedbacks?sort=newest"
-            logger.info(f"Переходим на URL: {url}")
-            await tab.navigate(url)
-            logger.info("Ожидаем загрузки страницы...")
-            await tab.wait_for_load()
-            
-            # Ждем появления отзывов
-            logger.info("Ждем появления отзывов...")
-            await asyncio.sleep(3)
-            
-            # Включаем логирование консоли
-            await tab.evaluate("""
-                console.log('=== НАЧАЛО ЛОГИРОВАНИЯ ===');
-                console.log('URL:', window.location.href);
-                console.log('Title:', document.title);
-                console.log('Body length:', document.body.innerHTML.length);
-            """)
-            
-            last_count = 0
-            while len(all_feedbacks) < max_count:
-                # Парсим отзывы через JavaScript
-                logger.info("Выполняем JavaScript для парсинга отзывов...")
-                reviews_batch = await tab.evaluate("""
-                    const reviews = [];
-                    
-                    // Логируем структуру страницы для отладки
-                    console.log('Document body:', document.body.innerHTML.substring(0, 1000));
-                    
-                    // Пробуем разные селекторы
-                    let items = document.querySelectorAll('.comments__item.feedback');
-                    if (items.length === 0) {
-                        items = document.querySelectorAll('[data-testid="feedback-item"]');
-                    }
-                    if (items.length === 0) {
-                        items = document.querySelectorAll('.feedback-item');
-                    }
-                    if (items.length === 0) {
-                        items = document.querySelectorAll('.review-item');
-                    }
-                    if (items.length === 0) {
-                        items = document.querySelectorAll('.comment-item');
-                    }
-                    
-                    console.log('Найдено элементов отзывов:', items.length);
-                    
-                    for (let i = 0; i < items.length; i++) {
-                        const item = items[i];
-                        console.log('Обрабатываем элемент:', item.outerHTML.substring(0, 200));
-                        
-                        // Получаем рейтинг (пробуем разные селекторы)
-                        let rating = 0;
-                        const ratingEl = item.querySelector('.feedback__rating') || 
-                                       item.querySelector('.rating') || 
-                                       item.querySelector('.stars') ||
-                                       item.querySelector('[data-rating]');
-                        
-                        if (ratingEl) {
-                            const ratingClass = ratingEl.className || '';
-                            const ratingMatch = ratingClass.match(/star(\\d)/);
-                            if (ratingMatch) {
-                                rating = parseInt(ratingMatch[1]);
-                            } else {
-                                const dataRating = ratingEl.getAttribute('data-rating');
-                                if (dataRating) rating = parseInt(dataRating);
-                            }
-                        }
-                        
-                        // Получаем автора
-                        let author = 'Аноним';
-                        const authorEl = item.querySelector('.feedback__header') || 
-                                       item.querySelector('.author') || 
-                                       item.querySelector('.user-name') ||
-                                       item.querySelector('[data-author]');
-                        if (authorEl) {
-                            author = authorEl.textContent.trim();
-                        }
-                        
-                        // Получаем дату
-                        let date = '';
-                        const dateEl = item.querySelector('.feedback__date') || 
-                                     item.querySelector('.date') || 
-                                     item.querySelector('.review-date');
-                        if (dateEl) {
-                            date = dateEl.getAttribute('content') || dateEl.textContent.trim();
-                        }
-                        
-                        // Получаем текст отзыва
-                        let mainText = '';
-                        const mainTextEl = item.querySelector('.feedback__text--item:not(.feedback__text--item-pro):not(.feedback__text--item-contra)') ||
-                                         item.querySelector('.review-text') ||
-                                         item.querySelector('.comment-text') ||
-                                         item.querySelector('.text');
-                        if (mainTextEl) mainText = mainTextEl.innerText.trim();
-                        
-                        let prosText = '';
-                        const prosEl = item.querySelector('.feedback__text--item-pro') ||
-                                     item.querySelector('.pros') ||
-                                     item.querySelector('.advantages');
-                        if (prosEl) prosText = prosEl.innerText.replace(/Достоинства?:/, '').trim();
-                        
-                        let consText = '';
-                        const consEl = item.querySelector('.feedback__text--item-contra') ||
-                                     item.querySelector('.cons') ||
-                                     item.querySelector('.disadvantages');
-                        if (consEl) consText = consEl.innerText.replace(/Недостатки?:/, '').trim();
-                        
-                        // Формируем полный текст
-                        let fullText = '';
-                        if (mainText) fullText += mainText + '\\n';
-                        if (prosText) fullText += 'Достоинства: ' + prosText + '\\n';
-                        if (consText) fullText += 'Недостатки: ' + consText;
-                        
-                        // Получаем статус
-                        let status = 'Без подтверждения';
-                        const statusEl = item.querySelector('.feedback__state--text') ||
-                                       item.querySelector('.status') ||
-                                       item.querySelector('.verified');
-                        if (statusEl) {
-                            status = statusEl.innerText || statusEl.textContent;
-                        }
-                        
-                        reviews.push({
-                            author: author,
-                            date: date,
-                            status: status,
-                            rating: rating,
-                            text: fullText.trim()
-                        });
-                    }
-                    
-                    console.log('Собрано отзывов:', reviews.length);
-                    return reviews;
-                """)
-                
-                logger.info(f"JavaScript вернул: {reviews_batch}")
-                if not reviews_batch:
-                    logger.warning("Отзывы не найдены на странице")
-                    break
-                
-                # Обрабатываем новые отзывы
-                for fb in reviews_batch:
-                    key = (fb['author'], fb['date'], fb['text'])
-                    if key not in seen:
-                        all_feedbacks.append(fb)
-                        seen.add(key)
-                        logger.info(f"Добавлен отзыв от {fb['author']}, рейтинг: {fb['rating']}")
-                
-                # Проверяем, есть ли новые отзывы
-                if len(all_feedbacks) == last_count:
-                    logger.info("Новых отзывов не найдено, завершаем парсинг")
-                    break
-                
-                last_count = len(all_feedbacks)
-                
-                # Скроллим вниз для загрузки новых отзывов
-                await tab.evaluate("""
-                    window.scrollTo(0, document.body.scrollHeight);
-                """)
-                
-                await asyncio.sleep(1)
-                
-                if len(all_feedbacks) >= max_count:
-                    logger.info(f"Достигнут лимит отзывов: {max_count}")
-                    break
-    
-    except Exception as e:
-        logger.error(f"Ошибка в парсере nodriver: {e}")
-        logger.info("Переключаемся на HTTP fallback парсер")
-        # Fallback на HTTP парсер
-        return await _http_fallback_parser(article, max_count)
+    # Отключаем nodriver для сервера (проблемы с браузером)
+    # logger.info("HTTP парсер не сработал, пробуем nodriver...")
+    # 
+    # # Проверяем доступность nodriver
+    # try:
+    #     from utils.nodriver import Browser
+    #     logger.info("nodriver доступен")
+    # except ImportError as e:
+    #     logger.error(f"nodriver не установлен: {e}")
+    #     return []
+    # 
+    # all_feedbacks = []
+    # seen = set()
+    # 
+    # try:
+    #     # Пробуем запустить браузер с автоматическим поиском Chrome
+    #     logger.info("Запускаем Browser...")
+    #     async with Browser(headless=True) as browser:
+    #         logger.info("Browser запущен, создаем вкладку...")
+    #         # Создаем вкладку
+    #         tab = await browser.create_tab()
+    #         if not tab:
+    #             logger.error("Не удалось создать вкладку")
+    #             logger.info("Переключаемся на HTTP fallback парсер")
+    #             return await _http_fallback_parser(article, max_count)
+    #         
+    #         # Переходим на страницу отзывов
+    #         url = f"https://www.wildberries.ru/catalog/{article}/feedbacks?sort=newest"
+    #         logger.info(f"Переходим на URL: {url}")
+    #         await tab.navigate(url)
+    #         logger.info("Ожидаем загрузки страницы...")
+    #         await tab.wait_for_load()
+    #         
+    #         # Ждем появления отзывов
+    #         logger.info("Ждем появления отзывов...")
+    #         await asyncio.sleep(3)
+    #         
+    #         # Включаем логирование консоли
+    #         await tab.evaluate("""
+    #             console.log('=== НАЧАЛО ЛОГИРОВАНИЯ ===');
+    #             console.log('URL:', window.location.href);
+    #             console.log('Title:', document.title);
+    #             console.log('Body length:', document.body.innerHTML.length);
+    #         """)
+    #         
+    #         last_count = 0
+    #         while len(all_feedbacks) < max_count:
+    #             # Парсим отзывы через JavaScript
+    #             logger.info("Выполняем JavaScript для парсинга отзывов...")
+    #             reviews_batch = await tab.evaluate("""
+    #                 const reviews = [];
+    #                 
+    #                 // Логируем структуру страницы для отладки
+    #                 console.log('Document body:', document.body.innerHTML.substring(0, 1000));
+    #                 
+    #                 // Пробуем разные селекторы
+    #                 let items = document.querySelectorAll('.comments__item.feedback');
+    #                 if (items.length === 0) {
+    #                     items = document.querySelectorAll('[data-testid="feedback-item"]');
+    #                 }
+    #                 if (items.length === 0) {
+    #                     items = document.querySelectorAll('.feedback-item');
+    #                 }
+    #                 if (items.length === 0) {
+    #                     items = document.querySelectorAll('.review-item');
+    #                 }
+    #                 if (items.length === 0) {
+    #                     items = document.querySelectorAll('.comment-item');
+    #                 }
+    #                 
+    #                 console.log('Найдено элементов отзывов:', items.length);
+    #                 
+    #                 for (let i = 0; i < items.length; i++) {
+    #                     const item = items[i];
+    #                     console.log('Обрабатываем элемент:', item.outerHTML.substring(0, 200));
+    #                     
+    #                     // Получаем рейтинг (пробуем разные селекторы)
+    #                     let rating = 0;
+    #                     const ratingEl = item.querySelector('.feedback__rating') || 
+    #                                    item.querySelector('.rating') || 
+    #                                    item.querySelector('.stars') ||
+    #                                    item.querySelector('[data-rating]');
+    #                     
+    #                     if (ratingEl) {
+    #                         const ratingClass = ratingEl.className || '';
+    #                         const ratingMatch = ratingClass.match(/star(\\d)/);
+    #                         if (ratingMatch) {
+    #                             rating = parseInt(ratingMatch[1]);
+    #                         } else {
+    #                             const dataRating = ratingEl.getAttribute('data-rating');
+    #                             if (dataRating) rating = parseInt(dataRating);
+    #                         }
+    #                     }
+    #                     
+    #                     // Получаем автора
+    #                     let author = 'Аноним';
+    #                     const authorEl = item.querySelector('.feedback__header') || 
+    #                                    item.querySelector('.author') || 
+    #                                    item.querySelector('.user-name') ||
+    #                                    item.querySelector('[data-author]');
+    #                     if (authorEl) {
+    #                         author = authorEl.textContent.trim();
+    #                     }
+    #                     
+    #                     // Получаем дату
+    #                     let date = '';
+    #                     const dateEl = item.querySelector('.feedback__date') || 
+    #                                   item.querySelector('.date') || 
+    #                                   item.querySelector('.review-date');
+    #                     if (dateEl) {
+    #                         date = dateEl.getAttribute('content') || dateEl.textContent.trim();
+    #                     }
+    #                     
+    #                     // Получаем текст отзыва
+    #                     let mainText = '';
+    #                     const mainTextEl = item.querySelector('.feedback__text--item:not(.feedback__text--item-pro):not(.feedback__text--item-contra)') ||
+    #                                      item.querySelector('.review-text') ||
+    #                                      item.querySelector('.comment-text') ||
+    #                                      item.querySelector('.text');
+    #                     if (mainTextEl) mainText = mainTextEl.innerText.trim();
+    #                     
+    #                     let prosText = '';
+    #                     const prosEl = item.querySelector('.feedback__text--item-pro') ||
+    #                                  item.querySelector('.pros') ||
+    #                                  item.querySelector('.advantages');
+    #                     if (prosEl) prosText = prosEl.innerText.replace(/Достоинства?:/, '').trim();
+    #                     
+    #                     let consText = '';
+    #                     const consEl = item.querySelector('.feedback__text--item-contra') ||
+    #                                  item.querySelector('.cons') ||
+    #                                  item.querySelector('.disadvantages');
+    #                     if (consEl) consText = consEl.innerText.replace(/Недостатки?:/, '').trim();
+    #                     
+    #                     // Формируем полный текст
+    #                     let fullText = '';
+    #                     if (mainText) fullText += mainText + '\\n';
+    #                     if (prosText) fullText += 'Достоинства: ' + prosText + '\\n';
+    #                     if (consText) fullText += 'Недостатки: ' + consText;
+    #                     
+    #                     // Получаем статус
+    #                     let status = 'Без подтверждения';
+    #                     const statusEl = item.querySelector('.feedback__state--text') ||
+    #                                    item.querySelector('.status') ||
+    #                                    item.querySelector('.verified');
+    #                     if (statusEl) {
+    #                         status = statusEl.innerText || statusEl.textContent;
+    #                     }
+    #                     
+    #                     reviews.push({
+    #                         author: author,
+    #                         date: date,
+    #                         status: status,
+    #                         rating: rating,
+    #                         text: fullText.trim()
+    #                     });
+    #                 }
+    #                 
+    #                 console.log('Собрано отзывов:', reviews.length);
+    #                 return reviews;
+    #             """)
+    #             
+    #             logger.info(f"JavaScript вернул: {reviews_batch}")
+    #             if not reviews_batch:
+    #                 logger.warning("Отзывы не найдены на странице")
+    #                 break
+    #             
+    #             # Обрабатываем новые отзывы
+    #             for fb in reviews_batch:
+    #                 key = (fb['author'], fb['date'], fb['text'])
+    #                 if key not in seen:
+    #                     all_feedbacks.append(fb)
+    #                     seen.add(key)
+    #                     logger.info(f"Добавлен отзыв от {fb['author']}, рейтинг: {fb['rating']}")
+    #             
+    #             # Проверяем, есть ли новые отзывы
+    #             if len(all_feedbacks) == last_count:
+    #                 logger.info("Новых отзывов не найдено, завершаем парсинг")
+    #                 break
+    #             
+    #             last_count = len(all_feedbacks)
+    #             
+    #             # Скроллим вниз для загрузки новых отзывов
+    #             await tab.evaluate("""
+    #                 window.scrollTo(0, document.body.scrollHeight);
+    #             """)
+    #             
+    #             await asyncio.sleep(1)
+    #             
+    #             if len(all_feedbacks) >= max_count:
+    #                 logger.info(f"Достигнут лимит отзывов: {max_count}")
+    #                 break
+    #     
+    # except Exception as e:
+    #     logger.error(f"Ошибка в парсере nodriver: {e}")
+    #     logger.info("Переключаемся на HTTP fallback парсер")
+    #     # Fallback на HTTP парсер
+    #     return await _http_fallback_parser(article, max_count)
     
     logger.info(f"Всего собрано отзывов: {len(all_feedbacks)}")
     return all_feedbacks[:max_count] 

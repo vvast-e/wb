@@ -1,6 +1,6 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date, timedelta
-from sqlalchemy import select, func, and_, or_, desc, asc
+from sqlalchemy import select, func, and_, or_, desc, asc, case, literal_column, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -52,7 +52,8 @@ async def get_reviews_with_filters_crud(
         product: Optional[str] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
-        negative: Optional[bool] = None
+        negative: Optional[bool] = None,
+        deleted: Optional[bool] = None
 ) -> Dict[str, Any]:
     """Получение отзывов с расширенной фильтрацией"""
     offset = (page - 1) * per_page
@@ -86,13 +87,17 @@ async def get_reviews_with_filters_crud(
             query = query.where(Feedback.article == product)
 
     if date_from:
-        query = query.where(Feedback.date >= date_from)
+        query = query.where(func.coalesce(Feedback.date, Feedback.created_at) >= date_from)
 
     if date_to:
-        query = query.where(Feedback.date <= date_to)
+        query = query.where(func.coalesce(Feedback.date, Feedback.created_at) <= date_to)
 
     if negative is not None:
         query = query.where(Feedback.is_negative == (1 if negative else 0))
+
+    # Фильтрация по удалённости
+    if deleted is not None:
+        query = query.where(Feedback.is_deleted == deleted)
 
     # Получаем общее количество
     count_query = select(func.count()).select_from(query.subquery())
@@ -100,7 +105,7 @@ async def get_reviews_with_filters_crud(
     total = total_result.scalar()
 
     # Получаем отзывы с пагинацией
-    query = query.order_by(desc(Feedback.created_at)).offset(offset).limit(per_page)
+    query = query.order_by(desc(func.coalesce(Feedback.date, Feedback.created_at)), desc(Feedback.id)).offset(offset).limit(per_page)
     result = await db.execute(query)
     feedbacks = result.scalars().all()
 
@@ -115,14 +120,17 @@ async def get_reviews_with_filters_crud(
         else:
             sentiment = "neutral"
 
+        dt = feedback.date if feedback.date else feedback.created_at
         reviews.append({
             "id": feedback.id,
-            "text": feedback.text or feedback.main_text or "",
+            "main_text": feedback.main_text or "",
+            "pros_text": feedback.pros_text or "",
+            "cons_text": feedback.cons_text or "",
             "rating": feedback.rating,
             "author_name": feedback.author or "Аноним",
             "product_name": f"Товар {feedback.article}",
             "shop_name": feedback.brand,
-            "created_at": feedback.date.isoformat() if feedback.date else feedback.created_at.isoformat(),
+            "created_at": dt.isoformat() if dt else None,
             "photos": [],  # Пока нет фото в модели
             "sentiment": sentiment,
             "is_processed": bool(feedback.is_processed),
@@ -313,6 +321,7 @@ async def get_shop_data_crud(
             "1": sum(1 for r in ratings_period if r == 1)
         }
         products.append({
+            "article": article_key,
             "name": f"Товар {article_key}",
             "market_rating_all_time": round(product_market_rating_all, 2),
             "market_rating": round(product_market_rating_period, 2),

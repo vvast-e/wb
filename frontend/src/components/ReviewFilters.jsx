@@ -3,13 +3,14 @@ import { Form, Row, Col, Button } from 'react-bootstrap';
 
 const ReviewFilters = ({ onFiltersChange, shops = [], products = [], initialFilters = {} }) => {
     const [filters, setFilters] = useState({
-        search: '',
         rating: '',
         shop: '',
         product: '',
         dateFrom: '',
         dateTo: '',
+        lastNDays: '',
         negative: '',
+        deleted: '',
         ...initialFilters
     });
 
@@ -47,49 +48,57 @@ const ReviewFilters = ({ onFiltersChange, shops = [], products = [], initialFilt
         });
     };
 
+    const handleLastNDaysChange = (value) => {
+        setFilters(prev => {
+            const newFilters = {
+                ...prev,
+                lastNDays: value,
+                dateFrom: '',
+                dateTo: ''
+            };
+            setTimeout(() => onFiltersChange(newFilters), 0);
+            return newFilters;
+        });
+    };
+
+    const handleDateChange = (name, value) => {
+        setFilters(prev => {
+            const newFilters = {
+                ...prev,
+                [name]: value,
+                lastNDays: ''
+            };
+            setTimeout(() => onFiltersChange(newFilters), 0);
+            return newFilters;
+        });
+    };
+
     const handleReset = () => {
         const resetFilters = {
-            search: '',
             rating: '',
             shop: '',
             product: '',
             dateFrom: '',
             dateTo: '',
-            negative: ''
+            lastNDays: '',
+            negative: '',
+            deleted: ''
         };
         setFilters(resetFilters);
         onFiltersChange(resetFilters);
     };
 
     return (
-        <div className="p-3">
+        <div className="p-3 position-relative">
             <h5 className="text-light mb-3">Фильтры отзывов</h5>
+            <Button
+                variant="outline-warning"
+                onClick={handleReset}
+                className="position-absolute top-0 end-0"
+            >
+                Сбросить фильтры
+            </Button>
             <Row className="g-3">
-                <Col md={3}>
-                    <Form.Label className="text-light">Поиск</Form.Label>
-                    <Form.Control
-                        type="text"
-                        placeholder="Поиск по тексту..."
-                        value={filters.search}
-                        onChange={(e) => handleFilterChange('search', e.target.value)}
-                        className="bg-dark border-success text-light"
-                    />
-                </Col>
-                <Col md={2}>
-                    <Form.Label className="text-light">Рейтинг</Form.Label>
-                    <Form.Select
-                        value={filters.rating}
-                        onChange={(e) => handleFilterChange('rating', e.target.value)}
-                        className="bg-dark border-success text-light"
-                    >
-                        <option value="">Все</option>
-                        <option value="1">1 звезда</option>
-                        <option value="2">2 звезды</option>
-                        <option value="3">3 звезды</option>
-                        <option value="4">4 звезды</option>
-                        <option value="5">5 звезд</option>
-                    </Form.Select>
-                </Col>
                 <Col md={2}>
                     <Form.Label className="text-light">Магазин</Form.Label>
                     <Form.Select
@@ -120,6 +129,21 @@ const ReviewFilters = ({ onFiltersChange, shops = [], products = [], initialFilt
                     </Form.Select>
                 </Col>
                 <Col md={2}>
+                    <Form.Label className="text-light">Рейтинг</Form.Label>
+                    <Form.Select
+                        value={filters.rating}
+                        onChange={(e) => handleFilterChange('rating', e.target.value)}
+                        className="bg-dark border-success text-light"
+                    >
+                        <option value="">Все</option>
+                        <option value="1">1 звезда</option>
+                        <option value="2">2 звезды</option>
+                        <option value="3">3 звезды</option>
+                        <option value="4">4 звезды</option>
+                        <option value="5">5 звезд</option>
+                    </Form.Select>
+                </Col>
+                <Col md={2}>
                     <Form.Label className="text-light">Негативность</Form.Label>
                     <Form.Select
                         value={filters.negative}
@@ -131,23 +155,26 @@ const ReviewFilters = ({ onFiltersChange, shops = [], products = [], initialFilt
                         <option value="false">Только позитивные</option>
                     </Form.Select>
                 </Col>
-                <Col md={3} className="d-flex align-items-end">
-                    <Button
-                        variant="outline-warning"
-                        onClick={handleReset}
-                        className="w-100"
+                <Col md={2}>
+                    <Form.Label className="text-light">Удалён</Form.Label>
+                    <Form.Select
+                        value={filters.deleted}
+                        onChange={(e) => handleFilterChange('deleted', e.target.value)}
+                        className="bg-dark border-success text-light"
                     >
-                        Сбросить фильтры
-                    </Button>
+                        <option value="">Все</option>
+                        <option value="false">Не удалённые</option>
+                        <option value="true">Только удалённые</option>
+                    </Form.Select>
                 </Col>
             </Row>
-            <Row className="g-3 mt-2">
+            <Row className="g-3 mt-2 align-items-end">
                 <Col md={3}>
                     <Form.Label className="text-light">Дата с</Form.Label>
                     <Form.Control
                         type="date"
                         value={filters.dateFrom}
-                        onChange={(e) => handleFilterChange('dateFrom', e.target.value)}
+                        onChange={(e) => handleDateChange('dateFrom', e.target.value)}
                         className="bg-dark border-success text-light"
                     />
                 </Col>
@@ -156,7 +183,18 @@ const ReviewFilters = ({ onFiltersChange, shops = [], products = [], initialFilt
                     <Form.Control
                         type="date"
                         value={filters.dateTo}
-                        onChange={(e) => handleFilterChange('dateTo', e.target.value)}
+                        onChange={(e) => handleDateChange('dateTo', e.target.value)}
+                        className="bg-dark border-success text-light"
+                    />
+                </Col>
+                <Col md={3}>
+                    <Form.Label className="text-light">Последние N дней</Form.Label>
+                    <Form.Control
+                        type="number"
+                        min="1"
+                        placeholder="Например, 7"
+                        value={filters.lastNDays}
+                        onChange={(e) => handleLastNDaysChange(e.target.value)}
                         className="bg-dark border-success text-light"
                     />
                 </Col>

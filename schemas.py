@@ -238,3 +238,57 @@ class FeedbackParseRequest(BaseModel):
     brand: str
     max_count: Optional[int] = 1000
     save_to_db: bool = True
+
+
+# Схемы для магазинов и цен
+class ShopBase(BaseModel):
+    name: str
+    wb_name: str
+
+
+class ShopCreate(ShopBase):
+    pass
+
+
+class ShopResponse(ShopBase):
+    id: int
+    user_id: int
+    is_active: bool
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+
+class PriceHistoryBase(BaseModel):
+    vendor_code: str
+    shop_id: int
+    nm_id: int
+    new_price: int
+    old_price: Optional[int] = None
+
+
+class PriceHistoryCreate(PriceHistoryBase):
+    pass
+
+
+class PriceHistoryResponse(PriceHistoryBase):
+    id: int
+    price_date: datetime
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+
+
+class TelegramUser(BaseModel):
+    telegram_id: int
+    user_id: int
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        orm_mode = True

@@ -1,0 +1,20 @@
+[Unit]
+Description=Telegram Bot for WB Price Monitoring
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/wb_api
+Environment=PATH=/var/www/wb_api/.venv/bin
+Environment=PYTHONPATH=/var/www/wb_api
+ExecStart=/var/www/wb_api/.venv/bin/python run_telegram_bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target 

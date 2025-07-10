@@ -205,21 +205,38 @@ def parse_wb_date(date_str: str) -> datetime:
         if not month:
             print(f"[WARN] Неизвестный месяц: {month_str} в дате: '{date_str}'")
             return None
+        now = datetime.now()
+        year_was_missing = not year
         if not year:
-            from datetime import datetime as dt
-            year = str(dt.now().year)
+            year = str(now.year)
         parsed_date_str = f"{year}-{month}-{day} {hour}:{minute}"
         print("-" * 50)
         print(parsed_date_str)
         try:
-            return datetime.strptime(parsed_date_str, "%Y-%m-%d %H:%M")
+            parsed = datetime.strptime(parsed_date_str, "%Y-%m-%d %H:%M")
+            # Если год был подставлен и дата в будущем — уменьшить год на 1
+            if year_was_missing and parsed > now:
+                parsed = parsed.replace(year=parsed.year - 1)
+            if parsed > now:
+                print(f"[WARN] Будущая дата обнаружена: {parsed}, отзыв будет пропущен")
+                return None
+            return parsed
         except Exception as e:
             print(f"[ERROR] strptime fail for '{parsed_date_str}': {e}")
             return None
 
     try:
         from dateutil import parser
-        return parser.parse(date_str, dayfirst=True)
+        if re.match(r'^\d{4}-\d{2}-\d{2}T', date_str):
+            # ISO-формат: год-месяц-день
+            parsed = parser.parse(date_str)
+        else:
+            parsed = parser.parse(date_str, dayfirst=True)
+        now = datetime.now()
+        if parsed > now:
+            print(f"[WARN] Будущая дата обнаружена: {parsed}, отзыв будет пропущен")
+            return None
+        return parsed
     except Exception as e:
         #print(f"[WARN] Ошибка при парсинге даты '{date_str}': {e}")
         return None

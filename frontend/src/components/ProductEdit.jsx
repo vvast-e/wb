@@ -40,6 +40,9 @@ export default function ProductEdit() {
         return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
     };
 
+    // Добавляем функцию проверки видео
+    const isVideoUrl = url => url && (url.endsWith('.mp4') || url.endsWith('.m3u8') || url.endsWith('.webm'));
+
     useEffect(() => {
         const fetchData = async () => {
             try {
@@ -251,7 +254,7 @@ export default function ProductEdit() {
     if (loading) return <Container className="py-5 text-center"><Spinner animation="border" /></Container>;
     if (error) return <Container className="py-5"><Alert variant="danger">{error}</Alert></Container>;
 
-    const hasVideo = card.video;
+    const hasVideo = card.video && isVideoUrl(card.video);
 
     return (
         <Container className="py-4">

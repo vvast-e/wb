@@ -31,16 +31,8 @@ async def get_items(
 
     try:
         wb_client = WBAPIClient(api_key=wb_api_key)
-        result = await wb_client.get_cards_list()
-
-        if not result.success:
-            raise HTTPException(
-                status_code=400,
-                detail=result.error or "Не удалось получить карточки с WB API"
-            )
-
-        return result
-
+        cards = await wb_client.get_all_cards()
+        return WBApiResponse(success=True, data={"cards": cards, "total": len(cards)})
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -53,9 +45,18 @@ async def get_item(
         db: AsyncSession = Depends(get_db)
 ):
     wb_client = WBAPIClient(api_key=wb_api_key)
-    result = await wb_client.get_card_by_nm(nm_id)
-
-    return result
+    cards = await wb_client.get_all_cards()
+    if not cards:
+        return WBApiResponse(success=False, error="Карточка не найдена")
+    for card in cards:
+        if card.get("nmID") == nm_id:
+            # Гарантируем, что photos и video попадут в ответ
+            result = dict(card)
+            result["photos"] = card.get("photos", [])
+            if "video" in card:
+                result["video"] = card["video"]
+            return WBApiResponse(success=True, data=result)
+    return WBApiResponse(success=False, error="Карточка не найдена")
 
 
 @router.post("/{nm_id}/schedule", response_model=dict)
@@ -293,15 +294,18 @@ async def search_item(
         brand: str = Query(..., description="Название бренда")
 ):
     wb_client = WBAPIClient(api_key=wb_api_key)
-    result = await wb_client.get_card_by_vendor(vendor_code)
-
-    if not result.success:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Товар с vendorCode {vendor_code} не найден"
-        )
-
-    return result
+    cards = await wb_client.get_all_cards()
+    if not cards:
+        return WBApiResponse(success=False, error="Карточка не найдена")
+    for card in cards:
+        current_vc = str(card.get("vendorCode", "")).lower()
+        if current_vc == vendor_code.lower():
+            result = dict(card)
+            result["photos"] = card.get("photos", [])
+            if "video" in card:
+                result["video"] = card["video"]
+            return WBApiResponse(success=True, data=result)
+    return WBApiResponse(success=False, error="Карточка не найдена")
 
 
 def compare_values(old, new):

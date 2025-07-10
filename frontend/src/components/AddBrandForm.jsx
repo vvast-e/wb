@@ -110,14 +110,22 @@ const AddBrandForm = ({ onSuccess }) => {
             // Если добавлен новый магазин, запускаем парсер отзывов
             if (mode === 'add') {
                 try {
-                    await axios.post(
+                    setToast({ show: true, message: `Запуск парсера отзывов для магазина "${requestData.name}"...`, variant: 'info' });
+
+                    const parseResponse = await axios.post(
                         `${import.meta.env.VITE_API_URL}/analytics/shop/${requestData.name}/parse-feedbacks`,
                         {},
                         {
                             headers: { Authorization: `Bearer ${token}` }
                         }
                     );
-                    setToast({ show: true, message: `Парсер отзывов для магазина "${requestData.name}" успешно запущен!`, variant: 'success' });
+
+                    // Проверяем статус парсинга
+                    if (parseResponse.data && parseResponse.data.success) {
+                        setToast({ show: true, message: `Парсер отзывов для магазина "${requestData.name}" успешно завершен! Обработано отзывов: ${parseResponse.data.processed_count || 0}`, variant: 'success' });
+                    } else {
+                        setToast({ show: true, message: `Парсер отзывов для магазина "${requestData.name}" запущен, но завершился с предупреждениями`, variant: 'warning' });
+                    }
                 } catch (err) {
                     setToast({ show: true, message: `Ошибка запуска парсера для "${requestData.name}": ${err.response?.data?.detail || err.message}`, variant: 'danger' });
                 }
@@ -342,14 +350,22 @@ const AddBrandForm = ({ onSuccess }) => {
                                     setLoading(true);
                                     try {
                                         const token = localStorage.getItem('token');
-                                        await axios.post(
+                                        setToast({ show: true, message: `Запуск парсера отзывов для магазина "${selectedBrand}"...`, variant: 'info' });
+
+                                        const parseResponse = await axios.post(
                                             `${import.meta.env.VITE_API_URL}/analytics/shop/${selectedBrand}/parse-feedbacks`,
                                             {},
                                             {
                                                 headers: { Authorization: `Bearer ${token}` }
                                             }
                                         );
-                                        setToast({ show: true, message: `Парсер отзывов для магазина "${selectedBrand}" успешно запущен!`, variant: 'success' });
+
+                                        // Проверяем статус парсинга
+                                        if (parseResponse.data && parseResponse.data.success) {
+                                            setToast({ show: true, message: `Парсер отзывов для магазина "${selectedBrand}" успешно завершен! Обработано отзывов: ${parseResponse.data.processed_count || 0}`, variant: 'success' });
+                                        } else {
+                                            setToast({ show: true, message: `Парсер отзывов для магазина "${selectedBrand}" запущен, но завершился с предупреждениями`, variant: 'warning' });
+                                        }
                                     } catch (err) {
                                         setToast({ show: true, message: `Ошибка запуска парсера для "${selectedBrand}": ${err.response?.data?.detail || err.message}`, variant: 'danger' });
                                     } finally {
@@ -388,9 +404,17 @@ const AddBrandForm = ({ onSuccess }) => {
                     bg={toast.variant}
                     onClose={() => setToast({ ...toast, show: false })}
                     show={toast.show}
-                    delay={5000}
+                    delay={toast.variant === 'info' ? 3000 : 8000}
                     autohide
                 >
+                    <Toast.Header closeButton>
+                        <strong className="me-auto">
+                            {toast.variant === 'success' ? '✅ Успех' : 
+                             toast.variant === 'danger' ? '❌ Ошибка' : 
+                             toast.variant === 'warning' ? '⚠️ Предупреждение' : 
+                             'ℹ️ Информация'}
+                        </strong>
+                    </Toast.Header>
                     <Toast.Body className="text-white">{toast.message}</Toast.Body>
                 </Toast>
             </ToastContainer>
