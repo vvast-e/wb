@@ -9,7 +9,7 @@ from crud.shop import (
     add_price_history, get_price_history_by_vendor, get_latest_price,
     update_shop, delete_shop
 )
-from crud.user import get_current_user
+from utils.jwt import get_current_user
 from models.user import User
 from schemas import ShopCreate, ShopResponse, PriceHistoryCreate, PriceHistoryResponse
 
