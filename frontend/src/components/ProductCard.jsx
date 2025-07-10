@@ -1,15 +1,18 @@
 import { Link } from 'react-router-dom';
 import { Card } from 'react-bootstrap';
 
+// SVG data URI placeholder (серый квадрат 300x300)
+const placeholderImg = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><rect width='300' height='300' fill='%23cccccc'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='24' fill='%23777'>Нет фото</text></svg>";
+
 const ProductCard = ({ product, brand }) => {
     const getPhotoUrl = () => {
         if (product.photos?.length > 0) {
             return product.photos[0].c246x328 ||
                 product.photos[0].square ||
                 product.photos[0].big ||
-                'https://via.placeholder.com/300';
+                placeholderImg;
         }
-        return 'https://via.placeholder.com/300';
+        return placeholderImg;
     };
 
     return (
@@ -26,7 +29,7 @@ const ProductCard = ({ product, brand }) => {
                         variant="top"
                         src={`${getPhotoUrl()}?v=${product.updated_at || Date.now()}`}
                         alt={product.title}
-                        onError={(e) => e.target.src = 'https://via.placeholder.com/300'}
+                        onError={(e) => e.target.src = placeholderImg}
                         className="object-fit-cover"
                     />
                 </div>

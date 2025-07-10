@@ -3,6 +3,8 @@ from config import settings
 from schemas import WBApiResponse
 from utils.validate_image import validate_images
 import json
+import logging
+logger = logging.getLogger("wb_api")
 
 def merge_card_data(old_data: dict, new_data: dict) -> dict:
     result = old_data.copy()
@@ -172,7 +174,11 @@ class WBAPIClient:
     async def upload_mediaFile(self, nm_id: int, file_data: bytes, photo_number: int,
                                media_type: str = 'image') -> WBApiResponse:
         if media_type == 'video' and photo_number != 1:
+            logger.error("[upload_mediaFile] Попытка загрузить видео не в позицию 1 (photo_number=%s)", photo_number)
             return WBApiResponse(success=False, error="Video can only be uploaded to position 1")
+
+        filename = "upload.mp4" if media_type == "video" else "upload.jpg"
+        content_type = "video/mp4" if media_type == "video" else "image/jpeg"
 
         headers = {
             "Authorization": self.api_key,
@@ -180,34 +186,41 @@ class WBAPIClient:
             "X-Photo-Number": str(1 if media_type == "video" else photo_number),
         }
 
-        filename = "upload.mp4" if media_type == "video" else "upload.jpg"
-        content_type = "video/mp4" if media_type == "video" else "image/jpeg"
+        logger.info("[upload_mediaFile] Параметры запроса: nm_id=%s, filename=%s, content_type=%s, file_size=%d, headers=%s, url=%s", nm_id, filename, content_type, len(file_data), headers, f"{self.base_url}/content/v3/media/file")
 
+        timeout = httpx.Timeout(30.0)
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(
                     f"{self.base_url}/content/v3/media/file",
                     headers=headers,
                     files={"uploadfile": (filename, file_data, content_type)}
                 )
 
+            logger.info("[upload_mediaFile] Статус ответа: %s", response.status_code)
+            logger.info("[upload_mediaFile] Текст ответа: %s", response.text)
+            try:
+                logger.info("[upload_mediaFile] JSON ответа: %s", response.json())
+            except Exception as e:
+                logger.error("[upload_mediaFile] Ответ не JSON: %s", e)
+
             if response.is_success:
+                logger.info("[upload_mediaFile] Загрузка прошла успешно!")
                 return WBApiResponse(
                     success=True,
                     data=response.json(),
                     wb_response=response.json()
                 )
             else:
+                logger.error("[upload_mediaFile] Ошибка загрузки: HTTP %s: %s", response.status_code, response.text)
                 return WBApiResponse(
                     success=False,
                     error=f"HTTP {response.status_code}: {response.text}",
                     wb_response=response.text
                 )
-            print("Response status:", response.status_code)
-            print("Response text:", response.text)
-
 
         except Exception as e:
+            logger.error("[upload_mediaFile] Исключение: %s", e, exc_info=True)
             return WBApiResponse(success=False, error=str(e))
 
     async def get_card_by_nm(self, nm_id: int):

@@ -41,24 +41,11 @@ class PriceMonitorBot:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        message_text = (
+        await update.message.reply_text(
             "👋 Добро пожаловать в бота мониторинга цен Wildberries!\n\n"
-            "Выберите действие:"
+            "Выберите действие:",
+            reply_markup=reply_markup
         )
-        
-        # Проверяем, откуда вызвана функция
-        if update.callback_query:
-            # Если вызвана из callback (кнопки)
-            await update.callback_query.edit_message_text(
-                message_text,
-                reply_markup=reply_markup
-            )
-        elif update.message:
-            # Если вызвана из сообщения (команда /start)
-            await update.message.reply_text(
-                message_text,
-                reply_markup=reply_markup
-            )
     
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик callback кнопок"""
@@ -86,16 +73,10 @@ class PriceMonitorBot:
         """Начало процесса добавления магазина"""
         user_states[update.effective_user.id] = {"state": "waiting_shop_name"}
         
-        message_text = (
+        await update.callback_query.edit_message_text(
             "Введите название магазина на Wildberries:\n\n"
             "Пример: '11i professional'"
         )
-        
-        # Проверяем, откуда вызвана функция
-        if update.callback_query:
-            await update.callback_query.edit_message_text(message_text)
-        elif update.message:
-            await update.message.reply_text(message_text)
     
     async def get_user_by_telegram_id(self, db: AsyncSession, telegram_id: int) -> Optional[User]:
         """Поиск пользователя по telegram_id"""
@@ -229,9 +210,7 @@ class PriceMonitorBot:
                     await update.callback_query.edit_message_text("Пользователь не найден.")
                     return
                 
-                logger.info(f"Получаем товары для магазина '{shop.name}' пользователя {user.id}")
                 products = await self.parser.get_products_by_shop(shop.name, user.id, db)
-                logger.info(f"Получено товаров: {len(products)}")
                 
                 if not products:
                     keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="my_shops")]]
@@ -245,13 +224,9 @@ class PriceMonitorBot:
                 
                 keyboard = []
                 for product in products[:10]:  # Показываем первые 10 товаров
-                    price_str = f"{product.get('price', 0):,}".replace(",", " ")
-                    product_name = product.get('name', 'Неизвестный товар')
-                    product_id = product.get('id', '')
-                    
                     keyboard.append([InlineKeyboardButton(
-                        f"📦 {product_name[:30]}... ({price_str} ₽)",
-                        callback_data=f"product_{product_id}_{shop_id}"
+                        f"📦 {product['name']} ({product['id']})",
+                        callback_data=f"product_{product['id']}_{shop_id}"
                     )])
                 
                 keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="my_shops")])
@@ -336,27 +311,29 @@ class PriceMonitorBot:
                         for product in products:
                             try:
                                 nm_id = int(product['id'])
-                                current_price = product.get('price', 0)
-                                vendor_code = product.get('vendor_code', '')
-                                product_name = product.get('name', '')
+                                product_data = await self.parser.get_product_details(nm_id)
                                 
-                                if current_price and vendor_code:
-                                    # Получаем последнюю цену из БД
-                                    latest_price = await get_latest_price(db, vendor_code, shop.id)
+                                if product_data:
+                                    current_price = self.parser.extract_current_price(product_data)
+                                    vendor_code = self.parser.extract_vendor_code(product_data)
                                     
-                                    if latest_price and latest_price.new_price != current_price:
-                                        # Цена изменилась - отправляем уведомление
-                                        await self.send_price_change_notification(
-                                            shop.user_id, shop.name, vendor_code, 
-                                            latest_price.new_price, current_price, product_name, nm_id
+                                    if current_price and vendor_code:
+                                        # Получаем последнюю цену из БД
+                                        latest_price = await get_latest_price(db, vendor_code, shop.id)
+                                        
+                                        if latest_price and latest_price.new_price != current_price:
+                                            # Цена изменилась - отправляем уведомление
+                                            await self.send_price_change_notification(
+                                                shop.user_id, shop.name, vendor_code, 
+                                                latest_price.new_price, current_price, product_data.get("name", ""), nm_id
+                                            )
+                                        
+                                        # Сохраняем новую цену
+                                        await add_price_history(
+                                            db, vendor_code, shop.id, nm_id, current_price,
+                                            latest_price.new_price if latest_price else None
                                         )
-                                    
-                                    # Сохраняем новую цену
-                                    await add_price_history(
-                                        db, vendor_code, shop.id, nm_id, current_price,
-                                        latest_price.new_price if latest_price else None
-                                    )
-                                    
+                                        
                             except Exception as e:
                                 logger.error(f"Ошибка при проверке цены товара {product['id']}: {e}")
                                 

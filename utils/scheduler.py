@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
+import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from crud import task as task_crud
 from crud.history import update_history_status
-from utils.wb_api import WBAPIClient
+from utils.wb_api import WBAPIClient, WBApiResponse
 from dependencies import get_db, get_wb_api_key
 from crud.user import get_all_users
 from crud.analytics import parse_shop_feedbacks_crud
@@ -45,13 +46,30 @@ async def process_scheduled_tasks():
                     print()
                     print(result)
                 elif task.action == 'upload_media_file':
-                    file_data = task.payload["file_data"].encode('latin1')
-                    result = await wb_client.upload_mediaFile(
-                        nm_id=task.nm_id,
-                        file_data=file_data,
-                        photo_number=task.payload["photo_number"],
-                        media_type=task.payload.get("media_type", "image")
-                    )
+                    if task.payload.get("immediate"):
+                        # Ничего не делаем, задача уже была выполнена сразу
+                        result = WBApiResponse(success=True, data={"info": "already uploaded"})
+                    else:
+                        file_path = task.payload.get("file_path")
+                        if not file_path or not os.path.exists(file_path):
+                            result = WBApiResponse(success=False, error="Файл для загрузки не найден")
+                        else:
+                            with open(file_path, "rb") as f:
+                                file_data = f.read()
+                            result = await wb_client.upload_mediaFile(
+                                nm_id=task.nm_id,
+                                file_data=file_data,
+                                photo_number=task.payload["photo_number"],
+                                media_type=task.payload.get("media_type", "image")
+                            )
+                            if result.success:
+                                try:
+                                    os.remove(file_path)
+                                except Exception as e:
+                                    print(f"[Scheduler] Не удалось удалить временный файл: {e}")
+                                # Удаляем задачу из базы после успешной отправки и удаления файла
+                                await db.delete(task)
+                                await db.commit()
                 print(result.success)
                 if result.success:
                     task.status = 'completed'
@@ -102,7 +120,7 @@ def start_scheduler():
         process_scheduled_tasks,
         'interval',
         seconds=5,
-        max_instances=1,
+        max_instances=20,
         timezone='Europe/Moscow'
     )
     scheduler.add_job(

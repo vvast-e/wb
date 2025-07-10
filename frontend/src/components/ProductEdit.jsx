@@ -29,6 +29,8 @@ export default function ProductEdit() {
         mediaLinks: false,
     });
 
+    const [isSaving, setIsSaving] = useState(false);
+
     const [searchParams] = useSearchParams();
     const brand = searchParams.get('brand');
     const vendorCode = searchParams.get('vendorCode');
@@ -156,6 +158,7 @@ export default function ProductEdit() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setIsSaving(true);
         try {
             const token = localStorage.getItem('token');
             const headers = { Authorization: `Bearer ${token}` };
@@ -248,6 +251,8 @@ export default function ProductEdit() {
         } catch (err) {
             console.error('Ошибка сохранения:', err);
             setError(err.response?.data?.message || 'Ошибка при сохранении');
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -418,7 +423,10 @@ export default function ProductEdit() {
                                     />
                                 </Form.Group>
                                 <div className="d-flex gap-2">
-                                    <Button type="submit" variant="success">Сохранить</Button>
+                                    <Button type="submit" variant="success" disabled={isSaving}>
+                                        {isSaving && <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" />}
+                                        Сохранить
+                                    </Button>
                                 </div>
                             </Card.Body>
                         </Card>

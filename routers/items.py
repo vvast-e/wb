@@ -5,6 +5,7 @@ import requests
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import cast, String
 
 from crud.admin import get_imagebb_key
 from crud.history import create_history, upload_to_imgbb, convert_image_url_to_jpg_bytes
@@ -17,6 +18,8 @@ from schemas import WBApiResponse, TaskCreate, MediaTaskRequest
 from dependencies import get_db, get_current_user_with_wb_key, get_wb_api_key
 from config import settings
 from utils.wb_nodriver_parser import parse_feedbacks_optimized
+import os
+import tempfile
 
 router = APIRouter(tags=["Items"], prefix="/api/items")
 
@@ -241,7 +244,7 @@ async def upload_media_file(
         existing_tasks = await db.execute(
             select(ScheduledTask).where(
                 ScheduledTask.nm_id == nm_id,
-                ScheduledTask.payload["media_type"].astext == 'video'
+                cast(ScheduledTask.payload["media_type"], String) == 'video'
             )
         )
         if existing_tasks.scalars().first():
@@ -259,30 +262,73 @@ async def upload_media_file(
         raise HTTPException(status_code=422, detail="Некорректный формат времени")
 
     file_data = await file.read()
-
+    print(f"[upload_media_file] nm_id={nm_id}, brand={brand}, scheduled_at={scheduled_at}, photo_number={photo_number}, media_type={media_type}, filename={file.filename}, file_size={len(file_data)}")
     now = datetime.now(ZoneInfo("Europe/Moscow"))
 
-    task = await create_scheduled_task(
-        db=db,
-        nm_id=nm_id,
-        action="upload_media_file",
-        payload={
-            "file_data": file_data.decode('latin1'),
-            "photo_number": photo_number,
-            "filename": file.filename,
-            "media_type": media_type
-        },
-        scheduled_at=scheduled_dt,
-        user_id=current_user.id,
-        changes={"media": f"Добавлено {media_type} {photo_number}"},
-        brand=brand,
-        created_at=now
-    )
-
-    return WBApiResponse(
-        success=True,
-        data={"task_id": task.id}
-    )
+    # Если задача на сейчас (или в прошлом) — сразу отправляем файл в WB
+    if scheduled_dt <= now:
+        wb_client = WBAPIClient(api_key=wb_api_key)
+        result = await wb_client.upload_mediaFile(
+            nm_id=nm_id,
+            file_data=file_data,
+            photo_number=photo_number,
+            media_type=media_type
+        )
+        if not result.success:
+            raise HTTPException(status_code=400, detail=f"Ошибка загрузки файла: {result.error}")
+        # Сохраняем только метаданные
+        task = await create_scheduled_task(
+            db=db,
+            nm_id=nm_id,
+            action="upload_media_file",
+            payload={
+                "photo_number": photo_number,
+                "filename": file.filename,
+                "media_type": media_type,
+                "immediate": True
+            },
+            scheduled_at=scheduled_dt,
+            user_id=current_user.id,
+            changes={"media": f"Добавлено {media_type} {photo_number}"},
+            brand=brand,
+            created_at=now
+        )
+        print(f"[upload_media_file] task created: id={task.id}, scheduled_at={scheduled_dt}")
+        return WBApiResponse(
+            success=True,
+            data={"task_id": task.id, "wb_response": result.data}
+        )
+    else:
+        # Для отложенных задач сохраняем файл во временную директорию
+        temp_dir = os.path.join(tempfile.gettempdir(), "wb_api_media")
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_filename = f"{nm_id}_{now.timestamp()}_{file.filename}"
+        temp_path = os.path.join(temp_dir, temp_filename)
+        with open(temp_path, "wb") as f:
+            f.write(file_data)
+        # В payload сохраняем только путь и метаданные
+        task = await create_scheduled_task(
+            db=db,
+            nm_id=nm_id,
+            action="upload_media_file",
+            payload={
+                "photo_number": photo_number,
+                "filename": file.filename,
+                "media_type": media_type,
+                "file_path": temp_path,
+                "immediate": False
+            },
+            scheduled_at=scheduled_dt,
+            user_id=current_user.id,
+            changes={"media": f"Добавлено {media_type} {photo_number}"},
+            brand=brand,
+            created_at=now
+        )
+        print(f"[upload_media_file] task created: id={task.id}, scheduled_at={scheduled_dt}, file_path={temp_path}")
+        return WBApiResponse(
+            success=True,
+            data={"task_id": task.id, "scheduled_at": scheduled_dt.isoformat()}
+        )
 
 
 @router.get("/search/{vendor_code}", response_model=WBApiResponse)
