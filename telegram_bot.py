@@ -6,16 +6,18 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+import pytz
 
 from database import AsyncSessionLocal
 from crud.shop import (
     create_shop, get_shops_by_user, get_shop_by_id, 
-    add_price_history, get_price_history_by_vendor, get_latest_price
+    add_price_history, get_price_history_by_nmid, get_latest_price
 )
 from crud.user import get_user_by_email
 from models.user import User
-from utils.wb_price_parser import WBPriceParser
+from utils.wb_price_parser import WBPriceParser, fetch_wb_price_history, fetch_wb_current_price
 from config import settings
+from supplier_ids import SUPPLIERS
 
 # Настройка логирования
 logging.basicConfig(
@@ -34,348 +36,427 @@ class PriceMonitorBot:
     
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /start"""
+        # Сохраняем chat_id пользователя Telegram
+        telegram_id = update.effective_user.id
+        username = update.effective_user.username
+        first_name = update.effective_user.first_name
+        last_name = update.effective_user.last_name
+        async with AsyncSessionLocal() as db:
+            from models.telegram_user import TelegramUser
+            from sqlalchemy import select
+            result = await db.execute(select(TelegramUser).where(TelegramUser.telegram_id == telegram_id))
+            user = result.scalars().first()
+            if not user:
+                db.add(TelegramUser(
+                    telegram_id=telegram_id,
+                    username=username,
+                    first_name=first_name,
+                    last_name=last_name
+                ))
+                await db.commit()
+        await self.show_main_menu(update, context)
+
+    async def menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /menu"""
+        await self.show_main_menu(update, context)
+
+    async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать главное меню"""
         keyboard = [
-            [InlineKeyboardButton("➕ Добавить магазин", callback_data="add_shop")],
             [InlineKeyboardButton("📊 История цен", callback_data="price_history")],
-            [InlineKeyboardButton("🔍 Мои магазины", callback_data="my_shops")]
+            [InlineKeyboardButton("💵 Текущая цена", callback_data="current_price")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            "👋 Добро пожаловать в бота мониторинга цен Wildberries!\n\n"
-            "Выберите действие:",
-            reply_markup=reply_markup
-        )
-    
+        # Создаем Reply Keyboard для кнопки "Меню" под полем ввода
+        from telegram import ReplyKeyboardMarkup, KeyboardButton
+        reply_keyboard = [[KeyboardButton("📋 Меню")]]
+        reply_markup_bottom = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True, one_time_keyboard=False)
+        
+        if update.message:
+            await update.message.reply_text(
+                "👋 Добро пожаловать в бота мониторинга цен Wildberries!\n\n"
+                "Выберите действие:",
+                reply_markup=reply_markup
+            )
+            # Устанавливаем кнопку "Меню" под полем ввода
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="💡 Нажмите кнопку 'Меню' ниже для быстрого доступа",
+                reply_markup=reply_markup_bottom
+            )
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(
+                "👋 Добро пожаловать в бота мониторинга цен Wildberries!\n\n"
+                "Выберите действие:",
+                reply_markup=reply_markup
+            )
+
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик callback кнопок"""
         query = update.callback_query
         await query.answer()
-        
-        if query.data == "add_shop":
-            await self.add_shop_start(update, context)
-        elif query.data == "price_history":
-            await self.price_history_start(update, context)
-        elif query.data == "my_shops":
-            await self.my_shops(update, context)
-        elif query.data.startswith("shop_"):
-            shop_id = int(query.data.split("_")[1])
-            await self.show_shop_products(update, context, shop_id)
+        if query.data == "price_history":
+            await self.show_suppliers_menu(update, context)
+        elif query.data == "current_price":
+            await self.show_suppliers_menu(update, context, current_price=True)
+        elif query.data.startswith("supplier_"):
+            parts = query.data.split("_")
+            supplier_id = int(parts[1])
+            page = 1
+            current_price = False
+            if len(parts) >= 3 and parts[2] == "page":
+                try:
+                    page = int(parts[3])
+                except Exception:
+                    page = 1
+            if len(parts) >= 3 and parts[-1] == "current":
+                current_price = True
+            await self.show_supplier_products(update, context, supplier_id, page, current_price=current_price)
         elif query.data.startswith("product_"):
             parts = query.data.split("_")
-            vendor_code = parts[1]
-            shop_id = int(parts[2])
-            await self.show_product_history(update, context, vendor_code, shop_id)
-        elif query.data == "back_to_main":
-            await self.start(update, context)
-    
-    async def add_shop_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Начало процесса добавления магазина"""
-        user_states[update.effective_user.id] = {"state": "waiting_shop_name"}
-        
-        await update.callback_query.edit_message_text(
-            "Введите название магазина на Wildberries:\n\n"
-            "Пример: '11i professional'"
-        )
-    
-    async def get_user_by_telegram_id(self, db: AsyncSession, telegram_id: int) -> Optional[User]:
-        """Поиск пользователя по telegram_id"""
-        try:
-            # Ищем пользователя с admin статусом или первого доступного
-            result = await db.execute(select(User).where(User.status == "admin").limit(1))
-            user = result.scalars().first()
-            
-            if not user:
-                # Если нет админа, берем первого пользователя
-                result = await db.execute(select(User).limit(1))
-                user = result.scalars().first()
-            
-            if not user:
-                # Если пользователей нет, создаем первого пользователя для Telegram
-                from crud.user import create_user
-                from schemas import UserCreate
-                
-                user_data = UserCreate(
-                    email=f"telegram_{telegram_id}@bot.local",
-                    password="telegram_bot_password_123"
-                )
-                user = await create_user(db, user_data)
-                logger.info(f"Создан новый пользователь для Telegram ID {telegram_id}")
+            nm_id = int(parts[1])
+            supplier_id = int(parts[2])
+            if len(parts) > 3 and parts[3] == "current":
+                await self.show_product_current_price(update, context, nm_id, supplier_id)
             else:
-                logger.info(f"Найден существующий пользователь ID {user.id} для Telegram ID {telegram_id}")
-            
-            return user
-        except Exception as e:
-            logger.error(f"Ошибка при поиске пользователя: {e}")
-            return None
-    
-    async def handle_shop_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработка введенного названия магазина"""
-        user_id = update.effective_user.id
-        shop_name = update.message.text.strip()
-        
-        if user_id not in user_states or user_states[user_id]["state"] != "waiting_shop_name":
-            return
-        
-        try:
-            async with AsyncSessionLocal() as db:
-                # Находим пользователя по telegram_id
-                user = await self.get_user_by_telegram_id(db, user_id)
-                if not user:
-                    logger.error(f"Не удалось найти или создать пользователя для Telegram ID {user_id}")
-                    await update.message.reply_text(
-                        "❌ Пользователь не найден. Обратитесь к администратору."
-                    )
-                    return
-                
-                logger.info(f"Пользователь найден: ID={user.id}, Email={user.email}")
-                
-                shop = await create_shop(db, shop_name, shop_name, user.id)
-                
-                keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                await update.message.reply_text(
-                    f"✅ Магазин '{shop_name}' успешно добавлен!\n\n"
-                    f"ID магазина: {shop.id}",
-                    reply_markup=reply_markup
-                )
-                
-                del user_states[user_id]
-                
-        except Exception as e:
+                await self.show_product_history(update, context, nm_id, supplier_id)
+        elif query.data == "back_to_main":
+            await self.show_main_menu(update, context)
+        elif query.data == "show_menu":
+            await self.show_main_menu(update, context)
+
+    async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик текстовых сообщений"""
+        text = update.message.text
+        if text == "📋 Меню":
+            await self.show_main_menu(update, context)
+        else:
+            # Если пользователь написал что-то другое, показываем подсказку
             await update.message.reply_text(
-                f"❌ Ошибка при добавлении магазина: {str(e)}"
+                "💡 Нажмите кнопку '📋 Меню' ниже или напишите /menu для доступа к функциям бота"
             )
-    
-    async def my_shops(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать магазины пользователя"""
+
+    async def show_suppliers_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE, current_price: bool = False):
+        keyboard = []
+        for supplier_id, name in SUPPLIERS.items():
+            if current_price:
+                callback = f"supplier_{supplier_id}_current"
+            else:
+                callback = f"supplier_{supplier_id}"
+            keyboard.append([InlineKeyboardButton(f"🏪 {name}", callback_data=callback)])
+        keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(
+            "Выберите магазин:",
+            reply_markup=reply_markup
+        )
+
+    async def show_supplier_products(self, update: Update, context: ContextTypes.DEFAULT_TYPE, supplier_id: int, page: int = 1, current_price: bool = False):
         try:
-            async with AsyncSessionLocal() as db:
-                user = await self.get_user_by_telegram_id(db, update.effective_user.id)
-                if not user:
-                    logger.error(f"Не удалось найти или создать пользователя для Telegram ID {update.effective_user.id}")
-                    await update.callback_query.edit_message_text(
-                        "❌ Пользователь не найден. Обратитесь к администратору."
-                    )
-                    return
-                
-                logger.info(f"Пользователь найден для my_shops: ID={user.id}, Email={user.email}")
-                
-                shops = await get_shops_by_user(db, user.id)
-                
-                if not shops:
-                    keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]]
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-                    
-                    await update.callback_query.edit_message_text(
-                        "У вас пока нет добавленных магазинов.",
-                        reply_markup=reply_markup
-                    )
-                    return
-                
-                keyboard = []
-                for shop in shops:
-                    keyboard.append([InlineKeyboardButton(
-                        f"🏪 {shop.name}", 
-                        callback_data=f"shop_{shop.id}"
-                    )])
-                
-                keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")])
+            nm_ids = await self.parser.get_products_by_supplier_id(supplier_id)
+            if not nm_ids:
+                keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="price_history")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                
                 await update.callback_query.edit_message_text(
-                    "Выберите магазин для просмотра товаров:",
+                    f"Товары для магазина {SUPPLIERS.get(supplier_id, supplier_id)} не найдены.",
                     reply_markup=reply_markup
                 )
-                
-        except Exception as e:
+                return
+            page_size = 10
+            total_pages = (len(nm_ids) + page_size - 1) // page_size
+            page = max(1, min(page, total_pages))
+            start = (page - 1) * page_size
+            end = start + page_size
+            keyboard = []
+            from models.product import Product
+            from sqlalchemy import select
+            async with AsyncSessionLocal() as db:
+                for nm_id in nm_ids[start:end]:
+                    # Получаем vendorCode из базы
+                    result = await db.execute(select(Product).where(Product.nm_id == nm_id))
+                    product = result.scalars().first()
+                    display_code = product.vendor_code if (product and product.vendor_code) else nm_id
+                    if current_price:
+                        keyboard.append([InlineKeyboardButton(
+                            f"📦 Товар {display_code}",
+                            callback_data=f"product_{nm_id}_{supplier_id}_current"
+                        )])
+                    else:
+                        keyboard.append([InlineKeyboardButton(
+                            f"📦 Товар {display_code}",
+                            callback_data=f"product_{nm_id}_{supplier_id}"
+                        )])
+            nav_buttons = []
+            if page > 1:
+                nav_buttons.append(InlineKeyboardButton("⬅️ Предыдущая", callback_data=f"supplier_{supplier_id}_page_{page-1}{'_current' if current_price else ''}"))
+            if page < total_pages:
+                nav_buttons.append(InlineKeyboardButton("Следующая ➡️", callback_data=f"supplier_{supplier_id}_page_{page+1}{'_current' if current_price else ''}"))
+            if nav_buttons:
+                keyboard.append(nav_buttons)
+            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="price_history")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text(
-                f"❌ Ошибка при получении магазинов: {str(e)}"
+                f"Товары магазина {SUPPLIERS.get(supplier_id, supplier_id)} (стр. {page}/{total_pages}):",
+                reply_markup=reply_markup
             )
-    
-    async def show_shop_products(self, update: Update, context: ContextTypes.DEFAULT_TYPE, shop_id: int):
-        """Показать товары магазина"""
-        try:
-            async with AsyncSessionLocal() as db:
-                shop = await get_shop_by_id(db, shop_id)
-                
-                if not shop:
-                    await update.callback_query.edit_message_text("Магазин не найден.")
-                    return
-                
-                # Получаем товары магазина используя существующую логику
-                user = await self.get_user_by_telegram_id(db, update.effective_user.id)
-                if not user:
-                    await update.callback_query.edit_message_text("Пользователь не найден.")
-                    return
-                
-                products = await self.parser.get_products_by_shop(shop.name, user.id, db)
-                
-                if not products:
-                    keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="my_shops")]]
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-                    
-                    await update.callback_query.edit_message_text(
-                        f"Товары для магазина '{shop.name}' не найдены.",
-                        reply_markup=reply_markup
-                    )
-                    return
-                
-                keyboard = []
-                for product in products[:10]:  # Показываем первые 10 товаров
-                    keyboard.append([InlineKeyboardButton(
-                        f"📦 {product['name']} ({product['id']})",
-                        callback_data=f"product_{product['id']}_{shop_id}"
-                    )])
-                
-                keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="my_shops")])
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                await update.callback_query.edit_message_text(
-                    f"Товары магазина '{shop.name}':",
-                    reply_markup=reply_markup
-                )
-                
         except Exception as e:
             await update.callback_query.edit_message_text(
                 f"❌ Ошибка при получении товаров: {str(e)}"
             )
-    
-    async def show_product_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
-                                 vendor_code: str, shop_id: int):
-        """Показать историю цен товара"""
+
+    async def show_product_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE, nm_id: int, supplier_id: int):
+        # Показываем анимацию загрузки
+        await update.callback_query.edit_message_text("⏳ Загружаем историю цен...")
         try:
+            from models.price_change_history import PriceChangeHistory
+            from sqlalchemy import select
             async with AsyncSessionLocal() as db:
-                price_history = await get_price_history_by_vendor(db, vendor_code, shop_id)
-                
-                if not price_history:
-                    keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"shop_{shop_id}")]]
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-                    
-                    await update.callback_query.edit_message_text(
-                        f"История цен для товара {vendor_code} не найдена.",
-                        reply_markup=reply_markup
-                    )
-                    return
-                
-                history_text = f"📊 История цен товара {vendor_code}:\n\n"
-                
-                for i, price in enumerate(price_history[:10]):  # Показываем последние 10 записей
-                    date_str = price.price_date.strftime("%d.%m.%Y %H:%M")
-                    price_str = f"{price.new_price:,}".replace(",", " ")
-                    
-                    if price.old_price:
-                        old_price_str = f"{price.old_price:,}".replace(",", " ")
-                        change = price.new_price - price.old_price
-                        change_str = f"({change:+,})".replace(",", " ")
-                        history_text += f"{date_str}: {price_str} ₽ {change_str}\n"
-                    else:
-                        history_text += f"{date_str}: {price_str} ₽\n"
-                
-                keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"shop_{shop_id}")]]
+                result = await db.execute(
+                    select(PriceChangeHistory)
+                    .where(PriceChangeHistory.nm_id == nm_id, PriceChangeHistory.shop_id == supplier_id)
+                    .order_by(PriceChangeHistory.created_at.asc())
+                )
+                changes = result.scalars().all()
+            if not changes:
+                # Получаем vendorCode для отображения
+                vendor_code = await self.get_vendor_code_by_nm_id(None, nm_id, supplier_id)
+                display_code = vendor_code or nm_id
+                keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                
                 await update.callback_query.edit_message_text(
-                    history_text,
+                    f"История изменений для товара {display_code} не найдена.",
                     reply_markup=reply_markup
                 )
-                
+                return
+            lines = []
+            moscow_tz = pytz.timezone('Europe/Moscow')
+            for record in changes:
+                data = record.change_data
+                # Конвертируем время в московский часовой пояс
+                if 'date' in data:
+                    try:
+                        # Парсим дату из строки и конвертируем в московское время
+                        date_obj = datetime.fromisoformat(data['date'].replace('Z', '+00:00'))
+                        moscow_time = date_obj.astimezone(moscow_tz)
+                        date_str = moscow_time.strftime('%d.%m.%Y %H:%M')
+                    except:
+                        # Если не удалось распарсить, добавляем +3 часа к UTC
+                        try:
+                            date_obj = datetime.fromisoformat(data['date'].replace('Z', '+00:00'))
+                            moscow_time = date_obj.replace(tzinfo=pytz.UTC).astimezone(moscow_tz)
+                            date_str = moscow_time.strftime('%d.%m.%Y %H:%M')
+                        except:
+                            date_str = data.get("date", "?")
+                else:
+                    date_str = "?"
+                old = data.get("old_price", "—")
+                new = data.get("new_price", "—")
+                diff = data.get("diff", 0)
+                diff_str = f"(▲ {diff})" if diff > 0 else (f"(▼ {abs(diff)})" if diff < 0 else "")
+                lines.append(f"{date_str}: {old} → {new} ₽ {diff_str}")
+            # Получаем vendorCode для отображения
+            vendor_code = await self.get_vendor_code_by_nm_id(None, nm_id, supplier_id)
+            display_code = vendor_code or nm_id
+            history_text = f"📊 История изменений товара {display_code}:\n\n" + "\n".join(lines[::-1])
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(
+                history_text,
+                reply_markup=reply_markup
+            )
         except Exception as e:
             await update.callback_query.edit_message_text(
-                f"❌ Ошибка при получении истории цен: {str(e)}"
+                f"❌ Ошибка при получении истории изменений: {str(e)}"
+            )
+
+    async def get_vendor_code_by_nm_id(self, db, nm_id: int, shop_id: int) -> Optional[str]:
+        try:
+            from models.product import Product
+            from sqlalchemy import select
+            if db is None:
+                async with AsyncSessionLocal() as db_session:
+                    result = await db_session.execute(select(Product).where(Product.nm_id == nm_id))
+                    product = result.scalars().first()
+                    return product.vendor_code if product else None
+            else:
+                result = await db.execute(select(Product).where(Product.nm_id == nm_id))
+                product = result.scalars().first()
+                return product.vendor_code if product else None
+        except Exception as e:
+            print(f"[Bot] Ошибка поиска vendor_code по nm_id: {e}")
+            return None
+
+    async def show_product_current_price(self, update: Update, context: ContextTypes.DEFAULT_TYPE, nm_id: int, supplier_id: int):
+        # Показываем анимацию загрузки
+        await update.callback_query.edit_message_text("⏳ Получаем данные о товаре...")
+        """Показать текущую цену товара"""
+        try:
+            price, price_wallet = await fetch_wb_current_price(nm_id)
+            # Сначала пробуем получить vendorCode из базы
+            async with AsyncSessionLocal() as db:
+                vendor_code = await self.get_vendor_code_by_nm_id(db, nm_id, supplier_id)
+            # Если не нашли — пробуем из WB API
+            if not vendor_code:
+                product_data = await self.parser.get_product_details(nm_id)
+                vendor_code = product_data.get("vendorCode") if product_data else None
+            display_code = vendor_code or nm_id
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}_current")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            if price is None:
+                # Пробуем взять последнюю цену из базы
+                from models.shop import PriceHistory
+                async with AsyncSessionLocal() as db:
+                    result = await db.execute(
+                        select(PriceHistory).where(
+                            PriceHistory.nm_id == nm_id,
+                            PriceHistory.shop_id == supplier_id
+                        ).order_by(PriceHistory.price_date.desc())
+                    )
+                    latest = result.scalars().first()
+                    if latest:
+                        price = latest.new_price / 100
+                        price_wallet = int(price * 0.98)
+                        price_str = f"{int(price):,}".replace(",", " ")
+                        price_wallet_str = f"{price_wallet}".replace(",", " ")
+                        text = f"📦 Товар: {display_code}\n💵 Текущая цена (по данным мониторинга): {price_str} ₽\n💳 С WB кошельком: {price_wallet_str} ₽"
+                        await update.callback_query.edit_message_text(
+                            text,
+                            reply_markup=reply_markup
+                        )
+                        return
+                await update.callback_query.edit_message_text(
+                    f"Текущая цена для товара {display_code} не найдена.",
+                    reply_markup=reply_markup
+                )
+                return
+            price_str = f"{int(price):,}".replace(",", " ")
+            price_wallet_str = f"{price_wallet}".replace(",", " ")
+            text = f"📦 Товар: {display_code}\n💵 Текущая цена: {price_str} ₽\n💳 С WB кошельком: {price_wallet_str} ₽"
+            await update.callback_query.edit_message_text(
+                text,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            await update.callback_query.edit_message_text(
+                f"❌ Ошибка при получении текущей цены: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}_current")]])
             )
     
     async def price_history_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Начало просмотра истории цен"""
-        await self.my_shops(update, context)
+        await self.show_suppliers_menu(update, context)
     
     async def monitor_prices_task(self, context: ContextTypes.DEFAULT_TYPE):
-        """Задача мониторинга цен - каждые 30 минут"""
+        """Задача мониторинга цен - каждые 30 минут для всех товаров по supplier_id из supplier_ids.py"""
         try:
+            total_prices = 0
             async with AsyncSessionLocal() as db:
-                # Получаем все активные магазины
-                from crud.shop import get_all_active_shops
-                shops = await get_all_active_shops(db)
-                
-                for shop in shops:
+                for supplier_id, shop_name in SUPPLIERS.items():
                     try:
-                        # Получаем товары магазина
-                        user = await self.get_user_by_telegram_id(db, shop.user_id)
-                        if not user:
-                            continue
-                        
-                        products = await self.parser.get_products_by_shop(shop.name, user.id, db)
-                        
-                        # Проверяем цены для каждого товара
-                        for product in products:
+                        nm_ids = await self.parser.get_products_by_supplier_id(supplier_id)
+                        for nm_id in nm_ids:
                             try:
-                                nm_id = int(product['id'])
-                                product_data = await self.parser.get_product_details(nm_id)
+                                # Получаем текущую цену с WB
+                                current_price, _ = await fetch_wb_current_price(nm_id)
+                                if current_price is None:
+                                    continue
+                                total_prices += 1
                                 
-                                if product_data:
-                                    current_price = self.parser.extract_current_price(product_data)
-                                    vendor_code = self.parser.extract_vendor_code(product_data)
-                                    
-                                    if current_price and vendor_code:
-                                        # Получаем последнюю цену из БД
-                                        latest_price = await get_latest_price(db, vendor_code, shop.id)
-                                        
-                                        if latest_price and latest_price.new_price != current_price:
-                                            # Цена изменилась - отправляем уведомление
-                                            await self.send_price_change_notification(
-                                                shop.user_id, shop.name, vendor_code, 
-                                                latest_price.new_price, current_price, product_data.get("name", ""), nm_id
-                                            )
-                                        
-                                        # Сохраняем новую цену
-                                        await add_price_history(
-                                            db, vendor_code, shop.id, nm_id, current_price,
-                                            latest_price.new_price if latest_price else None
-                                        )
-                                        
+                                # Получаем vendorCode для логирования
+                                vendor_code = await self.get_vendor_code_by_nm_id(db, nm_id, supplier_id)
+                                display_code = vendor_code or str(nm_id)
+                                
+                                # Логируем спарсенную цену
+                                print(f"[Price] {shop_name} | {display_code} | {int(current_price)} ₽")
+                                
+                                # Получаем последнюю цену из базы
+                                from models.shop import PriceHistory
+                                result = await db.execute(
+                                    select(PriceHistory).where(
+                                        PriceHistory.nm_id == nm_id,
+                                        PriceHistory.shop_id == supplier_id
+                                    ).order_by(PriceHistory.price_date.desc())
+                                )
+                                latest_price = result.scalars().first()
+                                old_price = latest_price.new_price if latest_price else None
+                                # Если цена изменилась — уведомляем и сохраняем
+                                if old_price is not None and old_price != int(current_price):
+                                    await self.send_price_change_notification(
+                                        shop_name, display_code, old_price, int(current_price), display_code, nm_id, context
+                                    )
+                                    # Сохраняем изменение в отдельную таблицу истории изменений
+                                    from crud.shop import save_price_change_history
+                                    await save_price_change_history(db, nm_id, supplier_id, old_price, int(current_price))
+                                # Сохраняем новую цену
+                                from crud.shop import add_price_history
+                                await add_price_history(
+                                    db, str(nm_id), supplier_id, nm_id, int(current_price), old_price
+                                )
                             except Exception as e:
-                                logger.error(f"Ошибка при проверке цены товара {product['id']}: {e}")
-                                
+                                logger.error(f"Ошибка при мониторинге цены товара {nm_id}: {e}")
                     except Exception as e:
-                        logger.error(f"Ошибка при мониторинге магазина {shop.name}: {e}")
-                        
+                        logger.error(f"Ошибка при мониторинге магазина {shop_name}: {e}")
+            print(f"[Monitor] Успешно спарсено текущих цен: {total_prices} (ожидалось 37)")
         except Exception as e:
             logger.error(f"Ошибка в задаче мониторинга цен: {e}")
 
-    async def send_price_change_notification(self, user_id: int, shop_name: str, vendor_code: str, 
-                                           old_price: int, new_price: int, product_name: str, nm_id: int):
-        """Отправка уведомления об изменении цены"""
+    async def send_price_change_notification(self, shop_name: str, vendor_code: str, old_price: int, new_price: int, product_name: str, nm_id: int, context):
+        """Отправка уведомления об изменении цены всем пользователям, которые писали /start"""
         try:
+            change = new_price - old_price
+            change_str = f"{change:+,}".replace(",", " ")
+            price_str = f"{new_price:,}".replace(",", " ")
+            old_price_str = f"{old_price:,}".replace(",", " ")
+            message = (
+                f"💰 Изменение цены!\n\n"
+                f"🏪 Магазин: {shop_name}\n"
+                f"📦 Товар: {vendor_code}\n"
+                f"🔢 Артикул: {nm_id}\n"
+                f"💵 Старая цена: {old_price_str} ₽\n"
+                f"💵 Новая цена: {price_str} ₽\n"
+                f"📈 Изменение: {change_str} ₽\n\n"
+                f"🔗 Ссылка: https://www.wildberries.ru/catalog/{nm_id}/detail.aspx"
+            )
+            from models.telegram_user import TelegramUser
+            from sqlalchemy import select
             async with AsyncSessionLocal() as db:
-                result = await db.execute(select(User).where(User.id == user_id))
-                user = result.scalars().first()
-                if not user:
-                    return
+                result = await db.execute(select(TelegramUser.telegram_id))
+                chat_ids = result.scalars().all()
                 
-                # Формируем сообщение
-                change = new_price - old_price
-                change_str = f"{change:+,}".replace(",", " ")
-                price_str = f"{new_price:,}".replace(",", " ")
-                old_price_str = f"{old_price:,}".replace(",", " ")
+                # Оптимизированная отправка с задержками
+                batch_size = 25  # Отправляем по 25 сообщений за раз
+                delay_between_batches = 1.1  # Задержка 1.1 секунды между батчами (лимит 30/сек)
                 
-                message = (
-                    f"💰 Изменение цены!\n\n"
-                    f"🏪 Магазин: {shop_name}\n"
-                    f"📦 Товар: {product_name}\n"
-                    f"🔢 Артикул: {vendor_code}\n"
-                    f"💵 Старая цена: {old_price_str} ₽\n"
-                    f"💵 Новая цена: {price_str} ₽\n"
-                    f"📈 Изменение: {change_str} ₽\n\n"
-                    f"🔗 Ссылка: https://www.wildberries.ru/catalog/{nm_id}/detail.aspx"
-                )
+                print(f"[Notification] Отправляем уведомление {len(chat_ids)} пользователям")
                 
-                # Отправляем уведомление (нужно реализовать отправку в Telegram)
-                # Пока просто логируем
-                logger.info(f"Изменение цены: {message}")
+                for i in range(0, len(chat_ids), batch_size):
+                    batch = chat_ids[i:i + batch_size]
+                    tasks = []
+                    
+                    for chat_id in batch:
+                        task = self._send_single_notification(context, chat_id, message)
+                        tasks.append(task)
+                    
+                    # Отправляем батч параллельно
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    # Задержка между батчами (если есть следующий батч)
+                    if i + batch_size < len(chat_ids):
+                        await asyncio.sleep(delay_between_batches)
+                
+                print(f"[Notification] Уведомление отправлено {len(chat_ids)} пользователям")
                 
         except Exception as e:
             logger.error(f"Ошибка при отправке уведомления: {e}")
+
+    async def _send_single_notification(self, context, chat_id, message):
+        """Отправка одного уведомления с обработкой ошибок"""
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=message)
+        except Exception as e:
+            # Логируем только критические ошибки, не спамим лог
+            if "bot was blocked" not in str(e).lower() and "chat not found" not in str(e).lower():
+                logger.error(f"Ошибка при отправке уведомления chat_id={chat_id}: {e}")
     
     def run(self):
         """Запуск бота"""
@@ -383,11 +464,12 @@ class PriceMonitorBot:
         
         # Добавляем обработчики
         self.application.add_handler(CommandHandler("start", self.start))
+        self.application.add_handler(CommandHandler("menu", self.menu))
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
-        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_shop_name))
+        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
         
-        # Добавляем задачу мониторинга в JobQueue (каждые 30 минут)
-        self.application.job_queue.run_repeating(self.monitor_prices_task, interval=1800, first=10)
+        # Добавляем задачу мониторинга в JobQueue (каждые 15 минут)
+        self.application.job_queue.run_repeating(self.monitor_prices_task, interval=900, first=10)
         
         # Запускаем бота
         self.application.run_polling()

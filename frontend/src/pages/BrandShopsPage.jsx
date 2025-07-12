@@ -3,6 +3,7 @@ import { Container, Card, Row, Col, Form, Spinner, Alert, Badge, Table, Button }
 import { useSearchParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import DateRangePicker from '../components/DateRangePicker';
+import Accordion from 'react-bootstrap/Accordion';
 
 const ShopDashboard = ({ shopId, shopName, data, productsToShow, filteredProducts, getRatingColor, renderStars, formatNumber, selectedShop, hideProductSummary }) => (
     <div className="mb-5">
@@ -191,7 +192,15 @@ const BrandShopsPage = () => {
     });
     // --- ДОБАВЛЯЕМ СОСТОЯНИЯ ДЛЯ ФИЛЬТРОВ ---
     const [selectedProducts, setSelectedProducts] = useState([]);
-    const [selectedRatings, setSelectedRatings] = useState([]);
+    // --- Диапазоны рейтинга для фильтра ---
+    const ratingRanges = [
+        { label: '> 4.9', min: 4.9, max: 5.0 },
+        { label: '> 4.8', min: 4.8, max: 4.9 },
+        { label: '> 4.7', min: 4.7, max: 4.8 },
+        { label: '> 4.6', min: 4.6, max: 4.7 },
+        { label: '<= 4.5', min: 0, max: 4.5 },
+    ];
+    const [selectedRatingRange, setSelectedRatingRange] = useState('');
     // --- ДОБАВЛЯЕМ СОСТОЯНИЯ ДЛЯ ПОЛНЫХ ДАННЫХ ВСЕХ МАГАЗИНОВ ---
     const [allShopsData, setAllShopsData] = useState({});
 
@@ -305,12 +314,20 @@ const BrandShopsPage = () => {
 
     // --- ФИЛЬТРАЦИЯ ТОВАРОВ ДЛЯ ТАБЛИЦЫ ---
     const filteredProducts = (productsToShow || []).filter(product => {
-        // Если магазин не выбран, показываем все товары без фильтрации по товарам и рейтингу
         if (!selectedShop) return true;
-        const matchProduct = selectedProducts.length === 0 ? false : selectedProducts.includes(product.article);
-        const matchRating = selectedRatings.length === 0 || selectedRatings.includes(Math.round(product.rating));
+        // Исправлено: если не выбран ни один товар, показывать все
+        const matchProduct = selectedProducts.length === 0 ? true : selectedProducts.includes(product.vendor_code || product.article);
+        let matchRating = true;
+        if (selectedRatingRange) {
+            const range = ratingRanges.find(r => r.label === selectedRatingRange);
+            if (range) {
+                matchRating = product.rating >= range.min && product.rating < (range.max === 5.0 ? 5.01 : range.max);
+            }
+        }
         return matchProduct && matchRating;
     });
+
+    // Удаляю объединённый ТОП 10 и возвращаю прежний вид
 
     return (
         <Container className="py-4">
@@ -325,7 +342,7 @@ const BrandShopsPage = () => {
                                 setSelectedShop(e.target.value);
                                 setDateRange({ startDate: '', endDate: '' });
                                 setSelectedProducts([]);
-                                setSelectedRatings([]);
+                                setSelectedRatingRange('');
                             }}
                             className="bg-dark border-success text-light"
                         >
@@ -355,12 +372,12 @@ const BrandShopsPage = () => {
                             <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid #198754', borderRadius: 8, padding: 8, background: '#181c1f' }}>
                                 {productsToShow.map(product => (
                                     <Form.Check
-                                        key={product.article}
+                                        key={product.vendor_code || product.article}
                                         type="checkbox"
-                                        id={`product-checkbox-${product.article}`}
+                                        id={`product-checkbox-${product.vendor_code || product.article}`}
                                         label={product.name}
-                                        value={product.article}
-                                        checked={selectedProducts.includes(product.article)}
+                                        value={product.vendor_code || product.article}
+                                        checked={selectedProducts.includes(product.vendor_code || product.article)}
                                         onChange={e => {
                                             const value = e.target.value;
                                             setSelectedProducts(prev =>
@@ -379,24 +396,25 @@ const BrandShopsPage = () => {
                         <Form.Group>
                             <Form.Label className="text-light">Рейтинг</Form.Label>
                             <div className="d-flex flex-column gap-2">
-                                {[5, 4, 3, 2, 1].map(rating => (
+                                {ratingRanges.map(range => (
                                     <Form.Check
-                                        key={rating}
-                                        label={<span style={{ fontSize: '1.1em' }}>{rating}</span>}
-                                        value={rating}
-                                        checked={selectedRatings.includes(rating)}
-                                        onChange={e => {
-                                            const value = Number(e.target.value);
-                                            setSelectedRatings(prev =>
-                                                prev.includes(value)
-                                                    ? prev.filter(r => r !== value)
-                                                    : [...prev, value]
-                                            );
-                                        }}
-                                        type="checkbox"
+                                        key={range.label}
+                                        label={<span style={{ fontSize: '1.1em' }}>{range.label}</span>}
+                                        value={range.label}
+                                        checked={selectedRatingRange === range.label}
+                                        onChange={e => setSelectedRatingRange(e.target.value)}
+                                        type="radio"
                                         className="text-light"
                                     />
                                 ))}
+                                <Form.Check
+                                    label={<span style={{ fontSize: '1.1em' }}>Все</span>}
+                                    value=""
+                                    checked={selectedRatingRange === ''}
+                                    onChange={() => setSelectedRatingRange('')}
+                                    type="radio"
+                                    className="text-light"
+                                />
                             </div>
                         </Form.Group>
                     </Col>
@@ -406,7 +424,7 @@ const BrandShopsPage = () => {
                             className="btn btn-outline-danger btn-sm"
                             onClick={() => {
                                 setSelectedProducts([]);
-                                setSelectedRatings([]);
+                                setSelectedRatingRange('');
                             }}
                         >
                             Сбросить
@@ -500,91 +518,94 @@ const BrandShopsPage = () => {
                             </Card>
                         </Col>
                     </Row>
-                    {/* Топы */}
-                    {statsSource && (
-                        <Row className="mb-4">
-                            <Col md={4}>
-                                <Card className="bg-dark border-success">
-                                    <Card.Header className="bg-secondary text-light">
-                                        <h5 className="mb-0">Количество негатива</h5>
-                                    </Card.Header>
-                                    <Card.Body>
-                                        {statsSource.negative_tops?.map((item, index) => {
-                                            let article = item.product_name;
-                                            if (article && article.toLowerCase().startsWith('товар ')) {
-                                                article = article.slice(6).trim();
-                                            }
-                                            return (
-                                                <div key={index} className="d-flex justify-content-between align-items-center mb-2">
-                                                    {article ? (
-                                                        <Link to={`/analytics/review-analyzer?shop=${selectedShop}&product=${article}&negative=true`} className="text-success text-decoration-underline">
-                                                            {item.product_name}
-                                                        </Link>
-                                                    ) : (
-                                                        <span className="text-light">{item.product_name}</span>
-                                                    )}
-                                                    <Badge bg="danger">{item.negative_count}</Badge>
-                                                </div>
-                                            );
-                                        }) || <p className="text-muted">Нет данных</p>}
-                                    </Card.Body>
-                                </Card>
-                            </Col>
-                            <Col md={4}>
-                                <Card className="bg-dark border-success">
-                                    <Card.Header className="bg-secondary text-light">
-                                        <h5 className="mb-0">Доля негативных от всех отзывов</h5>
-                                    </Card.Header>
-                                    <Card.Body>
-                                        {statsSource.negative_percentage_tops?.map((item, index) => {
-                                            let article = item.product_name;
-                                            if (article && article.toLowerCase().startsWith('товар ')) {
-                                                article = article.slice(6).trim();
-                                            }
-                                            return (
-                                                <div key={index} className="d-flex justify-content-between align-items-center mb-2">
-                                                    {article ? (
-                                                        <Link to={`/analytics/review-analyzer?shop=${selectedShop}&product=${article}&negative=true`} className="text-success text-decoration-underline">
-                                                            {item.product_name}
-                                                        </Link>
-                                                    ) : (
-                                                        <span className="text-light">{item.product_name}</span>
-                                                    )}
-                                                    <Badge bg="danger">{item.negative_percentage}%</Badge>
-                                                </div>
-                                            );
-                                        }) || <p className="text-muted">Нет данных</p>}
-                                    </Card.Body>
-                                </Card>
-                            </Col>
-                            <Col md={4}>
-                                <Card className="bg-dark border-success">
-                                    <Card.Header className="bg-secondary text-light">
-                                        <h5 className="mb-0">Доля негатива внутри товара</h5>
-                                    </Card.Header>
-                                    <Card.Body>
-                                        {statsSource.internal_negative_tops?.map((item, index) => {
-                                            let article = item.product_name;
-                                            if (article && article.toLowerCase().startsWith('товар ')) {
-                                                article = article.slice(6).trim();
-                                            }
-                                            return (
-                                                <div key={index} className="d-flex justify-content-between align-items-center mb-2">
-                                                    {article ? (
-                                                        <Link to={`/analytics/review-analyzer?shop=${selectedShop}&product=${article}&negative=true`} className="text-success text-decoration-underline">
-                                                            {item.product_name}
-                                                        </Link>
-                                                    ) : (
-                                                        <span className="text-light">{item.product_name}</span>
-                                                    )}
-                                                    <Badge bg="danger">{item.internal_negative_percentage}%</Badge>
-                                                </div>
-                                            );
-                                        }) || <p className="text-muted">Нет данных</p>}
-                                    </Card.Body>
-                                </Card>
-                            </Col>
-                        </Row>
+                    {/* ТОП 10 по: (аккордеон) */}
+                    {shopDataAllTime && (
+                        <div className="mb-4">
+                            <h5 className="text-light mb-2">ТОП 10 по:</h5>
+                            <Accordion defaultActiveKey="0" alwaysOpen className="bg-dark border-success">
+                                <Accordion.Item eventKey="0" className="bg-dark border-success">
+                                    <Accordion.Header className="bg-secondary text-light">Количество негатива</Accordion.Header>
+                                    <Accordion.Body className="bg-dark">
+                                        <Card className="bg-dark border-success mb-3">
+                                            <Card.Body>
+                                                {shopDataAllTime.negative_tops?.length > 0 ? shopDataAllTime.negative_tops.slice(0, 10).map((item, index) => {
+                                                    let vendor_code = item.product_name;
+                                                    if (vendor_code && vendor_code.toLowerCase().startsWith('товар ')) {
+                                                        vendor_code = vendor_code.slice(6).trim();
+                                                    }
+                                                    return (
+                                                        <div key={index} className="d-flex justify-content-between align-items-center mb-2">
+                                                            {vendor_code ? (
+                                                                <Link to={`/analytics/review-analyzer?shop=${selectedShop}&product=${vendor_code}&negative=true`} className="text-success text-decoration-underline">
+                                                                    {item.product_name}
+                                                                </Link>
+                                                            ) : (
+                                                                <span className="text-light">{item.product_name}</span>
+                                                            )}
+                                                            <Badge bg="danger">{item.negative_count}</Badge>
+                                                        </div>
+                                                    );
+                                                }) : <p className="text-muted">Нет данных</p>}
+                                            </Card.Body>
+                                        </Card>
+                                    </Accordion.Body>
+                                </Accordion.Item>
+                                <Accordion.Item eventKey="1" className="bg-dark border-success">
+                                    <Accordion.Header className="bg-secondary text-light">Доля негативных от всех отзывов</Accordion.Header>
+                                    <Accordion.Body className="bg-dark">
+                                        <Card className="bg-dark border-success mb-3">
+                                            <Card.Body>
+                                                {shopDataAllTime.negative_percentage_tops?.length > 0 ? shopDataAllTime.negative_percentage_tops.slice(0, 10).map((item, index) => {
+                                                    let vendor_code = item.product_name;
+                                                    if (vendor_code && vendor_code.toLowerCase().startsWith('товар ')) {
+                                                        vendor_code = vendor_code.slice(6).trim();
+                                                    }
+                                                    return (
+                                                        <div key={index} className="d-flex justify-content-between align-items-center mb-2">
+                                                            {vendor_code ? (
+                                                                <Link to={`/analytics/review-analyzer?shop=${selectedShop}&product=${vendor_code}&negative=true`} className="text-success text-decoration-underline">
+                                                                    {item.product_name}
+                                                                </Link>
+                                                            ) : (
+                                                                <span className="text-light">{item.product_name}</span>
+                                                            )}
+                                                            <Badge bg="danger">{item.negative_percentage}%</Badge>
+                                                        </div>
+                                                    );
+                                                }) : <p className="text-muted">Нет данных</p>}
+                                            </Card.Body>
+                                        </Card>
+                                    </Accordion.Body>
+                                </Accordion.Item>
+                                <Accordion.Item eventKey="2" className="bg-dark border-success">
+                                    <Accordion.Header className="bg-secondary text-light">Доля негатива внутри товара</Accordion.Header>
+                                    <Accordion.Body className="bg-dark">
+                                        <Card className="bg-dark border-success mb-3">
+                                            <Card.Body>
+                                                {shopDataAllTime.internal_negative_tops?.length > 0 ? shopDataAllTime.internal_negative_tops.slice(0, 10).map((item, index) => {
+                                                    let vendor_code = item.product_name;
+                                                    if (vendor_code && vendor_code.toLowerCase().startsWith('товар ')) {
+                                                        vendor_code = vendor_code.slice(6).trim();
+                                                    }
+                                                    return (
+                                                        <div key={index} className="d-flex justify-content-between align-items-center mb-2">
+                                                            {vendor_code ? (
+                                                                <Link to={`/analytics/review-analyzer?shop=${selectedShop}&product=${vendor_code}&negative=true`} className="text-success text-decoration-underline">
+                                                                    {item.product_name}
+                                                                </Link>
+                                                            ) : (
+                                                                <span className="text-light">{item.product_name}</span>
+                                                            )}
+                                                            <Badge bg="danger">{item.internal_negative_percentage}%</Badge>
+                                                        </div>
+                                                    );
+                                                }) : <p className="text-muted">Нет данных</p>}
+                                            </Card.Body>
+                                        </Card>
+                                    </Accordion.Body>
+                                </Accordion.Item>
+                            </Accordion>
+                        </div>
                     )}
                     {/* Сводка по товарам */}
                     <Card className="bg-dark border-success">
@@ -618,15 +639,15 @@ const BrandShopsPage = () => {
                                 </thead>
                                 <tbody>
                                     {filteredProducts && filteredProducts.length > 0 ? filteredProducts.map((product, index) => {
-                                        let article = product.name;
-                                        if (article && article.toLowerCase().startsWith('товар ')) {
-                                            article = article.slice(6).trim();
+                                        let vendor_code = product.name;
+                                        if (vendor_code && vendor_code.toLowerCase().startsWith('товар ')) {
+                                            vendor_code = vendor_code.slice(6).trim();
                                         }
                                         return (
                                             <tr key={index}>
                                                 <td>
-                                                    {article ? (
-                                                        <Link to={`/analytics/review-analyzer?shop=${selectedShop}&product=${article}`} className="text-success text-decoration-underline">
+                                                    {vendor_code ? (
+                                                        <Link to={`/analytics/review-analyzer?shop=${selectedShop}&product=${vendor_code}`} className="text-success text-decoration-underline">
                                                             {product.name}
                                                         </Link>
                                                     ) : (
@@ -652,7 +673,7 @@ const BrandShopsPage = () => {
                                                     <Badge bg="danger">
                                                         {product.internal_negative_percentage !== undefined
                                                             ? (
-                                                                <Link to={`/analytics/review-analyzer?shop=${selectedShop}&product=${article}&negative=true`} className="text-white text-decoration-none">
+                                                                <Link to={`/analytics/review-analyzer?shop=${selectedShop}&product=${vendor_code}&negative=true`} className="text-white text-decoration-none">
                                                                     {product.internal_negative_percentage + '%'}
                                                                 </Link>
                                                             )

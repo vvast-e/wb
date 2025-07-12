@@ -70,21 +70,62 @@ const HistoryPage = () => {
         date_to: ''
     });
 
+    const [brands, setBrands] = useState([]);
+    const [selectedBrand, setSelectedBrand] = useState('');
+    const [brandsLoading, setBrandsLoading] = useState(false);
+    const [brandsError, setBrandsError] = useState(null);
+
+    // Получение брендов при монтировании
+    useEffect(() => {
+        const fetchBrands = async () => {
+            try {
+                setBrandsLoading(true);
+                setBrandsError(null);
+                const token = localStorage.getItem('token');
+                const response = await axios.get(`${import.meta.env.VITE_API_URL}/admin/brands`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const brandData = response.data;
+                const brandNames = Object.keys(brandData);
+                setBrands(brandNames);
+                if (brandNames.length > 0) {
+                    setSelectedBrand(brandNames[0]);
+                }
+            } catch (err) {
+                setBrandsError('Не удалось загрузить бренды');
+                setBrands([]);
+            } finally {
+                setBrandsLoading(false);
+            }
+        };
+        fetchBrands();
+    }, []);
+
+    // Обновляем фильтр при смене бренда
+    useEffect(() => {
+        setFilters(prev => ({ ...prev, brand: selectedBrand }));
+        setPagination(prev => ({ ...prev, page: 1 }));
+    }, [selectedBrand]);
+
     useEffect(() => {
         fetchHistory();
     }, [pagination.page, pagination.perPage, orderBy, orderDir, filters]);
 
     const fetchHistory = async () => {
+        if (!selectedBrand) {
+            setHistory([]);
+            setError('Выберите бренд для просмотра истории');
+            setLoading(false);
+            return;
+        }
         try {
             setLoading(true);
             setError(null);
             const token = localStorage.getItem('token');
-
             const cleanedFilters = Object.fromEntries(
                 Object.entries(filters).filter(([_, value]) => value !== '')
             );
-
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/history?brand=${encodeURIComponent(brand)}`, {
+            const response = await axios.get(`${import.meta.env.VITE_API_URL}/history`, {
                 params: {
                     page: pagination.page,
                     per_page: pagination.perPage,
@@ -94,7 +135,6 @@ const HistoryPage = () => {
                 },
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-
             setHistory(response.data.items);
             setPagination(prev => ({
                 ...prev,
@@ -102,10 +142,14 @@ const HistoryPage = () => {
                 totalPages: response.data.total_pages
             }));
         } catch (err) {
-            if (err.response?.status === 404) {
-                setError("Никаких изменений не было");
+            // Обработка ошибок FastAPI (422 и др.)
+            const detail = err.response?.data?.detail;
+            if (Array.isArray(detail)) {
+                setError(detail.map(e => `${e.loc?.join('.')}: ${e.msg}`).join('; '));
+            } else if (err.response?.status === 404) {
+                setError('Никаких изменений не было');
             } else {
-                setError(err.response?.data?.detail || err.message || "Ошибка загрузки истории");
+                setError(detail || err.message || 'Ошибка загрузки истории');
             }
         } finally {
             setLoading(false);
@@ -264,6 +308,29 @@ const HistoryPage = () => {
                         {loading ? <Spinner animation="border" size="sm" /> : <BiRefresh />}
                     </Button>
                 </div>
+            </div>
+
+            {/* Выпадающий список брендов */}
+            <div className="mb-4">
+                <Form.Label>Магазин:</Form.Label>
+                {brandsLoading ? (
+                    <div className="text-muted">Загрузка брендов...</div>
+                ) : brandsError ? (
+                    <div className="text-danger small">{brandsError}</div>
+                ) : brands.length === 0 ? (
+                    <div className="text-muted">Нет доступных брендов</div>
+                ) : (
+                    <Form.Select
+                        value={selectedBrand}
+                        onChange={e => setSelectedBrand(e.target.value)}
+                        style={{ maxWidth: 300 }}
+                        className="mb-3"
+                    >
+                        {brands.map(brand => (
+                            <option key={brand} value={brand}>{brand}</option>
+                        ))}
+                    </Form.Select>
+                )}
             </div>
 
             <Form onSubmit={handleFilterSubmit} className="mb-4">

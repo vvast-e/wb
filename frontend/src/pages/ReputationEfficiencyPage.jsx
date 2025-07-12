@@ -130,11 +130,9 @@ const ReputationEfficiencyPage = () => {
                             disabled={!selectedShop}
                         >
                             <option value="">Все товары</option>
-                            {products.map(product => (
-                                <option key={product.id} value={product.id}>
-                                    {product.name}
-                                </option>
-                            ))}
+                            {products.filter(p => !selectedProduct || p.id !== selectedProduct).map(p =>
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                            )}
                         </Form.Select>
                     </Form.Group>
                 </Col>

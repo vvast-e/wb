@@ -165,21 +165,27 @@ const ShopsSummaryPage = () => {
                                     {shop.top_products && shop.top_products.length > 0 && (
                                         <div className="mb-3">
                                             <h6 className="text-light mb-2">Топ товаров:</h6>
-                                            {shop.top_products.slice(0, 3).map((product, index) => (
-                                                <div key={index} className="d-flex justify-content-between align-items-center mb-1">
-                                                    <span className="text-light small" style={{
-                                                        overflow: 'hidden',
-                                                        textOverflow: 'ellipsis',
-                                                        whiteSpace: 'nowrap',
-                                                        maxWidth: '70%'
-                                                    }}>
-                                                        {product.name}
-                                                    </span>
-                                                    <Badge bg={getRatingColor(product.rating)}>
-                                                        {product.rating.toFixed(1)}
-                                                    </Badge>
-                                                </div>
-                                            ))}
+                                            {shop.top_products.slice(0, 3).map((product, index) => {
+                                                let vendor_code = product.name;
+                                                if (vendor_code && vendor_code.toLowerCase().startsWith('товар ')) {
+                                                    vendor_code = vendor_code.slice(6).trim();
+                                                }
+                                                return (
+                                                    <div key={index} className="d-flex justify-content-between align-items-center mb-1">
+                                                        <span className="text-light small" style={{
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            whiteSpace: 'nowrap',
+                                                            maxWidth: '70%'
+                                                        }}>
+                                                            {product.name}
+                                                        </span>
+                                                        <Badge bg={getRatingColor(product.rating)}>
+                                                            {product.rating.toFixed(1)}
+                                                        </Badge>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     )}
 

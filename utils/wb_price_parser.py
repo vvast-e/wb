@@ -3,6 +3,9 @@ import asyncio
 from typing import List, Dict, Optional
 from datetime import datetime
 import json
+import logging
+import math
+logger = logging.getLogger("telegram_bot")
 
 
 class WBPriceParser:
@@ -144,6 +147,41 @@ class WBPriceParser:
             print(f"Ошибка при получении товаров магазина {shop_name}: {e}")
             return []
     
+    async def get_products_by_supplier_id(self, supplier_id: int, page_limit: int = 100) -> List[int]:
+        """Получить все nmID товаров магазина по supplier id через публичный API WB"""
+        import httpx
+        nm_ids = []
+        page = 1
+        while True:
+            url = "https://catalog.wb.ru/sellers/v4/catalog"
+            params = {
+                "ab_testing": "false",
+                "appType": 1,
+                "curr": "rub",
+                "dest": -1257786,
+                "hide_dtype": 13,
+                "lang": "ru",
+                "page": page,
+                "sort": "popular",
+                "spp": 30,
+                "supplier": supplier_id
+            }
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params)
+                if response.status_code != 200:
+                    break
+                data = response.json()
+                products = data.get("products", [])
+                if not products:
+                    break
+                nm_ids.extend([p["id"] for p in products if "id" in p])
+                if len(products) < 100:
+                    break
+                page += 1
+                if page > page_limit:
+                    break
+        return nm_ids
+    
     async def monitor_prices(self, nm_ids: List[int]) -> List[Dict]:
         """Мониторинг цен для списка товаров"""
         results = []
@@ -168,3 +206,76 @@ class WBPriceParser:
                 print(f"Ошибка при мониторинге цены товара {nm_id}: {e}")
         
         return results 
+
+async def fetch_wb_price_history(nm_id: int):
+    import httpx
+    from datetime import datetime
+    nm_id_str = str(nm_id)
+    vol = nm_id_str[:4]
+    part = nm_id_str[:6]
+    for basket_num in range(1, 31):
+        url = f'https://basket-{basket_num}.wbbasket.ru/vol{vol}/part{part}/{nm_id}/info/price-history.json'
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data:
+                        return [
+                            {
+                                'date': datetime.utcfromtimestamp(item['dt']).strftime('%d.%m.%Y'),
+                                'price': item['price']['RUB']
+                            }
+                            for item in data
+                        ]
+        except Exception as e:
+            print(f'[History] Ошибка при попытке basket-{basket_num} для nm_id={nm_id}: {e}')
+    return [] 
+
+async def fetch_wb_current_price(nm_id: int):
+    import httpx
+    url = f'https://card.wb.ru/cards/v4/detail?appType=1&curr=rub&dest=-1257786&spp=30&hide_dtype=13&ab_testing=false&lang=ru&nm={nm_id}'
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url)
+        if resp.status_code == 200:
+            data = resp.json()
+            # Теперь ищем products и product на верхнем уровне
+            products = data.get('products')
+            price = None
+            if not products:
+                pass
+            elif not (isinstance(products, list) and len(products) > 0):
+                pass
+            else:
+                product = products[0]
+                sizes = product.get('sizes')
+                if sizes is None:
+                    pass
+                elif not isinstance(sizes, list):
+                    pass
+                elif len(sizes) == 0:
+                    pass
+                else:
+                    price_obj = sizes[0].get('price', {})
+                    price = price_obj.get('product')
+                    if price is None:
+                        pass
+            if price is None:
+                # Пробуем product (альтернативный кейс)
+                product = data.get('product')
+                if not product:
+                    pass
+                else:
+                    price_obj = product.get('price', {})
+                    price = price_obj.get('product')
+                    if price is None:
+                        pass
+            if price is not None:
+                price_rub = price / 100
+                price_wallet = math.floor(price_rub * 0.98)
+                return price_rub, price_wallet
+            else:
+                pass
+        else:
+            pass
+        return None, None 

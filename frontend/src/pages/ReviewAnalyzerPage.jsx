@@ -122,6 +122,19 @@ const ReviewAnalyzerPage = () => {
                 params
             });
 
+            console.log('Полученные отзывы:', response.data.reviews);
+            // Логируем первые 3 отзыва для проверки структуры
+            if (response.data.reviews && response.data.reviews.length > 0) {
+                response.data.reviews.slice(0, 3).forEach((review, index) => {
+                    console.log(`Отзыв ${index + 1}:`, {
+                        id: review.id,
+                        pros_text: review.pros_text,
+                        cons_text: review.cons_text,
+                        main_text: review.main_text
+                    });
+                });
+            }
+
             setReviews(response.data.reviews || []);
             setPagination(prev => ({
                 ...prev,

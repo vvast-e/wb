@@ -290,7 +290,10 @@ async def save_feedbacks_batch(
             main_text = parts[0].strip()
             cons_text = parts[1].strip()
         else:
+            # Если нет разделителей, весь текст идет в main_text
             main_text = text
+            pros_text = None
+            cons_text = None
         
         # Обработка даты
         date_str = data.get('date')

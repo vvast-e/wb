@@ -144,7 +144,7 @@ const Home = () => {
             {/* Переключатель брендов */}
             {!brandsLoading && brands && Object.keys(brands).length > 0 && (
                 <div className="mb-4">
-                    <h4 className="mb-3">Выберите бренд</h4>
+                    <h4 className="mb-3">Выберите магазин</h4>
                     <ButtonGroup className="flex-wrap">
                         {Object.keys(brands).map(brand => (
                             <Button

@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from models.feedback import Feedback
 from models.user import User
+from models.product import Product
 
 
 async def get_user_shopsList_crud(
@@ -83,8 +84,21 @@ async def get_reviews_with_filters_crud(
             product_id = int(product)
             query = query.where(Feedback.article == product_id)
         except (ValueError, TypeError):
-            # Если product не является числом, попробуем сравнить как строку
-            query = query.where(Feedback.article == product)
+            # Если product не является числом, ищем по vendor_code в таблице products
+            product_query = select(Product.nm_id).where(Product.vendor_code == product)
+            product_result = await db.execute(product_query)
+            product_data = product_result.scalar_one_or_none()
+            if product_data:
+                query = query.where(Feedback.article == product_data)
+            else:
+                # Если товар не найден, возвращаем пустой результат
+                return {
+                    "reviews": [],
+                    "total": 0,
+                    "page": page,
+                    "per_page": per_page,
+                    "total_pages": 0
+                }
 
     if date_from:
         query = query.where(func.coalesce(Feedback.date, Feedback.created_at) >= date_from)
@@ -111,6 +125,29 @@ async def get_reviews_with_filters_crud(
 
     # Формируем ответ
     reviews = []
+    
+    # Получаем vendor_code для всех товаров
+    article_ids = [f.article for f in feedbacks if f.article]
+    vendor_codes = {}
+    if article_ids:
+        # Преобразуем строковые артикулы в целые числа
+        nm_ids = []
+        for article_id in article_ids:
+            try:
+                nm_id = int(article_id)
+                nm_ids.append(nm_id)
+            except (ValueError, TypeError):
+                continue
+        
+        if nm_ids:
+            product_query = select(Product.nm_id, Product.vendor_code).where(Product.nm_id.in_(nm_ids))
+            product_result = await db.execute(product_query)
+            products_data_db = product_result.fetchall()
+            for nm_id, vendor_code in products_data_db:
+                vendor_codes[nm_id] = vendor_code or str(nm_id)
+    
+
+    
     for feedback in feedbacks:
         # Определяем sentiment на основе рейтинга
         if feedback.rating >= 4:
@@ -121,6 +158,13 @@ async def get_reviews_with_filters_crud(
             sentiment = "neutral"
 
         dt = feedback.date if feedback.date else feedback.created_at
+        
+        # Получаем vendor_code для товара
+        vendor_code = vendor_codes.get(feedback.article, str(feedback.article))
+        
+        # Логируем данные для отладки
+        print(f"[DEBUG] Отзыв {feedback.id}: pros_text='{feedback.pros_text}', cons_text='{feedback.cons_text}', main_text='{feedback.main_text}'")
+        
         reviews.append({
             "id": feedback.id,
             "main_text": feedback.main_text or "",
@@ -128,7 +172,7 @@ async def get_reviews_with_filters_crud(
             "cons_text": feedback.cons_text or "",
             "rating": feedback.rating,
             "author_name": feedback.author or "Аноним",
-            "product_name": f"Товар {feedback.article}",
+            "product_name": f"товар {vendor_code}",
             "shop_name": feedback.brand,
             "created_at": dt.isoformat() if dt else None,
             "photos": [],  # Пока нет фото в модели
@@ -271,7 +315,30 @@ async def get_shop_data_crud(
         all_keys.update(products_data_all_time.keys())
     if products_data:
         all_keys.update(products_data.keys())
+    
+    # Получаем vendor_code для всех товаров
+    vendor_codes = {}
+    if all_keys:
+        # Преобразуем строковые артикулы в целые числа
+        nm_ids = []
+        for article_key in all_keys:
+            try:
+                nm_id = int(article_key)
+                nm_ids.append(nm_id)
+            except (ValueError, TypeError):
+                continue
+        
+        if nm_ids:
+            product_query = select(Product.nm_id, Product.vendor_code).where(Product.nm_id.in_(nm_ids))
+            product_result = await db.execute(product_query)
+            products_data_db = product_result.fetchall()
+            for nm_id, vendor_code in products_data_db:
+                vendor_codes[str(nm_id)] = vendor_code or str(nm_id)
+    
     for article_key in all_keys:
+        # Получаем vendor_code для товара
+        vendor_code = vendor_codes.get(article_key, article_key)
+        
         # All-time рейтинги
         data_all = products_data_all_time.get(article_key) or {"ratings": [], "feedbacks": [], "negative_count": 0}
         ratings_all = [r for r in data_all.get("ratings", []) if r is not None]
@@ -322,7 +389,8 @@ async def get_shop_data_crud(
         }
         products.append({
             "article": article_key,
-            "name": f"Товар {article_key}",
+            "vendor_code": vendor_code,
+            "name": f"товар {vendor_code}",
             "market_rating_all_time": round(product_market_rating_all, 2),
             "market_rating": round(product_market_rating_period, 2),
             "rating_all_time": round(product_avg_all, 2),
@@ -337,8 +405,9 @@ async def get_shop_data_crud(
     negative_tops = []
     for article_key, data in products_data.items():
         if data["negative_count"] > 0:
+            vendor_code = vendor_codes.get(article_key, article_key)
             negative_tops.append({
-                "product_name": f"Товар {article_key}",
+                "product_name": f"товар {vendor_code}",
                 "negative_count": data["negative_count"]
             })
     negative_tops.sort(key=lambda x: x["negative_count"], reverse=True)
@@ -350,12 +419,13 @@ async def get_shop_data_crud(
     internal_negative_tops = []
     for article_key, data in products_data.items():
         total_product_reviews = len([r for r in data["ratings"] if r is not None])
+        vendor_code = vendor_codes.get(article_key, article_key)
         
         # Доля негатива внутри товара (негатив товара / все отзывы товара)
         if total_product_reviews > 0:
             internal_negative_percentage = (data["negative_count"] / total_product_reviews) * 100
             internal_negative_tops.append({
-                "product_name": f"Товар {article_key}",
+                "product_name": f"товар {vendor_code}",
                 "internal_negative_percentage": round(internal_negative_percentage, 1)
             })
         
@@ -363,7 +433,7 @@ async def get_shop_data_crud(
         if total_negative_all_products > 0:
             negative_percentage = (data["negative_count"] / total_negative_all_products) * 100
             negative_percentage_tops.append({
-                "product_name": f"Товар {article_key}",
+                "product_name": f"товар {vendor_code}",
                 "negative_percentage": round(negative_percentage, 1)
             })
     
@@ -442,9 +512,20 @@ async def get_shop_products_crud(
         market_rating = (weighted_sum / decay_sum) if decay_sum > 0 else 0
         # Корректно формируем id и name
         article_id = str(article) if not hasattr(article, 'key') else str(getattr(article, 'key', ''))
+        
+        # Получаем vendor_code для товара
+        try:
+            nm_id = int(article)
+            product_query = select(Product.vendor_code).where(Product.nm_id == nm_id)
+            product_result = await db.execute(product_query)
+            product_data = product_result.scalar_one_or_none()
+            vendor_code = product_data or article_id
+        except (ValueError, TypeError):
+            vendor_code = article_id
+        
         products.append({
-            "id": article_id,
-            "name": f"Товар {article_id}",
+            "id": vendor_code,
+            "name": f"товар {vendor_code}",
             "rating": round(float(avg_rating), 2),
             "market_rating": round(float(market_rating), 2)
         })
@@ -584,11 +665,31 @@ async def get_shops_summary_crud(
                 products_data[article] = []
             products_data[article].append(feedback.rating)
 
+        # Получаем vendor_code для всех артикулов
+        vendor_codes = {}
+        if products_data:
+            # Преобразуем строковые артикулы в целые числа
+            nm_ids = []
+            for article_key in products_data.keys():
+                try:
+                    nm_id = int(article_key)
+                    nm_ids.append(nm_id)
+                except (ValueError, TypeError):
+                    continue
+            
+            if nm_ids:
+                product_query = select(Product.nm_id, Product.vendor_code).where(Product.nm_id.in_(nm_ids))
+                product_result = await db.execute(product_query)
+                products_data_db = product_result.fetchall()
+                for nm_id, vendor_code in products_data_db:
+                    vendor_codes[nm_id] = vendor_code or str(nm_id)
+
         top_products = []
         for article, ratings_list in products_data.items():
             avg_product_rating = sum(ratings_list) / len(ratings_list)
+            vendor_code = vendor_codes.get(article, str(article))
             top_products.append({
-                "name": f"Товар {article}",
+                "name": f"товар {vendor_code}",
                 "rating": round(avg_product_rating, 2)
             })
 

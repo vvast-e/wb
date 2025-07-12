@@ -176,7 +176,7 @@ const ShopSummaryWidget = ({ shopType }) => {
                 responses.forEach((res, index) => {
                     const productId = selectedProducts[index];
                     const product = products.find(p => p.id === productId);
-                    const productName = product ? product.name : `Товар ${productId}`;
+                    const productName = product ? product.name : `товар ${productId}`;
 
                     if (res.data.by_day) {
                         res.data.by_day.forEach(dayData => {
@@ -300,7 +300,7 @@ const ShopSummaryWidget = ({ shopType }) => {
     const getLegendNames = () => {
         return selectedProducts.map(productId => {
             const product = products.find(p => p.id === productId);
-            return product ? product.name : `Товар ${productId}`;
+            return product ? product.name : `товар ${productId}`;
         });
     };
 

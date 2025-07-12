@@ -120,12 +120,27 @@ async def _http_fallback_parser(article: int, max_count: int) -> List[Dict[str, 
                                 elif 'Z' in date_str:
                                     date_str = date_str.replace('Z', '')
                             
+                            # Формируем текст с правильными разделителями
+                            main_text = fb.get('text', '')
+                            pros_text = fb.get('pros', '')
+                            cons_text = fb.get('cons', '')
+                            
+                            # Если есть отдельные поля pros/cons, формируем структурированный текст
+                            if pros_text or cons_text:
+                                full_text = main_text
+                                if pros_text:
+                                    full_text += f"\nДостоинства: {pros_text}"
+                                if cons_text:
+                                    full_text += f"\nНедостатки: {cons_text}"
+                            else:
+                                full_text = main_text
+                            
                             all_feedbacks.append({
                                 'author': fb.get('wbUserDetails', {}).get('name', 'Аноним'),
                                 'date': date_str,
                                 'status': 'Подтвержденная покупка' if fb.get('verified') else 'Без подтверждения',
                                 'rating': fb.get('productValuation', 0),
-                                'text': fb.get('text', '') or (fb.get('pros', '') + '\n' + fb.get('cons', '')),
+                                'text': full_text,
                                 'article': article
                             })
                             

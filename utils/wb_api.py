@@ -82,7 +82,7 @@ class WBAPIClient:
                 )
 
     async def get_cards_list(self, payload: dict = None):
-        return await self._make_request(
+        response = await self._make_request(
             method="POST",
             endpoint="/content/v2/get/cards/list",
             json=payload or {
@@ -92,6 +92,7 @@ class WBAPIClient:
                 }
             }
         )
+        return response
 
     async def update_card_content(self, nm_id: int, content: dict) -> WBApiResponse:
         current_card = await self.get_card_by_nm(nm_id)
@@ -289,40 +290,55 @@ class WBAPIClient:
     async def get_all_cards(self, with_photo: int = -1, limit: int = 100):
         all_cards = []
         cursor = {}
-        while True:
-            payload = {
-                "settings": {
-                    "cursor": {
-                        "limit": limit,
-                        **cursor
-                    },
-                    "filter": {
-                        "withPhoto": with_photo
+        try:
+            from models.product import Product
+            from sqlalchemy import select
+            from database import AsyncSessionLocal
+            async with AsyncSessionLocal() as db:
+                while True:
+                    payload = {
+                        "settings": {
+                            "cursor": {
+                                "limit": limit,
+                                **cursor
+                            },
+                            "filter": {
+                                "withPhoto": with_photo
+                            }
+                        }
                     }
-                }
-            }
-            response = await self._make_request(
-                method="POST",
-                endpoint="/content/v2/get/cards/list",
-                json=payload
-            )
-            if not response.success:
-                break  # или обработайте ошибку
-
-            data = response.data or {}
-            cards = data.get("cards", [])
-            all_cards.extend(cards)
-
-            # Если карточек меньше лимита — это последняя страница
-            if len(cards) < limit:
-                break
-
-            # Получаем параметры для следующего запроса
-            last_card = cards[-1]
-            cursor = {
-                "updatedAt": last_card.get("updatedAt"),
-                "nmID": last_card.get("nmID")
-            }
-
+                    response = await self._make_request(
+                        method="POST",
+                        endpoint="/content/v2/get/cards/list",
+                        json=payload
+                    )
+                    if not response.success:
+                        break
+                    data = response.data or {}
+                    cards = data.get("cards", [])
+                    all_cards.extend(cards)
+                    for card in cards:
+                        nm_id = card.get("nmID")
+                        vendor_code = card.get("vendorCode")
+                        brand = card.get("brand")
+                        if nm_id is None:
+                            continue
+                        result = await db.execute(select(Product).where(Product.nm_id == nm_id))
+                        exists = result.scalars().first()
+                        if not exists:
+                            db.add(Product(nm_id=nm_id, vendor_code=vendor_code, brand=brand))
+                            print(f"[Product Save] Добавлена карточка: nm_id={nm_id}, vendor_code={vendor_code}, brand={brand}")
+                        else:
+                            print(f"[Product Save] Пропущена (уже есть): nm_id={nm_id}")
+                    await db.commit()
+                    if len(cards) < limit:
+                        break
+                    last_card = cards[-1]
+                    cursor = {
+                        "updatedAt": last_card.get("updatedAt"),
+                        "nmID": last_card.get("nmID")
+                    }
+        except Exception as e:
+            print(f"[Product Save] Ошибка при сохранении карточек: {e}")
         return all_cards
 

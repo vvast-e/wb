@@ -54,7 +54,18 @@ async def delete_shop(db: AsyncSession, shop_id: int) -> bool:
 
 
 async def add_price_history(db: AsyncSession, vendor_code: str, shop_id: int, nm_id: int, 
-                     new_price: int, old_price: Optional[int] = None) -> PriceHistory:
+                     new_price: int, old_price: Optional[int] = None) -> Optional[PriceHistory]:
+    # Проверка на дублирование: ищем последнюю запись
+    result = await db.execute(
+        select(PriceHistory).where(
+            PriceHistory.nm_id == nm_id,
+            PriceHistory.shop_id == shop_id
+        ).order_by(PriceHistory.price_date.desc())
+    )
+    last = result.scalars().first()
+    if last and last.new_price == new_price:
+        # Уже есть такая цена, не добавляем дубликат
+        return None
     price_history = PriceHistory(
         vendor_code=vendor_code,
         shop_id=shop_id,
@@ -86,3 +97,33 @@ async def get_latest_price(db: AsyncSession, vendor_code: str, shop_id: int) -> 
         ).order_by(PriceHistory.price_date.desc())
     )
     return result.scalars().first() 
+
+
+async def get_price_history_by_nmid(db: AsyncSession, nm_id: int, shop_id: int) -> List[PriceHistory]:
+    result = await db.execute(
+        select(PriceHistory).where(
+            PriceHistory.nm_id == nm_id,
+            PriceHistory.shop_id == shop_id
+        ).order_by(PriceHistory.price_date.desc())
+    )
+    return result.scalars().all() 
+
+
+async def save_price_change_history(db: AsyncSession, nm_id: int, shop_id: int, old_price: int, new_price: int):
+    from models.price_change_history import PriceChangeHistory
+    from datetime import datetime
+    change_data = {
+        "date": datetime.utcnow().isoformat(),
+        "old_price": old_price,
+        "new_price": new_price,
+        "diff": new_price - old_price if old_price is not None else None
+    }
+    record = PriceChangeHistory(
+        nm_id=nm_id,
+        shop_id=shop_id,
+        change_data=change_data
+    )
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+    return record 
