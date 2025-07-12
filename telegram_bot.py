@@ -166,10 +166,19 @@ class PriceMonitorBot:
             keyboard.append([InlineKeyboardButton(f"🏪 {name}", callback_data=callback)])
         keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")])
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.callback_query.edit_message_text(
-            "Выберите магазин:",
-            reply_markup=reply_markup
-        )
+        try:
+            await update.callback_query.edit_message_text(
+                "Выберите магазин:",
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            if "Message is not modified" in str(e):
+                # Если сообщение не изменилось, просто отвечаем на callback
+                await update.callback_query.answer()
+            else:
+                # Если другая ошибка, логируем её
+                logger.error(f"Ошибка при показе меню магазинов: {e}")
+                await update.callback_query.answer("Произошла ошибка при обновлении меню")
 
     async def show_supplier_products(self, update: Update, context: ContextTypes.DEFAULT_TYPE, supplier_id: int, page: int = 1, current_price: bool = False):
         try:
@@ -215,10 +224,19 @@ class PriceMonitorBot:
                 keyboard.append(nav_buttons)
             keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}{'_current' if current_price else ''}")])
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.callback_query.edit_message_text(
-                f"Товары магазина {SUPPLIERS.get(supplier_id, supplier_id)} (стр. {page}/{total_pages}):",
-                reply_markup=reply_markup
-            )
+            try:
+                await update.callback_query.edit_message_text(
+                    f"Товары магазина {SUPPLIERS.get(supplier_id, supplier_id)} (стр. {page}/{total_pages}):",
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                if "Message is not modified" in str(e):
+                    # Если сообщение не изменилось, просто отвечаем на callback
+                    await update.callback_query.answer()
+                else:
+                    # Если другая ошибка, логируем её
+                    logger.error(f"Ошибка при показе товаров: {e}")
+                    await update.callback_query.answer("Произошла ошибка при обновлении списка товаров")
         except Exception as e:
             await update.callback_query.edit_message_text(
                 f"❌ Ошибка при получении товаров: {str(e)}"
@@ -249,10 +267,17 @@ class PriceMonitorBot:
                 
                 keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=back_callback)]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.callback_query.edit_message_text(
-                    f"История изменений для товара {display_code} не найдена.",
-                    reply_markup=reply_markup
-                )
+                try:
+                    await update.callback_query.edit_message_text(
+                        f"История изменений для товара {display_code} не найдена.",
+                        reply_markup=reply_markup
+                    )
+                except Exception as e:
+                    if "Message is not modified" in str(e):
+                        await update.callback_query.answer()
+                    else:
+                        logger.error(f"Ошибка при показе истории: {e}")
+                        await update.callback_query.answer("Произошла ошибка при обновлении истории")
                 return
             
             lines = []
@@ -294,10 +319,17 @@ class PriceMonitorBot:
             
             keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=back_callback)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.callback_query.edit_message_text(
-                history_text,
-                reply_markup=reply_markup
-            )
+            try:
+                await update.callback_query.edit_message_text(
+                    history_text,
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                if "Message is not modified" in str(e):
+                    await update.callback_query.answer()
+                else:
+                    logger.error(f"Ошибка при показе истории: {e}")
+                    await update.callback_query.answer("Произошла ошибка при обновлении истории")
         except Exception as e:
             await update.callback_query.edit_message_text(
                 f"❌ Ошибка при получении истории изменений: {str(e)}"
@@ -353,23 +385,44 @@ class PriceMonitorBot:
                         price_str = f"{int(price):,}".replace(",", " ")
                         price_wallet_str = f"{price_wallet}".replace(",", " ")
                         text = f"📦 Товар: {display_code}\n💵 Текущая цена (по данным мониторинга): {price_str} ₽\n💳 С WB кошельком: {price_wallet_str} ₽"
-                        await update.callback_query.edit_message_text(
-                            text,
-                            reply_markup=reply_markup
-                        )
+                        try:
+                            await update.callback_query.edit_message_text(
+                                text,
+                                reply_markup=reply_markup
+                            )
+                        except Exception as e:
+                            if "Message is not modified" in str(e):
+                                await update.callback_query.answer()
+                            else:
+                                logger.error(f"Ошибка при показе текущей цены: {e}")
+                                await update.callback_query.answer("Произошла ошибка при обновлении цены")
                         return
-                await update.callback_query.edit_message_text(
-                    f"Текущая цена для товара {display_code} не найдена.",
-                    reply_markup=reply_markup
-                )
+                try:
+                    await update.callback_query.edit_message_text(
+                        f"Текущая цена для товара {display_code} не найдена.",
+                        reply_markup=reply_markup
+                    )
+                except Exception as e:
+                    if "Message is not modified" in str(e):
+                        await update.callback_query.answer()
+                    else:
+                        logger.error(f"Ошибка при показе текущей цены: {e}")
+                        await update.callback_query.answer("Произошла ошибка при обновлении цены")
                 return
             price_str = f"{int(price):,}".replace(",", " ")
             price_wallet_str = f"{price_wallet}".replace(",", " ")
             text = f"📦 Товар: {display_code}\n💵 Текущая цена: {price_str} ₽\n💳 С WB кошельком: {price_wallet_str} ₽"
-            await update.callback_query.edit_message_text(
-                text,
-                reply_markup=reply_markup
-            )
+            try:
+                await update.callback_query.edit_message_text(
+                    text,
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                if "Message is not modified" in str(e):
+                    await update.callback_query.answer()
+                else:
+                    logger.error(f"Ошибка при показе текущей цены: {e}")
+                    await update.callback_query.answer("Произошла ошибка при обновлении цены")
         except Exception as e:
             await update.callback_query.edit_message_text(
                 f"❌ Ошибка при получении текущей цены: {str(e)}",
