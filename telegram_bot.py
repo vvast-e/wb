@@ -525,7 +525,7 @@ class PriceMonitorBot:
                 f"💵 Старая цена: {old_price_str} ₽\n"
                 f"💵 Новая цена: {price_str} ₽\n"
                 f"📈 Изменение: {change_str} ₽\n\n"
-                f"🔗 Ссылка: https://www.wildberries.ru/catalog/{nm_id}/detail.aspx"
+                f"Ссылка: https://www.wildberries.ru/catalog/{nm_id}/detail.aspx"
             )
             from models.telegram_user import TelegramUser
             from sqlalchemy import select
@@ -562,7 +562,7 @@ class PriceMonitorBot:
     async def _send_single_notification(self, context, chat_id, message):
         """Отправка одного уведомления с обработкой ошибок"""
         try:
-            await context.bot.send_message(chat_id=chat_id, text=message)
+            await context.bot.send_message(chat_id=chat_id, text=message, disable_web_page_preview=True)
         except Exception as e:
             # Логируем только критические ошибки, не спамим лог
             if "bot was blocked" not in str(e).lower() and "chat not found" not in str(e).lower():
