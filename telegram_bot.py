@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 # Словарь для хранения состояний пользователей
 user_states = {}
 
+# Словарь для хранения контекста выбора пользователей
+user_context = {}
+
 class PriceMonitorBot:
     def __init__(self):
         self.parser = WBPriceParser()
@@ -96,21 +99,34 @@ class PriceMonitorBot:
         query = update.callback_query
         await query.answer()
         if query.data == "price_history":
+            # Сохраняем контекст пользователя
+            user_id = update.effective_user.id
+            user_context[user_id] = "history"
             await self.show_suppliers_menu(update, context)
         elif query.data == "current_price":
+            # Сохраняем контекст пользователя
+            user_id = update.effective_user.id
+            user_context[user_id] = "current_price"
             await self.show_suppliers_menu(update, context, current_price=True)
         elif query.data.startswith("supplier_"):
             parts = query.data.split("_")
             supplier_id = int(parts[1])
             page = 1
             current_price = False
-            if len(parts) >= 3 and parts[2] == "page":
+            
+            # Проверяем, есть ли "current" в callback_data
+            if "current" in parts:
+                current_price = True
+            
+            # Проверяем, есть ли "page" в callback_data
+            if "page" in parts:
                 try:
-                    page = int(parts[3])
+                    page_index = parts.index("page")
+                    if page_index + 1 < len(parts):
+                        page = int(parts[page_index + 1])
                 except Exception:
                     page = 1
-            if len(parts) >= 3 and parts[-1] == "current":
-                current_price = True
+            
             await self.show_supplier_products(update, context, supplier_id, page, current_price=current_price)
         elif query.data.startswith("product_"):
             parts = query.data.split("_")
@@ -121,6 +137,10 @@ class PriceMonitorBot:
             else:
                 await self.show_product_history(update, context, nm_id, supplier_id)
         elif query.data == "back_to_main":
+            # Сбрасываем контекст пользователя
+            user_id = update.effective_user.id
+            if user_id in user_context:
+                del user_context[user_id]
             await self.show_main_menu(update, context)
         elif query.data == "show_menu":
             await self.show_main_menu(update, context)
@@ -193,7 +213,7 @@ class PriceMonitorBot:
                 nav_buttons.append(InlineKeyboardButton("Следующая ➡️", callback_data=f"supplier_{supplier_id}_page_{page+1}{'_current' if current_price else ''}"))
             if nav_buttons:
                 keyboard.append(nav_buttons)
-            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="price_history")])
+            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}{'_current' if current_price else ''}")])
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text(
                 f"Товары магазина {SUPPLIERS.get(supplier_id, supplier_id)} (стр. {page}/{total_pages}):",
@@ -221,12 +241,17 @@ class PriceMonitorBot:
                 # Получаем vendorCode для отображения
                 vendor_code = await self.get_vendor_code_by_nm_id(None, nm_id, supplier_id)
                 display_code = vendor_code or nm_id
-                keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}")]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.callback_query.edit_message_text(
-                    f"История изменений для товара {display_code} не найдена.",
-                    reply_markup=reply_markup
-                )
+                            # Определяем контекст пользователя для кнопки "Назад"
+            user_id = update.effective_user.id
+            context_type = user_context.get(user_id, "history")
+            back_callback = f"supplier_{supplier_id}{'_current' if context_type == 'current_price' else ''}"
+            
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=back_callback)]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(
+                f"История изменений для товара {display_code} не найдена.",
+                reply_markup=reply_markup
+            )
                 return
             lines = []
             moscow_tz = pytz.timezone('Europe/Moscow')
@@ -258,7 +283,13 @@ class PriceMonitorBot:
             vendor_code = await self.get_vendor_code_by_nm_id(None, nm_id, supplier_id)
             display_code = vendor_code or nm_id
             history_text = f"📊 История изменений товара {display_code}:\n\n" + "\n".join(lines[::-1])
-            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}")]]
+            
+            # Определяем контекст пользователя для кнопки "Назад"
+            user_id = update.effective_user.id
+            context_type = user_context.get(user_id, "history")
+            back_callback = f"supplier_{supplier_id}{'_current' if context_type == 'current_price' else ''}"
+            
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=back_callback)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text(
                 history_text,
