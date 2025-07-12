@@ -241,18 +241,20 @@ class PriceMonitorBot:
                 # Получаем vendorCode для отображения
                 vendor_code = await self.get_vendor_code_by_nm_id(None, nm_id, supplier_id)
                 display_code = vendor_code or nm_id
-                            # Определяем контекст пользователя для кнопки "Назад"
-            user_id = update.effective_user.id
-            context_type = user_context.get(user_id, "history")
-            back_callback = f"supplier_{supplier_id}{'_current' if context_type == 'current_price' else ''}"
-            
-            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=back_callback)]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.callback_query.edit_message_text(
-                f"История изменений для товара {display_code} не найдена.",
-                reply_markup=reply_markup
-            )
+                
+                # Определяем контекст пользователя для кнопки "Назад"
+                user_id = update.effective_user.id
+                context_type = user_context.get(user_id, "history")
+                back_callback = f"supplier_{supplier_id}{'_current' if context_type == 'current_price' else ''}"
+                
+                keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=back_callback)]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.callback_query.edit_message_text(
+                    f"История изменений для товара {display_code} не найдена.",
+                    reply_markup=reply_markup
+                )
                 return
+            
             lines = []
             moscow_tz = pytz.timezone('Europe/Moscow')
             for record in changes:
@@ -279,6 +281,7 @@ class PriceMonitorBot:
                 diff = data.get("diff", 0)
                 diff_str = f"(▲ {diff})" if diff > 0 else (f"(▼ {abs(diff)})" if diff < 0 else "")
                 lines.append(f"{date_str}: {old} → {new} ₽ {diff_str}")
+            
             # Получаем vendorCode для отображения
             vendor_code = await self.get_vendor_code_by_nm_id(None, nm_id, supplier_id)
             display_code = vendor_code or nm_id
