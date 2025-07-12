@@ -89,11 +89,18 @@ class PriceMonitorBot:
                 reply_markup=reply_markup_bottom
             )
         elif update.callback_query:
-            await update.callback_query.edit_message_text(
-                "👋 Добро пожаловать в бота мониторинга цен Wildberries!\n\n"
-                "Выберите действие:",
-                reply_markup=reply_markup
-            )
+            try:
+                await update.callback_query.edit_message_text(
+                    "👋 Добро пожаловать в бота мониторинга цен Wildberries!\n\n"
+                    "Выберите действие:",
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                if "Message is not modified" in str(e):
+                    await update.callback_query.answer()
+                else:
+                    logger.error(f"Ошибка при показе главного меню: {e}")
+                    await update.callback_query.answer("Произошла ошибка при обновлении меню")
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -127,7 +134,11 @@ class PriceMonitorBot:
                 except Exception:
                     page = 1
             
-            await self.show_supplier_products(update, context, supplier_id, page, current_price=current_price)
+            # Если это кнопка "Назад" из списка товаров, показываем меню магазинов
+            if len(parts) == 2 or (len(parts) == 3 and parts[2] == "current"):
+                await self.show_suppliers_menu(update, context, current_price=current_price)
+            else:
+                await self.show_supplier_products(update, context, supplier_id, page, current_price=current_price)
         elif query.data.startswith("product_"):
             parts = query.data.split("_")
             nm_id = int(parts[1])
@@ -184,7 +195,12 @@ class PriceMonitorBot:
         try:
             nm_ids = await self.parser.get_products_by_supplier_id(supplier_id)
             if not nm_ids:
-                keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="price_history")]]
+                # Определяем контекст пользователя для кнопки "Назад"
+                user_id = update.effective_user.id
+                context_type = user_context.get(user_id, "history")
+                back_callback = f"supplier_{supplier_id}{'_current' if context_type == 'current_price' else ''}"
+                
+                keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=back_callback)]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await update.callback_query.edit_message_text(
                     f"Товары для магазина {SUPPLIERS.get(supplier_id, supplier_id)} не найдены.",
