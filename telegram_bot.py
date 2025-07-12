@@ -105,40 +105,55 @@ class PriceMonitorBot:
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
+        
         if query.data == "price_history":
             # Сохраняем контекст пользователя
             user_id = update.effective_user.id
             user_context[user_id] = "history"
             await self.show_suppliers_menu(update, context)
+            
         elif query.data == "current_price":
             # Сохраняем контекст пользователя
             user_id = update.effective_user.id
             user_context[user_id] = "current_price"
             await self.show_suppliers_menu(update, context, current_price=True)
+            
+        elif query.data == "back_to_main":
+            # Сбрасываем контекст пользователя
+            user_id = update.effective_user.id
+            if user_id in user_context:
+                del user_context[user_id]
+            await self.show_main_menu(update, context)
+            
+        elif query.data == "show_menu":
+            await self.show_main_menu(update, context)
+            
         elif query.data.startswith("supplier_"):
             parts = query.data.split("_")
             supplier_id = int(parts[1])
-            page = 1
-            current_price = False
             
-            # Проверяем, есть ли "current" в callback_data
-            if "current" in parts:
-                current_price = True
-            
-            # Проверяем, есть ли "page" в callback_data
+            # Проверяем, есть ли "page" в callback_data (это навигация по страницам)
             if "page" in parts:
+                page = 1
+                current_price = "current" in parts
                 try:
                     page_index = parts.index("page")
                     if page_index + 1 < len(parts):
                         page = int(parts[page_index + 1])
                 except Exception:
                     page = 1
-            
-            # Если это кнопка "Назад" из списка товаров, показываем меню магазинов
-            if len(parts) == 2 or (len(parts) == 3 and parts[2] == "current"):
-                await self.show_suppliers_menu(update, context, current_price=current_price)
-            else:
                 await self.show_supplier_products(update, context, supplier_id, page, current_price=current_price)
+                
+            # Проверяем, есть ли "back" в callback_data (это кнопка "Назад" из списка товаров)
+            elif "back" in parts:
+                current_price = "current" in parts
+                await self.show_suppliers_menu(update, context, current_price=current_price)
+                
+            # Иначе это выбор магазина
+            else:
+                current_price = "current" in parts
+                await self.show_supplier_products(update, context, supplier_id, 1, current_price=current_price)
+                
         elif query.data.startswith("product_"):
             parts = query.data.split("_")
             nm_id = int(parts[1])
@@ -147,14 +162,6 @@ class PriceMonitorBot:
                 await self.show_product_current_price(update, context, nm_id, supplier_id)
             else:
                 await self.show_product_history(update, context, nm_id, supplier_id)
-        elif query.data == "back_to_main":
-            # Сбрасываем контекст пользователя
-            user_id = update.effective_user.id
-            if user_id in user_context:
-                del user_context[user_id]
-            await self.show_main_menu(update, context)
-        elif query.data == "show_menu":
-            await self.show_main_menu(update, context)
 
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик текстовых сообщений"""
@@ -198,7 +205,7 @@ class PriceMonitorBot:
                 # Определяем контекст пользователя для кнопки "Назад"
                 user_id = update.effective_user.id
                 context_type = user_context.get(user_id, "history")
-                back_callback = f"supplier_{supplier_id}{'_current' if context_type == 'current_price' else ''}"
+                back_callback = f"supplier_{supplier_id}_back{'_current' if context_type == 'current_price' else ''}"
                 
                 keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=back_callback)]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
@@ -238,7 +245,7 @@ class PriceMonitorBot:
                 nav_buttons.append(InlineKeyboardButton("Следующая ➡️", callback_data=f"supplier_{supplier_id}_page_{page+1}{'_current' if current_price else ''}"))
             if nav_buttons:
                 keyboard.append(nav_buttons)
-            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}{'_current' if current_price else ''}")])
+            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}_back{'_current' if current_price else ''}")])
             reply_markup = InlineKeyboardMarkup(keyboard)
             try:
                 await update.callback_query.edit_message_text(
@@ -279,7 +286,7 @@ class PriceMonitorBot:
                 # Определяем контекст пользователя для кнопки "Назад"
                 user_id = update.effective_user.id
                 context_type = user_context.get(user_id, "history")
-                back_callback = f"supplier_{supplier_id}{'_current' if context_type == 'current_price' else ''}"
+                back_callback = f"supplier_{supplier_id}_back{'_current' if context_type == 'current_price' else ''}"
                 
                 keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=back_callback)]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
@@ -331,7 +338,7 @@ class PriceMonitorBot:
             # Определяем контекст пользователя для кнопки "Назад"
             user_id = update.effective_user.id
             context_type = user_context.get(user_id, "history")
-            back_callback = f"supplier_{supplier_id}{'_current' if context_type == 'current_price' else ''}"
+            back_callback = f"supplier_{supplier_id}_back{'_current' if context_type == 'current_price' else ''}"
             
             keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=back_callback)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -382,7 +389,7 @@ class PriceMonitorBot:
                 product_data = await self.parser.get_product_details(nm_id)
                 vendor_code = product_data.get("vendorCode") if product_data else None
             display_code = vendor_code or nm_id
-            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}_current")]]
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}_back_current")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             if price is None:
                 # Пробуем взять последнюю цену из базы
@@ -442,7 +449,7 @@ class PriceMonitorBot:
         except Exception as e:
             await update.callback_query.edit_message_text(
                 f"❌ Ошибка при получении текущей цены: {str(e)}",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}_current")]])
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}_back_current")]])
             )
     
     async def price_history_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
