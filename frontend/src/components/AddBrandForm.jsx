@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Form, Button, Alert, Spinner, Card, Tabs, Tab, Toast, ToastContainer } from 'react-bootstrap';
-import axios from 'axios';
+import api from '../api';
 import { BiPlusCircle, BiRefresh, BiTrash, BiImage } from 'react-icons/bi';
 
 const AddBrandForm = ({ onSuccess }) => {
@@ -27,7 +27,7 @@ const AddBrandForm = ({ onSuccess }) => {
                 const token = localStorage.getItem('token');
 
                 // Получаем бренды
-                const brandsRes = await axios.get(`${import.meta.env.VITE_API_URL}/admin/brands`, {
+                const brandsRes = await api.get('/admin/brands', {
                     headers: { Authorization: `Bearer ${token}` }
                 });
 
@@ -36,7 +36,7 @@ const AddBrandForm = ({ onSuccess }) => {
                 }
 
                 // Получаем ImageBB ключ
-                const imagebbRes = await axios.get(`${import.meta.env.VITE_API_URL}/admin/imagebb-key`, {
+                const imagebbRes = await api.get('/admin/imagebb-key', {
                     headers: { Authorization: `Bearer ${token}` }
                 });
 
@@ -65,8 +65,8 @@ const AddBrandForm = ({ onSuccess }) => {
             setLoading(true);
             setError(null);
             const token = localStorage.getItem('token');
-            await axios.delete(
-                `${import.meta.env.VITE_API_URL}/admin/brands/${selectedBrand}`,
+            await api.delete(
+                `/admin/brands/${selectedBrand}`,
                 {
                     headers: { Authorization: `Bearer ${token}` }
                 }
@@ -96,7 +96,7 @@ const AddBrandForm = ({ onSuccess }) => {
                 api_key: formData.api_key,
             };
 
-            await axios[method](url, requestData, {
+            await api[method](url, requestData, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
@@ -112,7 +112,7 @@ const AddBrandForm = ({ onSuccess }) => {
                 try {
                     setToast({ show: true, message: `Запуск парсера отзывов для магазина "${requestData.name}"...`, variant: 'info' });
 
-                    const parseResponse = await axios.post(
+                    const parseResponse = await api.post(
                         `${import.meta.env.VITE_API_URL}/analytics/shop/${requestData.name}/parse-feedbacks`,
                         {},
                         {
@@ -155,7 +155,7 @@ const AddBrandForm = ({ onSuccess }) => {
         setLoading(true);
         try {
             const token = localStorage.getItem('token');
-            await axios.post(
+            await api.post(
                 `${import.meta.env.VITE_API_URL}/admin/imagebb-key`,
                 { imagebb_key: formData.imagebb_key },
                 {
@@ -220,7 +220,7 @@ const AddBrandForm = ({ onSuccess }) => {
                                 <Form.Select
                                     value={selectedBrand}
                                     onChange={(e) => handleBrandSelect(e.target.value)}
-                                    className="bg-secondary border-success text-light"
+                                    className="bg-dark border-success text-light"
                                 >
                                     <option value="">Выберите магазин...</option>
                                     {Object.keys(brands).map((brandName) => (
@@ -259,7 +259,7 @@ const AddBrandForm = ({ onSuccess }) => {
                                 <Form.Select
                                     value={selectedBrand}
                                     onChange={(e) => handleBrandSelect(e.target.value)}
-                                    className="bg-secondary border-danger text-light"
+                                    className="bg-dark border-success text-light"
                                 >
                                     <option value="">Выберите магазин...</option>
                                     {Object.keys(brands).map((brandName) => (
@@ -271,7 +271,7 @@ const AddBrandForm = ({ onSuccess }) => {
                             </Form.Group>
                             {selectedBrand && (
                                 <Button
-                                    variant="danger"
+                                    variant="success"
                                     onClick={handleDeleteBrand}
                                     disabled={loading}
                                     className="mt-3"
@@ -289,7 +289,7 @@ const AddBrandForm = ({ onSuccess }) => {
                 </Tab>
 
                 {/* Вкладка: ImageBB Key */}
-                <Tab eventKey="imagebb" title="ImageBB Key" tabClassName="text-warning">
+                <Tab eventKey="imagebb" title="ImageBB Key">
                     <Form onSubmit={handleImagebbSubmit}>
                         <Form.Group className="mb-3">
                             <Form.Label>Текущий ключ</Form.Label>
@@ -297,7 +297,7 @@ const AddBrandForm = ({ onSuccess }) => {
                                 type="text"
                                 value={imagebbKey}
                                 readOnly
-                                className="bg-secondary border-success text-light"
+                                className="bg-dark border-success text-light"
                             />
                         </Form.Group>
 
@@ -308,7 +308,7 @@ const AddBrandForm = ({ onSuccess }) => {
                                 value={formData.imagebb_key || ''}
                                 onChange={(e) => setFormData({ ...formData, imagebb_key: e.target.value })}
                                 required
-                                className="bg-secondary border-success text-light"
+                                className="bg-dark border-success text-light"
                             />
                         </Form.Group>
 
@@ -319,7 +319,7 @@ const AddBrandForm = ({ onSuccess }) => {
                 </Tab>
 
                 {/* Новая вкладка: Принудительный парсинг */}
-                <Tab eventKey="force-parse" title="Принудительный парсинг" tabClassName="text-info">
+                <Tab eventKey="force-parse" title="Принудительный парсинг">
                     {Object.keys(brands).length === 0 ? (
                         <div className="text-center py-4">
                             <h5>Нет доступных магазинов</h5>
@@ -332,7 +332,7 @@ const AddBrandForm = ({ onSuccess }) => {
                                 <Form.Select
                                     value={selectedBrand}
                                     onChange={(e) => setSelectedBrand(e.target.value)}
-                                    className="bg-secondary border-info text-light"
+                                    className="bg-dark border-success text-light"
                                 >
                                     <option value="">Выберите магазин...</option>
                                     {Object.keys(brands).map((brandName) => (
@@ -342,39 +342,42 @@ const AddBrandForm = ({ onSuccess }) => {
                                     ))}
                                 </Form.Select>
                             </Form.Group>
-                            <Button
-                                variant="info"
-                                disabled={!selectedBrand || loading}
-                                onClick={async () => {
-                                    if (!selectedBrand) return;
-                                    setLoading(true);
-                                    try {
-                                        const token = localStorage.getItem('token');
-                                        setToast({ show: true, message: `Запуск парсера отзывов для магазина "${selectedBrand}"...`, variant: 'info' });
+                            {selectedBrand && (
+                                <Button
+                                    variant="success"
+                                    disabled={!selectedBrand || loading}
+                                    onClick={async () => {
+                                        if (!selectedBrand) return;
+                                        setLoading(true);
+                                        try {
+                                            const token = localStorage.getItem('token');
+                                            setToast({ show: true, message: `Запуск парсера отзывов для магазина "${selectedBrand}"...`, variant: 'info' });
 
-                                        const parseResponse = await axios.post(
-                                            `${import.meta.env.VITE_API_URL}/analytics/shop/${selectedBrand}/parse-feedbacks`,
-                                            {},
-                                            {
-                                                headers: { Authorization: `Bearer ${token}` }
+                                            const parseResponse = await api.post(
+                                                `${import.meta.env.VITE_API_URL}/analytics/shop/${selectedBrand}/parse-feedbacks`,
+                                                {},
+                                                {
+                                                    headers: { Authorization: `Bearer ${token}` }
+                                                }
+                                            );
+
+                                            // Проверяем статус парсинга
+                                            if (parseResponse.data && parseResponse.data.success) {
+                                                setToast({ show: true, message: `Парсер отзывов для магазина "${selectedBrand}" успешно завершен! Обработано отзывов: ${parseResponse.data.processed_count || 0}`, variant: 'success' });
+                                            } else {
+                                                setToast({ show: true, message: `Парсер отзывов для магазина "${selectedBrand}" запущен, но завершился с предупреждениями`, variant: 'warning' });
                                             }
-                                        );
-
-                                        // Проверяем статус парсинга
-                                        if (parseResponse.data && parseResponse.data.success) {
-                                            setToast({ show: true, message: `Парсер отзывов для магазина "${selectedBrand}" успешно завершен! Обработано отзывов: ${parseResponse.data.processed_count || 0}`, variant: 'success' });
-                                        } else {
-                                            setToast({ show: true, message: `Парсер отзывов для магазина "${selectedBrand}" запущен, но завершился с предупреждениями`, variant: 'warning' });
+                                        } catch (err) {
+                                            setToast({ show: true, message: `Ошибка запуска парсера для "${selectedBrand}": ${err.response?.data?.detail || err.message}`, variant: 'danger' });
+                                        } finally {
+                                            setLoading(false);
                                         }
-                                    } catch (err) {
-                                        setToast({ show: true, message: `Ошибка запуска парсера для "${selectedBrand}": ${err.response?.data?.detail || err.message}`, variant: 'danger' });
-                                    } finally {
-                                        setLoading(false);
-                                    }
-                                }}
-                            >
-                                {loading ? <Spinner size="sm" /> : 'Запустить парсер'}
-                            </Button>
+                                    }}
+                                    className="mt-3"
+                                >
+                                    {loading ? <Spinner size="sm" /> : 'Запустить парсер'}
+                                </Button>
+                            )}
                         </>
                     )}
                 </Tab>
@@ -409,10 +412,10 @@ const AddBrandForm = ({ onSuccess }) => {
                 >
                     <Toast.Header closeButton>
                         <strong className="me-auto">
-                            {toast.variant === 'success' ? '✅ Успех' : 
-                             toast.variant === 'danger' ? '❌ Ошибка' : 
-                             toast.variant === 'warning' ? '⚠️ Предупреждение' : 
-                             'ℹ️ Информация'}
+                            {toast.variant === 'success' ? '✅ Успех' :
+                                toast.variant === 'danger' ? '❌ Ошибка' :
+                                    toast.variant === 'warning' ? '⚠️ Предупреждение' :
+                                        'ℹ️ Информация'}
                         </strong>
                     </Toast.Header>
                     <Toast.Body className="text-white">{toast.message}</Toast.Body>
@@ -446,7 +449,7 @@ const BrandForm = ({
                         value={formData.name}
                         onChange={handleChange}
                         required
-                        className="bg-secondary border-success text-light"
+                        className="bg-dark border-success text-light"
                     />
                 </Form.Group>
             )}
@@ -458,7 +461,7 @@ const BrandForm = ({
                     value={formData.api_key}
                     onChange={handleChange}
                     required
-                    className="bg-secondary border-success text-light"
+                    className="bg-dark border-success text-light"
                 />
             </Form.Group>
 

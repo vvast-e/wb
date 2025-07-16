@@ -82,24 +82,30 @@ class Browser:
                 f"--remote-debugging-port={self.port}",
                 "--no-first-run",
                 "--no-default-browser-check",
-                "--disable-default-apps",
                 "--disable-popup-blocking",
-                "--disable-web-security",
-                "--disable-features=VizDisplayCompositor",
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--disable-software-rasterizer",
-                "--disable-extensions",
-                "--disable-plugins",
-                "--disable-images",
-                "--disable-javascript-harmony-shipping",
+                "--disable-background-networking",
                 "--disable-background-timer-throttling",
                 "--disable-backgrounding-occluded-windows",
+                "--disable-breakpad",
+                "--disable-client-side-phishing-detection",
+                "--disable-component-extensions-with-background-pages",
+                "--disable-default-apps",
+                "--disable-dev-shm-usage",
+                "--disable-extensions",
+                "--disable-features=TranslateUI,BlinkGenPropertyTrees",
+                "--disable-hang-monitor",
+                "--disable-ipc-flooding-protection",
+                "--disable-popup-blocking",
+                "--disable-prompt-on-repost",
                 "--disable-renderer-backgrounding",
-                "--disable-features=TranslateUI",
-                "--disable-ipc-flooding-protection"
+                "--disable-sync",
+                "--force-color-profile=srgb",
+                "--metrics-recording-only",
+                "--no-sandbox",
+                "--password-store=basic",
+                "--use-mock-keychain",
+                "--disable-gpu",
+                # "--disable-web-security",
             ]
             
             if self.headless:
@@ -121,7 +127,7 @@ class Browser:
             
             # Ожидание запуска и проверка доступности порта
             logger.info("Ожидание запуска Chrome...")
-            await asyncio.sleep(5)
+            await asyncio.sleep(8)  # увеличить время ожидания
             
             # Проверяем, что порт доступен
             import socket

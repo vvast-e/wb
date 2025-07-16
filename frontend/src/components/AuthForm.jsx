@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 import { Form, Button, Alert, Card, Spinner } from 'react-bootstrap';
 
 export default function AuthForm({ setIsAuth }) {
@@ -14,7 +14,7 @@ export default function AuthForm({ setIsAuth }) {
     const checkAdminStatus = async (token) => {
         try {
             setCheckingAdmin(true);
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/admin/check-admin`, {
+            const response = await api.get(`/admin/check-admin`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             return response.data?.is_admin || false;
@@ -37,8 +37,8 @@ export default function AuthForm({ setIsAuth }) {
             formData.append('password', password);
 
             // Получаем токен
-            const authResponse = await axios.post(
-                `${import.meta.env.VITE_API_URL}/auth/token`,
+            const authResponse = await api.post(
+                `/auth/token`,
                 formData,
                 { headers: { 'Content-Type': 'multipart/form-data' } }
             );

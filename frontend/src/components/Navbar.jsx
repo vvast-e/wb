@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import axios from 'axios';
+import api from '../api';
 
 const Navbar = ({ setIsAuth }) => {
     const navigate = useNavigate();
@@ -15,7 +15,7 @@ const Navbar = ({ setIsAuth }) => {
     const fetchUserData = async () => {
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/admin/check-admin`, {
+            const response = await api.get(`/admin/check-admin`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             setUserStatus(response.data.status);

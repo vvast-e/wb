@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../api';
 import { Container, Table, Spinner, Alert, Button, Pagination, Form, Row, Col } from 'react-bootstrap';
 import { useLocation } from 'react-router-dom';
 import { BiRefresh, BiChevronUp, BiChevronDown } from 'react-icons/bi';
@@ -82,9 +82,7 @@ const HistoryPage = () => {
                 setBrandsLoading(true);
                 setBrandsError(null);
                 const token = localStorage.getItem('token');
-                const response = await axios.get(`${import.meta.env.VITE_API_URL}/admin/brands`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                const response = await api.get('/admin/brands');
                 const brandData = response.data;
                 const brandNames = Object.keys(brandData);
                 setBrands(brandNames);
@@ -125,7 +123,7 @@ const HistoryPage = () => {
             const cleanedFilters = Object.fromEntries(
                 Object.entries(filters).filter(([_, value]) => value !== '')
             );
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/history`, {
+            const response = await api.get('/history', {
                 params: {
                     page: pagination.page,
                     per_page: pagination.perPage,
@@ -424,7 +422,7 @@ const HistoryPage = () => {
                                 }
 
                                 try {
-                                    await axios.post(
+                                    await api.post(
                                         `${import.meta.env.VITE_API_URL}${revertEndpoint}`,
                                         {},
                                         { headers: { Authorization: `Bearer ${token}` } }

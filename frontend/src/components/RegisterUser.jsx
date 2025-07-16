@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import axios from 'axios';
+import api from '../api';
 import { useNavigate } from 'react-router-dom';
 import { Form, Button, Alert, Card, Spinner } from 'react-bootstrap';
 
@@ -15,7 +15,7 @@ export default function RegisterUser({ setIsAuth }) {
         e.preventDefault();
         setLoading(true);
         try {
-            await axios.post(
+            await api.post(
                 `${import.meta.env.VITE_API_URL}/auth/register`,
                 { email, password }
             );

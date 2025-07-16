@@ -7,6 +7,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import pytz
+import concurrent.futures
 
 from database import AsyncSessionLocal
 from crud.shop import (
@@ -16,6 +17,7 @@ from crud.shop import (
 from crud.user import get_user_by_email
 from models.user import User
 from utils.wb_price_parser import WBPriceParser, fetch_wb_price_history, fetch_wb_current_price
+from utils.ozon_selenium_parser import get_all_products_prices_async
 from config import settings
 from supplier_ids import SUPPLIERS
 
@@ -31,6 +33,9 @@ user_states = {}
 
 # Словарь для хранения контекста выбора пользователей
 user_context = {}
+
+# Словарь для хранения задач парсинга по пользователям
+user_parsing_tasks = {}
 
 class PriceMonitorBot:
     def __init__(self):
@@ -64,25 +69,29 @@ class PriceMonitorBot:
         await self.show_main_menu(update, context)
 
     async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать главное меню"""
+        user_id = update.effective_user.id if update.effective_user else (update.message.from_user.id if update.message else None)
         keyboard = [
             [InlineKeyboardButton("📊 История цен", callback_data="price_history")],
             [InlineKeyboardButton("💵 Текущая цена", callback_data="current_price")]
         ]
+        if user_parsing_tasks.get((user_id, "wb")):
+            keyboard.append([InlineKeyboardButton("⏹ Остановить парсер WB", callback_data="stop_wb")])
+        else:
+            keyboard.append([InlineKeyboardButton("▶️ Запустить парсер WB", callback_data="start_wb")])
+        if user_parsing_tasks.get((user_id, "ozon")):
+            keyboard.append([InlineKeyboardButton("⏹ Остановить парсер Ozon", callback_data="stop_ozon")])
+        else:
+            keyboard.append([InlineKeyboardButton("▶️ Запустить парсер Ozon", callback_data="start_ozon")])
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # Создаем Reply Keyboard для кнопки "Меню" под полем ввода
         from telegram import ReplyKeyboardMarkup, KeyboardButton
         reply_keyboard = [[KeyboardButton("📋 Меню")]]
         reply_markup_bottom = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True, one_time_keyboard=False)
-        
         if update.message:
             await update.message.reply_text(
-                "👋 Добро пожаловать в бота мониторинга цен Wildberries!\n\n"
+                "👋 Добро пожаловать в бота мониторинга цен Wildberries и Ozon!\n\n"
                 "Выберите действие:",
                 reply_markup=reply_markup
             )
-            # Устанавливаем кнопку "Меню" под полем ввода
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text="💡 Нажмите кнопку 'Меню' ниже для быстрого доступа",
@@ -91,7 +100,7 @@ class PriceMonitorBot:
         elif update.callback_query:
             try:
                 await update.callback_query.edit_message_text(
-                    "👋 Добро пожаловать в бота мониторинга цен Wildberries!\n\n"
+                    "👋 Добро пожаловать в бота мониторинга цен Wildberries и Ozon!\n\n"
                     "Выберите действие:",
                     reply_markup=reply_markup
                 )
@@ -105,34 +114,33 @@ class PriceMonitorBot:
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
-        
-        if query.data == "price_history":
-            # Сохраняем контекст пользователя
-            user_id = update.effective_user.id
-            user_context[user_id] = "history"
-            await self.show_suppliers_menu(update, context)
-            
-        elif query.data == "current_price":
-            # Сохраняем контекст пользователя
-            user_id = update.effective_user.id
-            user_context[user_id] = "current_price"
-            await self.show_suppliers_menu(update, context, current_price=True)
-            
-        elif query.data == "back_to_main":
-            # Сбрасываем контекст пользователя
-            user_id = update.effective_user.id
-            if user_id in user_context:
-                del user_context[user_id]
+        user_id = update.effective_user.id
+        if query.data == "change_market":
             await self.show_main_menu(update, context)
-            
+            return
+        if query.data == "start_wb":
+            await self.start_wb_parser(update, context, user_id)
+            return
+        if query.data == "stop_wb":
+            await self.stop_wb_parser(update, context, user_id)
+            return
+        if query.data == "start_ozon":
+            await self.start_ozon_parser(update, context, user_id)
+            return
+        if query.data == "stop_ozon":
+            await self.stop_ozon_parser(update, context, user_id)
+            return
+        if query.data == "price_history":
+            await self.show_suppliers_menu(update, context)
+        elif query.data == "current_price":
+            await self.show_suppliers_menu(update, context, current_price=True)
+        elif query.data == "back_to_main":
+            await self.show_main_menu(update, context)
         elif query.data == "show_menu":
             await self.show_main_menu(update, context)
-            
         elif query.data.startswith("supplier_"):
             parts = query.data.split("_")
             supplier_id = int(parts[1])
-            
-            # Проверяем, есть ли "page" в callback_data (это навигация по страницам)
             if "page" in parts:
                 page = 1
                 current_price = "current" in parts
@@ -143,20 +151,15 @@ class PriceMonitorBot:
                 except Exception:
                     page = 1
                 await self.show_supplier_products(update, context, supplier_id, page, current_price=current_price)
-                
-            # Проверяем, есть ли "back" в callback_data (это кнопка "Назад" из списка товаров)
             elif "back" in parts:
                 current_price = "current" in parts
                 await self.show_suppliers_menu(update, context, current_price=current_price)
-                
-            # Иначе это выбор магазина
             else:
                 current_price = "current" in parts
                 await self.show_supplier_products(update, context, supplier_id, 1, current_price=current_price)
-                
         elif query.data.startswith("product_"):
             parts = query.data.split("_")
-            nm_id = int(parts[1])
+            nm_id = parts[1]  # nm_id теперь всегда строка
             supplier_id = int(parts[2])
             if len(parts) > 3 and parts[3] == "current":
                 await self.show_product_current_price(update, context, nm_id, supplier_id)
@@ -191,22 +194,27 @@ class PriceMonitorBot:
             )
         except Exception as e:
             if "Message is not modified" in str(e):
-                # Если сообщение не изменилось, просто отвечаем на callback
                 await update.callback_query.answer()
             else:
-                # Если другая ошибка, логируем её
                 logger.error(f"Ошибка при показе меню магазинов: {e}")
                 await update.callback_query.answer("Произошла ошибка при обновлении меню")
 
     async def show_supplier_products(self, update: Update, context: ContextTypes.DEFAULT_TYPE, supplier_id: int, page: int = 1, current_price: bool = False):
+        user_id = update.effective_user.id
+        market = user_context.get(user_id, {}).get("market", "wb")
         try:
-            nm_ids = await self.parser.get_products_by_supplier_id(supplier_id)
+            if supplier_id == 975642:  # OZON
+                async with AsyncSessionLocal() as db:
+                    from models.product import Product
+                    from sqlalchemy import select
+                    result = await db.execute(select(Product).where(Product.brand == '11i Professional OZON'))
+                    products = result.scalars().all()
+                    nm_ids = [p.nm_id for p in products]
+            else:
+                nm_ids = await self.parser.get_products_by_supplier_id(supplier_id)
             if not nm_ids:
-                # Определяем контекст пользователя для кнопки "Назад"
-                user_id = update.effective_user.id
-                context_type = user_context.get(user_id, "history")
+                context_type = user_context.get(user_id, {}).get("context", "history")
                 back_callback = f"supplier_{supplier_id}_back{'_current' if context_type == 'current_price' else ''}"
-                
                 keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=back_callback)]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await update.callback_query.edit_message_text(
@@ -224,8 +232,7 @@ class PriceMonitorBot:
             from sqlalchemy import select
             async with AsyncSessionLocal() as db:
                 for nm_id in nm_ids[start:end]:
-                    # Получаем vendorCode из базы
-                    result = await db.execute(select(Product).where(Product.nm_id == nm_id))
+                    result = await db.execute(select(Product).where(Product.nm_id == str(nm_id)))
                     product = result.scalars().first()
                     display_code = product.vendor_code if (product and product.vendor_code) else nm_id
                     if current_price:
@@ -245,7 +252,8 @@ class PriceMonitorBot:
                 nav_buttons.append(InlineKeyboardButton("Следующая ➡️", callback_data=f"supplier_{supplier_id}_page_{page+1}{'_current' if current_price else ''}"))
             if nav_buttons:
                 keyboard.append(nav_buttons)
-            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}_back{'_current' if current_price else ''}")])
+            # Кнопка назад возвращает в suppliers_menu выбранного маркетплейса
+            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"back_to_main")])
             reply_markup = InlineKeyboardMarkup(keyboard)
             try:
                 await update.callback_query.edit_message_text(
@@ -254,10 +262,8 @@ class PriceMonitorBot:
                 )
             except Exception as e:
                 if "Message is not modified" in str(e):
-                    # Если сообщение не изменилось, просто отвечаем на callback
                     await update.callback_query.answer()
                 else:
-                    # Если другая ошибка, логируем её
                     logger.error(f"Ошибка при показе товаров: {e}")
                     await update.callback_query.answer("Произошла ошибка при обновлении списка товаров")
         except Exception as e:
@@ -265,30 +271,34 @@ class PriceMonitorBot:
                 f"❌ Ошибка при получении товаров: {str(e)}"
             )
 
-    async def show_product_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE, nm_id: int, supplier_id: int):
-        # Показываем анимацию загрузки
+    async def show_product_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE, nm_id: str, supplier_id: int):
         await update.callback_query.edit_message_text("⏳ Загружаем историю цен...")
+        user_id = update.effective_user.id
+        market = user_context.get(user_id, {}).get("market", "wb")
         try:
             from models.price_change_history import PriceChangeHistory
             from sqlalchemy import select
             async with AsyncSessionLocal() as db:
-                result = await db.execute(
-                    select(PriceChangeHistory)
-                    .where(PriceChangeHistory.nm_id == nm_id, PriceChangeHistory.shop_id == supplier_id)
-                    .order_by(PriceChangeHistory.created_at.asc())
-                )
+                if supplier_id == 975642:
+                    # Для Ozon ищем историю по vendor_code
+                    vendor_code = await self.get_vendor_code_by_nm_id(db, nm_id, supplier_id)
+                    result = await db.execute(
+                        select(PriceChangeHistory)
+                        .where(PriceChangeHistory.nm_id == vendor_code, PriceChangeHistory.shop_id == supplier_id)
+                        .order_by(PriceChangeHistory.created_at.asc())
+                    )
+                else:
+                    result = await db.execute(
+                        select(PriceChangeHistory)
+                        .where(PriceChangeHistory.nm_id == nm_id, PriceChangeHistory.shop_id == supplier_id)
+                        .order_by(PriceChangeHistory.created_at.asc())
+                    )
                 changes = result.scalars().all()
             if not changes:
-                # Получаем vendorCode для отображения
                 vendor_code = await self.get_vendor_code_by_nm_id(None, nm_id, supplier_id)
                 display_code = vendor_code or nm_id
-                
-                # Определяем контекст пользователя для кнопки "Назад"
-                user_id = update.effective_user.id
-                context_type = user_context.get(user_id, "history")
-                back_callback = f"supplier_{supplier_id}_back{'_current' if context_type == 'current_price' else ''}"
-                
-                keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=back_callback)]]
+                context_type = user_context.get(user_id, {}).get("context", "history")
+                keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"back_to_main")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 try:
                     await update.callback_query.edit_message_text(
@@ -302,20 +312,16 @@ class PriceMonitorBot:
                         logger.error(f"Ошибка при показе истории: {e}")
                         await update.callback_query.answer("Произошла ошибка при обновлении истории")
                 return
-            
             lines = []
             moscow_tz = pytz.timezone('Europe/Moscow')
             for record in changes:
                 data = record.change_data
-                # Конвертируем время в московский часовой пояс
                 if 'date' in data:
                     try:
-                        # Парсим дату из строки и конвертируем в московское время
                         date_obj = datetime.fromisoformat(data['date'].replace('Z', '+00:00'))
                         moscow_time = date_obj.astimezone(moscow_tz)
                         date_str = moscow_time.strftime('%d.%m.%Y %H:%M')
                     except:
-                        # Если не удалось распарсить, добавляем +3 часа к UTC
                         try:
                             date_obj = datetime.fromisoformat(data['date'].replace('Z', '+00:00'))
                             moscow_time = date_obj.replace(tzinfo=pytz.UTC).astimezone(moscow_tz)
@@ -329,18 +335,10 @@ class PriceMonitorBot:
                 diff = data.get("diff", 0)
                 diff_str = f"(▲ {diff})" if diff > 0 else (f"(▼ {abs(diff)})" if diff < 0 else "")
                 lines.append(f"{date_str}: {old} → {new} ₽ {diff_str}")
-            
-            # Получаем vendorCode для отображения
             vendor_code = await self.get_vendor_code_by_nm_id(None, nm_id, supplier_id)
             display_code = vendor_code or nm_id
             history_text = f"📊 История изменений товара {display_code}:\n\n" + "\n".join(lines[::-1])
-            
-            # Определяем контекст пользователя для кнопки "Назад"
-            user_id = update.effective_user.id
-            context_type = user_context.get(user_id, "history")
-            back_callback = f"supplier_{supplier_id}_back{'_current' if context_type == 'current_price' else ''}"
-            
-            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=back_callback)]]
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"back_to_main")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             try:
                 await update.callback_query.edit_message_text(
@@ -358,56 +356,69 @@ class PriceMonitorBot:
                 f"❌ Ошибка при получении истории изменений: {str(e)}"
             )
 
-    async def get_vendor_code_by_nm_id(self, db, nm_id: int, shop_id: int) -> Optional[str]:
+    async def get_vendor_code_by_nm_id(self, db, nm_id: str, shop_id: int) -> Optional[str]:
         try:
             from models.product import Product
             from sqlalchemy import select
             if db is None:
                 async with AsyncSessionLocal() as db_session:
-                    result = await db_session.execute(select(Product).where(Product.nm_id == nm_id))
+                    if shop_id == 975642:
+                        # Для Ozon nm_id — это sku, ищем по nm_id → vendor_code
+                        result = await db_session.execute(select(Product).where(Product.nm_id == str(nm_id)))
+                        product = result.scalars().first()
+                        return product.vendor_code if product else None
+                    else:
+                        result = await db_session.execute(select(Product).where(Product.nm_id == str(nm_id)))
+                        product = result.scalars().first()
+                        return product.vendor_code if product else None
+            else:
+                if shop_id == 975642:
+                    result = await db.execute(select(Product).where(Product.nm_id == str(nm_id)))
                     product = result.scalars().first()
                     return product.vendor_code if product else None
-            else:
-                result = await db.execute(select(Product).where(Product.nm_id == nm_id))
-                product = result.scalars().first()
-                return product.vendor_code if product else None
+                else:
+                    result = await db.execute(select(Product).where(Product.nm_id == str(nm_id)))
+                    product = result.scalars().first()
+                    return product.vendor_code if product else None
         except Exception as e:
             print(f"[Bot] Ошибка поиска vendor_code по nm_id: {e}")
             return None
 
-    async def show_product_current_price(self, update: Update, context: ContextTypes.DEFAULT_TYPE, nm_id: int, supplier_id: int):
-        # Показываем анимацию загрузки
+    async def show_product_current_price(self, update: Update, context: ContextTypes.DEFAULT_TYPE, nm_id: str, supplier_id: int):
         await update.callback_query.edit_message_text("⏳ Получаем данные о товаре...")
-        """Показать текущую цену товара"""
+        user_id = update.effective_user.id
+        market = user_context.get(user_id, {}).get("market", "wb")
         try:
             price, price_wallet = await fetch_wb_current_price(nm_id)
-            # Сначала пробуем получить vendorCode из базы
             async with AsyncSessionLocal() as db:
                 vendor_code = await self.get_vendor_code_by_nm_id(db, nm_id, supplier_id)
-            # Если не нашли — пробуем из WB API
             if not vendor_code:
                 product_data = await self.parser.get_product_details(nm_id)
                 vendor_code = product_data.get("vendorCode") if product_data else None
             display_code = vendor_code or nm_id
-            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}_back_current")]]
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"back_to_main")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             if price is None:
-                # Пробуем взять последнюю цену из базы
                 from models.shop import PriceHistory
                 async with AsyncSessionLocal() as db:
                     result = await db.execute(
                         select(PriceHistory).where(
-                            PriceHistory.nm_id == nm_id,
+                            PriceHistory.nm_id == str(nm_id),
                             PriceHistory.shop_id == supplier_id
                         ).order_by(PriceHistory.price_date.desc())
                     )
                     latest = result.scalars().first()
                     if latest:
-                        price = latest.new_price / 100
-                        price_wallet = int(price * 0.98)
-                        price_str = f"{int(price):,}".replace(",", " ")
-                        price_wallet_str = f"{price_wallet}".replace(",", " ")
-                        text = f"📦 Товар: {display_code}\n💵 Текущая цена (по данным мониторинга): {price_str} ₽\n💳 С WB кошельком: {price_wallet_str} ₽"
+                        if supplier_id == 975642:
+                            price = latest.new_price
+                            price_str = f"{int(price):,}".replace(",", " ")
+                            text = f"📦 Товар: {display_code}\n💵 Текущая цена (по данным мониторинга): {price_str} ₽\n💳 С Ozon картой: {price_str} ₽"
+                        else:
+                            price = latest.new_price / 100
+                            price_wallet = int(price * 0.98)
+                            price_str = f"{int(price):,}".replace(",", " ")
+                            price_wallet_str = f"{price_wallet}".replace(",", " ")
+                            text = f"📦 Товар: {display_code}\n💵 Текущая цена (по данным мониторинга): {price_str} ₽\n💳 С WB кошельком: {price_wallet_str} ₽"
                         try:
                             await update.callback_query.edit_message_text(
                                 text,
@@ -432,9 +443,13 @@ class PriceMonitorBot:
                         logger.error(f"Ошибка при показе текущей цены: {e}")
                         await update.callback_query.answer("Произошла ошибка при обновлении цены")
                 return
-            price_str = f"{int(price):,}".replace(",", " ")
-            price_wallet_str = f"{price_wallet}".replace(",", " ")
-            text = f"📦 Товар: {display_code}\n💵 Текущая цена: {price_str} ₽\n💳 С WB кошельком: {price_wallet_str} ₽"
+            if supplier_id == 975642:
+                price_str = f"{int(price):,}".replace(",", " ")
+                text = f"📦 Товар: {display_code}\n💵 Текущая цена: {price_str} ₽\n💳 С Ozon картой: {price_str} ₽"
+            else:
+                price_str = f"{int(price):,}".replace(",", " ")
+                price_wallet_str = f"{price_wallet}".replace(",", " ")
+                text = f"📦 Товар: {display_code}\n💵 Текущая цена: {price_str} ₽\n💳 С WB кошельком: {price_wallet_str} ₽"
             try:
                 await update.callback_query.edit_message_text(
                     text,
@@ -449,7 +464,7 @@ class PriceMonitorBot:
         except Exception as e:
             await update.callback_query.edit_message_text(
                 f"❌ Ошибка при получении текущей цены: {str(e)}",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"supplier_{supplier_id}_back_current")]])
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"back_to_main")]])
             )
     
     async def price_history_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -460,6 +475,8 @@ class PriceMonitorBot:
         """Задача мониторинга цен - каждые 30 минут для всех товаров по supplier_id из supplier_ids.py"""
         try:
             total_prices = 0
+            
+            # Мониторинг Wildberries
             async with AsyncSessionLocal() as db:
                 for supplier_id, shop_name in SUPPLIERS.items():
                     try:
@@ -483,7 +500,7 @@ class PriceMonitorBot:
                                 from models.shop import PriceHistory
                                 result = await db.execute(
                                     select(PriceHistory).where(
-                                        PriceHistory.nm_id == nm_id,
+                                        PriceHistory.nm_id == str(nm_id),
                                         PriceHistory.shop_id == supplier_id
                                     ).order_by(PriceHistory.price_date.desc())
                                 )
@@ -500,12 +517,23 @@ class PriceMonitorBot:
                                 # Сохраняем новую цену
                                 from crud.shop import add_price_history
                                 await add_price_history(
-                                    db, str(nm_id), supplier_id, nm_id, int(current_price), old_price
+                                    db, str(nm_id), supplier_id, nm_id, int(current_price), old_price, market="wb"
                                 )
                             except Exception as e:
                                 logger.error(f"Ошибка при мониторинге цены товара {nm_id}: {e}")
                     except Exception as e:
                         logger.error(f"Ошибка при мониторинге магазина {shop_name}: {e}")
+            
+            # Мониторинг Ozon (если настроен)
+            try:
+                # Здесь можно добавить мониторинг Ozon магазинов
+                # ozon_seller_url = "https://www.ozon.ru/seller/11i-professional-975642/products/"
+                # ozon_result = get_all_products_prices(ozon_seller_url, max_products=20)
+                # print(f"[Ozon Monitor] {ozon_result}")
+                pass
+            except Exception as e:
+                logger.error(f"Ошибка при мониторинге Ozon: {e}")
+            
             print(f"[Monitor] Успешно спарсено текущих цен: {total_prices} (ожидалось 37)")
         except Exception as e:
             logger.error(f"Ошибка в задаче мониторинга цен: {e}")
@@ -517,45 +545,42 @@ class PriceMonitorBot:
             change_str = f"{change:+,}".replace(",", " ")
             price_str = f"{new_price:,}".replace(",", " ")
             old_price_str = f"{old_price:,}".replace(",", " ")
+            # Определяем ссылку и название магазина для уведомления
+            if shop_name.lower().endswith("ozon"):
+                url = f"https://www.ozon.ru/product/{nm_id}/"
+                shop_display = "11i professional OZON"
+            else:
+                from supplier_ids import SUPPLIERS
+                url = f"https://www.wildberries.ru/catalog/{nm_id}/detail.aspx"
+                shop_display = SUPPLIERS.get(int(shop_name.split()[0]), shop_name) if shop_name.split()[0].isdigit() else shop_name
             message = (
                 f"💰 Изменение цены!\n\n"
-                f"🏪 Магазин: {shop_name}\n"
+                f"🏪 Магазин: {shop_display}\n"
                 f"📦 Товар: {vendor_code}\n"
                 f"🔢 Артикул: {nm_id}\n"
                 f"💵 Старая цена: {old_price_str} ₽\n"
                 f"💵 Новая цена: {price_str} ₽\n"
                 f"📈 Изменение: {change_str} ₽\n\n"
-                f"Ссылка: https://www.wildberries.ru/catalog/{nm_id}/detail.aspx"
+                f"Ссылка: {url}"
             )
             from models.telegram_user import TelegramUser
             from sqlalchemy import select
             async with AsyncSessionLocal() as db:
                 result = await db.execute(select(TelegramUser.telegram_id))
                 chat_ids = result.scalars().all()
-                
-                # Оптимизированная отправка с задержками
-                batch_size = 25  # Отправляем по 25 сообщений за раз
-                delay_between_batches = 1.1  # Задержка 1.1 секунды между батчами (лимит 30/сек)
-                
+                batch_size = 25
+                delay_between_batches = 1.1
                 print(f"[Notification] Отправляем уведомление {len(chat_ids)} пользователям")
-                
                 for i in range(0, len(chat_ids), batch_size):
                     batch = chat_ids[i:i + batch_size]
                     tasks = []
-                    
                     for chat_id in batch:
                         task = self._send_single_notification(context, chat_id, message)
                         tasks.append(task)
-                    
-                    # Отправляем батч параллельно
                     await asyncio.gather(*tasks, return_exceptions=True)
-                    
-                    # Задержка между батчами (если есть следующий батч)
                     if i + batch_size < len(chat_ids):
                         await asyncio.sleep(delay_between_batches)
-                
                 print(f"[Notification] Уведомление отправлено {len(chat_ids)} пользователям")
-                
         except Exception as e:
             logger.error(f"Ошибка при отправке уведомления: {e}")
 
@@ -568,6 +593,101 @@ class PriceMonitorBot:
             if "bot was blocked" not in str(e).lower() and "chat not found" not in str(e).lower():
                 logger.error(f"Ошибка при отправке уведомления chat_id={chat_id}: {e}")
     
+    async def start_wb_parser(self, update, context, user_id):
+        if user_parsing_tasks.get((user_id, "wb")):
+            await update.callback_query.answer("Парсер WB уже запущен.", show_alert=True)
+            return
+        # Запуск WB-парсера (пример: через job_queue)
+        job = context.job_queue.run_repeating(self.monitor_prices_task, interval=900, first=1, name=f"wb_{user_id}", data={"user_id": user_id, "market": "wb"})
+        user_parsing_tasks[(user_id, "wb")] = job
+        await update.callback_query.answer("Парсер WB запущен!", show_alert=True)
+        await self.show_main_menu(update, context)
+
+    async def stop_wb_parser(self, update, context, user_id):
+        job = user_parsing_tasks.pop((user_id, "wb"), None)
+        if job:
+            job.schedule_removal()
+            await update.callback_query.answer("Парсер WB остановлен.", show_alert=True)
+        else:
+            await update.callback_query.answer("Парсер WB не был запущен.", show_alert=True)
+        await self.show_main_menu(update, context)
+
+    async def start_ozon_parser(self, update, context, user_id):
+        if user_parsing_tasks.get((user_id, "ozon")):
+            await update.callback_query.answer("Парсер Ozon уже запущен.", show_alert=True)
+            return
+        # Запуск Ozon-парсера (через job_queue, отдельная задача)
+        job = context.job_queue.run_repeating(self.monitor_ozon_task, interval=900, first=1, name=f"ozon_{user_id}", data={"user_id": user_id, "market": "ozon"})
+        user_parsing_tasks[(user_id, "ozon")] = job
+        await update.callback_query.answer("Парсер Ozon запущен!", show_alert=True)
+        await self.show_main_menu(update, context)
+
+    async def stop_ozon_parser(self, update, context, user_id):
+        job = user_parsing_tasks.pop((user_id, "ozon"), None)
+        if job:
+            job.schedule_removal()
+            await update.callback_query.answer("Парсер Ozon остановлен.", show_alert=True)
+        else:
+            await update.callback_query.answer("Парсер Ozon не был запущен.", show_alert=True)
+        await self.show_main_menu(update, context)
+
+    async def monitor_ozon_task(self, context: ContextTypes.DEFAULT_TYPE):
+        """Периодическая задача парсинга Ozon для пользователя"""
+        OZON_SELLER_URL = "https://www.ozon.ru/seller/11i-professional-975642/products/?__rr=3&miniapp=seller_975642"
+        try:
+            total_prices = 0
+            from models.shop import PriceHistory
+            from crud.shop import add_price_history
+            from models.product import Product
+            from sqlalchemy import select
+            async with AsyncSessionLocal() as db:
+                # Получаем товары с enriched offer_id
+                products = await get_all_products_prices_async(OZON_SELLER_URL)
+                for product in products:
+                    nm_id = product.get('nm_id')  # SKU (sku)
+                    offer_id = product.get('offer_id')  # vendor_code (offer_id)
+                    seller_id = product.get('seller_id')
+                    new_price = product.get('price_regular')
+                    if not (nm_id and seller_id and new_price and offer_id):
+                        continue
+                    # Сохраняем/обновляем product
+                    result = await db.execute(select(Product).where(Product.vendor_code == str(offer_id)))
+                    exists = result.scalars().first()
+                    if not exists:
+                        db.add(Product(nm_id=nm_id, vendor_code=offer_id, brand="11i Professional OZON"))
+                        await db.commit()
+                    # Получаем последнюю цену из базы по vendor_code (offer_id)
+                    result = await db.execute(
+                        select(PriceHistory).where(
+                            PriceHistory.vendor_code == str(offer_id),
+                            PriceHistory.shop_id == seller_id,
+                            PriceHistory.market == 'ozon'
+                        ).order_by(PriceHistory.price_date.desc())
+                    )
+                    latest_price = result.scalars().first()
+                    old_price = latest_price.new_price if latest_price else None
+                    # Если цена изменилась — уведомляем и сохраняем
+                    if old_price is not None and old_price != int(new_price):
+                        await self.send_price_change_notification(
+                            shop_name="11i professional OZON",
+                            vendor_code=offer_id,
+                            old_price=old_price,
+                            new_price=int(new_price),
+                            product_name=str(nm_id),
+                            nm_id=nm_id,
+                            context=context
+                        )
+                        from crud.shop import save_price_change_history
+                        await save_price_change_history(db, offer_id, seller_id, old_price, int(new_price))
+                    # Сохраняем новую цену (vendor_code — основной ключ, nm_id — справочно)
+                    await add_price_history(
+                        db, offer_id, seller_id, nm_id, int(new_price), old_price, market="ozon"
+                    )
+                    total_prices += 1
+            print(f"[Ozon Monitor] Успешно спарсено текущих цен: {total_prices}")
+        except Exception as e:
+            logger.error(f"Ошибка в задаче мониторинга цен Ozon: {e}")
+
     def run(self):
         """Запуск бота"""
         self.application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
@@ -578,8 +698,8 @@ class PriceMonitorBot:
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
         
-        # Добавляем задачу мониторинга в JobQueue (каждые 15 минут)
-        self.application.job_queue.run_repeating(self.monitor_prices_task, interval=900, first=10)
+        # Удаляем автозапуск мониторинга WB:
+        # self.application.job_queue.run_repeating(self.monitor_prices_task, interval=900, first=10)
         
         # Запускаем бота
         self.application.run_polling()

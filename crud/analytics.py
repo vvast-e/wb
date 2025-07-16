@@ -135,7 +135,7 @@ async def get_reviews_with_filters_crud(
         for article_id in article_ids:
             try:
                 nm_id = int(article_id)
-                nm_ids.append(nm_id)
+                nm_ids.append(str(nm_id))
             except (ValueError, TypeError):
                 continue
         
@@ -324,7 +324,7 @@ async def get_shop_data_crud(
         for article_key in all_keys:
             try:
                 nm_id = int(article_key)
-                nm_ids.append(nm_id)
+                nm_ids.append(str(nm_id))
             except (ValueError, TypeError):
                 continue
         
@@ -673,7 +673,7 @@ async def get_shops_summary_crud(
             for article_key in products_data.keys():
                 try:
                     nm_id = int(article_key)
-                    nm_ids.append(nm_id)
+                    nm_ids.append(str(nm_id))
                 except (ValueError, TypeError):
                     continue
             
@@ -722,11 +722,11 @@ async def parse_shop_feedbacks_crud(
         max_count_per_product: int = 1000,
         save_to_db: bool = True
 ) -> Dict[str, Any]:
-    """Массовый парсинг отзывов всех товаров магазина"""
+    """Массовый парсинг отзывов всех товаров магазина с поддержкой soft delete"""
     from crud.user import get_decrypted_wb_key
     from utils.wb_api import WBAPIClient
     from utils.wb_nodriver_parser import parse_feedbacks_optimized
-    from crud.feedback import save_feedbacks_batch
+    from crud.feedback import sync_feedbacks_with_soft_delete
     from models.user import User
 
     user_query = select(User).where(User.id == user_id)
@@ -765,7 +765,9 @@ async def parse_shop_feedbacks_crud(
         successful_products = 0
         failed_products = 0
         total_feedbacks = 0
-        saved_feedbacks = 0
+        total_new_feedbacks = 0
+        total_restored_feedbacks = 0
+        total_deleted_feedbacks = 0
 
         results = []
 
@@ -807,15 +809,18 @@ async def parse_shop_feedbacks_crud(
 
                 total_feedbacks += len(feedbacks_data)
 
-                # Сохраняем отзывы (проверка дублей происходит в save_feedbacks_batch)
+                # Синхронизируем отзывы с поддержкой soft delete
                 if save_to_db and feedbacks_data:
-                    saved_feedbacks_batch_result = await save_feedbacks_batch(
+                    sync_stats = await sync_feedbacks_with_soft_delete(
                         db=db,
-                        feedbacks_data=feedbacks_data,
+                        feedbacks_from_wb=feedbacks_data,
                         brand=shop_id,
                         user_id=user_id
                     )
-                    saved_feedbacks += len(saved_feedbacks_batch_result)
+                    
+                    total_new_feedbacks += sync_stats['new_feedbacks']
+                    total_restored_feedbacks += sync_stats['restored_feedbacks']
+                    total_deleted_feedbacks += sync_stats['deleted_feedbacks']
 
                 successful_products += 1
                 results.append({
@@ -823,7 +828,7 @@ async def parse_shop_feedbacks_crud(
                     "vendor_code": vendor_code,
                     "success": True,
                     "parsed_count": len(feedbacks_data),
-                    "saved_count": len(saved_feedbacks_batch_result) if save_to_db and feedbacks_data else 0
+                    "sync_stats": sync_stats if save_to_db and feedbacks_data else None
                 })
 
             except Exception as e:
@@ -842,7 +847,9 @@ async def parse_shop_feedbacks_crud(
             "successful_products": successful_products,
             "failed_products": failed_products,
             "total_feedbacks": total_feedbacks,
-            "saved_feedbacks": saved_feedbacks,
+            "total_new_feedbacks": total_new_feedbacks,
+            "total_restored_feedbacks": total_restored_feedbacks,
+            "total_deleted_feedbacks": total_deleted_feedbacks,
             "results": results
         }
 

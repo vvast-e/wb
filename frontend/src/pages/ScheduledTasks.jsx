@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api';
 import { Container, Table, Button, Spinner, Alert, Badge } from 'react-bootstrap';
 
 const actionMap = {
@@ -34,9 +34,7 @@ const ScheduledTasks = () => {
     const fetchTasks = async () => {
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/tasks`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const response = await api.get('/tasks');
             setTasks(response.data);
             setLoading(false);
         } catch (err) {
@@ -53,9 +51,7 @@ const ScheduledTasks = () => {
         if (window.confirm('Вы уверены, что хотите удалить это запланированное изменение?')) {
             try {
                 const token = localStorage.getItem('token');
-                await axios.delete(`${import.meta.env.VITE_API_URL}/tasks/delete/${taskId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                await api.delete(`/tasks/delete/${taskId}`);
                 fetchTasks();
             } catch (err) {
                 setError(err.response?.data?.detail || err.message);

@@ -62,6 +62,7 @@ async def get_feedbacks(
     is_processed: Optional[int] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
+    include_deleted: bool = False,
     limit: int = 100,
     offset: int = 0,
     order_by: str = "created_at",
@@ -87,6 +88,10 @@ async def get_feedbacks(
         stmt = stmt.where(Feedback.date >= date_from)
     if date_to:
         stmt = stmt.where(Feedback.date <= date_to)
+    
+    # Фильтр по удалённым отзывам
+    if not include_deleted:
+        stmt = stmt.where(Feedback.is_deleted == False)
     
     # Сортировка
     sort_column_map = {
@@ -114,7 +119,8 @@ async def get_feedback_analytics(
     article: Optional[int] = None,
     brand: Optional[str] = None,
     date_from: Optional[datetime] = None,
-    date_to: Optional[datetime] = None
+    date_to: Optional[datetime] = None,
+    include_deleted: bool = False
 ) -> Dict[str, Any]:
     """Получение аналитики по отзывам"""
     stmt = select(Feedback)
@@ -128,6 +134,10 @@ async def get_feedback_analytics(
         stmt = stmt.where(Feedback.date >= date_from)
     if date_to:
         stmt = stmt.where(Feedback.date <= date_to)
+    
+    # Фильтр по удалённым отзывам
+    if not include_deleted:
+        stmt = stmt.where(Feedback.is_deleted == False)
     
     result = await db.execute(stmt)
     feedbacks = result.scalars().all()
@@ -193,11 +203,24 @@ async def update_feedback_processing(
 
 
 def parse_wb_date(date_str: str) -> datetime:
+    """
+    Парсинг даты из Wildberries API с поддержкой различных форматов
+    """
+    if not date_str or not isinstance(date_str, str):
+        return None
+    
+    date_str = date_str.strip()
+    if not date_str:
+        return None
+    
+    # Словарь месяцев для русского формата
     MONTHS = {
         'января': '01', 'февраля': '02', 'марта': '03', 'апреля': '04',
         'мая': '05', 'июня': '06', 'июля': '07', 'августа': '08',
         'сентября': '09', 'октября': '10', 'ноября': '11', 'декабря': '12'
     }
+    
+    # 1. Пробуем русский формат: "15 января 2024, 10:30"
     match = re.match(r'(\d+)\s+(\w+)(?:\s+(\d+))?,\s+(\d+):(\d+)', date_str)
     if match:
         day, month_str, year, hour, minute = match.groups()
@@ -210,8 +233,6 @@ def parse_wb_date(date_str: str) -> datetime:
         if not year:
             year = str(now.year)
         parsed_date_str = f"{year}-{month}-{day} {hour}:{minute}"
-        print("-" * 50)
-        print(parsed_date_str)
         try:
             parsed = datetime.strptime(parsed_date_str, "%Y-%m-%d %H:%M")
             # Если год был подставлен и дата в будущем — уменьшить год на 1
@@ -225,20 +246,58 @@ def parse_wb_date(date_str: str) -> datetime:
             print(f"[ERROR] strptime fail for '{parsed_date_str}': {e}")
             return None
 
+    # 2. Пробуем ISO формат: "2024-01-15T10:30:00" или "2024-01-15T10:30:00Z"
+    if 'T' in date_str:
+        try:
+            # Для ISO форматов с Z (UTC) используем специальную обработку
+            if 'Z' in date_str:
+                # Убираем Z и парсим как UTC
+                clean_date_str = date_str.replace('Z', '+00:00')
+                parsed = datetime.fromisoformat(clean_date_str)
+                # Конвертируем в московское время
+                from zoneinfo import ZoneInfo
+                moscow_tz = ZoneInfo("Europe/Moscow")
+                parsed = parsed.astimezone(moscow_tz)
+                # Убираем timezone info для сохранения в БД
+                parsed = parsed.replace(tzinfo=None)
+            else:
+                # Убираем часовой пояс если есть
+                clean_date_str = date_str
+                if '+' in clean_date_str:
+                    clean_date_str = clean_date_str.split('+')[0]
+                
+                # Парсим ISO формат
+                parsed = datetime.fromisoformat(clean_date_str)
+            
+            # Проверяем, что дата не в будущем (с запасом в 1 день)
+            now = datetime.now()
+            if parsed > now + timedelta(days=1):
+                print(f"[WARN] Будущая дата обнаружена: {parsed}, отзыв будет пропущен")
+                return None
+            return parsed
+        except Exception as e:
+            print(f"[WARN] Ошибка парсинга ISO даты '{date_str}': {e}")
+            return None
+
+    # 3. Пробуем другие форматы через dateutil
     try:
         from dateutil import parser
-        if re.match(r'^\d{4}-\d{2}-\d{2}T', date_str):
-            # ISO-формат: год-месяц-день
-            parsed = parser.parse(date_str)
-        else:
-            parsed = parser.parse(date_str, dayfirst=True)
+        parsed = parser.parse(date_str, dayfirst=True)
+        # Конвертируем в московское время если есть timezone
+        if parsed.tzinfo:
+            from zoneinfo import ZoneInfo
+            moscow_tz = ZoneInfo("Europe/Moscow")
+            parsed = parsed.astimezone(moscow_tz)
+            parsed = parsed.replace(tzinfo=None)
+        
+        # Проверяем, что дата не в будущем (с запасом в 1 день)
         now = datetime.now()
-        if parsed > now:
+        if parsed > now + timedelta(days=1):
             print(f"[WARN] Будущая дата обнаружена: {parsed}, отзыв будет пропущен")
             return None
         return parsed
     except Exception as e:
-        #print(f"[WARN] Ошибка при парсинге даты '{date_str}': {e}")
+        print(f"[WARN] Ошибка при парсинге даты '{date_str}': {e}")
         return None
 
 
@@ -253,14 +312,15 @@ async def save_feedbacks_batch(
     feedbacks = []
     
     for data in feedbacks_data:
-        # Проверяем, есть ли уже такой отзыв в базе
+        # Проверяем, есть ли уже такой отзыв в базе (без учета user_id)
+        # Нормализуем текст для сравнения
+        normalized_text = data.get('text', '').strip().replace('\n', ' ').replace('\r', ' ').replace('  ', ' ')
         existing_query = select(Feedback).where(
             and_(
                 Feedback.article == data.get('article'),
                 Feedback.brand == brand,
                 Feedback.author == data.get('author', 'Аноним'),
-                Feedback.text == data.get('text', ''),
-                Feedback.user_id == user_id
+                Feedback.text == normalized_text
             )
         )
         existing_result = await db.execute(existing_query)
@@ -350,3 +410,164 @@ async def get_unprocessed_negative_feedbacks(
     
     result = await db.execute(stmt)
     return result.scalars().all()
+
+
+async def sync_feedbacks_with_soft_delete(
+    db: AsyncSession,
+    feedbacks_from_wb: List[Dict[str, Any]],
+    brand: str,
+    user_id: Optional[int] = None,
+    history_id: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Синхронизация отзывов с поддержкой soft delete.
+    
+    Args:
+        db: Сессия базы данных
+        feedbacks_from_wb: Список отзывов с Wildberries
+        brand: Бренд/магазин
+        user_id: ID пользователя
+        history_id: ID истории (опционально)
+    
+    Returns:
+        Dict с статистикой синхронизации
+    """
+    from datetime import datetime
+    
+    # Получаем все отзывы из базы для данного бренда (без учета user_id)
+    existing_query = select(Feedback).where(Feedback.brand == brand)
+    existing_result = await db.execute(existing_query)
+    existing_feedbacks = existing_result.scalars().all()
+    
+    # Создаем уникальные ключи для отзывов из WB (только по автору и тексту)
+    wb_feedback_keys = set()
+    for fb in feedbacks_from_wb:
+        author = fb.get('author', 'Аноним')
+        text = fb.get('text', '')
+        # Нормализуем текст для сравнения
+        normalized_text = text.strip().replace('\n', ' ').replace('\r', ' ').replace('  ', ' ')
+        # Используем только автора и нормализованный текст для ключа (без даты)
+        key = (author, normalized_text)
+        wb_feedback_keys.add(key)
+    
+    # Создаем уникальные ключи для существующих отзывов
+    existing_feedback_keys = set()
+    for fb in existing_feedbacks:
+        author = fb.author or 'Аноним'
+        text = fb.text or ''
+        # Нормализуем текст для сравнения
+        normalized_text = text.strip().replace('\n', ' ').replace('\r', ' ').replace('  ', ' ')
+        # Используем только автора и нормализованный текст для ключа (без даты)
+        key = (author, normalized_text)
+        existing_feedback_keys.add(key)
+    
+    # Статистика
+    stats = {
+        'total_wb_feedbacks': len(feedbacks_from_wb),
+        'total_existing_feedbacks': len(existing_feedbacks),
+        'new_feedbacks': 0,
+        'restored_feedbacks': 0,
+        'deleted_feedbacks': 0,
+        'unchanged_feedbacks': 0
+    }
+    
+    # 1. Помечаем как удалённые отзывы, которых нет на WB
+    for fb in existing_feedbacks:
+        author = fb.author or 'Аноним'
+        text = fb.text or ''
+        # Нормализуем текст для сравнения
+        normalized_text = text.strip().replace('\n', ' ').replace('\r', ' ').replace('  ', ' ')
+        key = (author, normalized_text)
+        
+        if key not in wb_feedback_keys and not fb.is_deleted:
+            # Отзыв есть в базе, но нет на WB - помечаем как удалённый
+            fb.is_deleted = True
+            fb.deleted_at = moscow_now()
+            stats['deleted_feedbacks'] += 1
+        elif key in wb_feedback_keys and fb.is_deleted:
+            # Отзыв есть на WB и в базе, но был помечен как удалённый - восстанавливаем
+            fb.is_deleted = False
+            fb.deleted_at = None
+            stats['restored_feedbacks'] += 1
+        elif key in wb_feedback_keys and not fb.is_deleted:
+            # Отзыв есть и на WB, и в базе, и не удалён - без изменений
+            stats['unchanged_feedbacks'] += 1
+    
+    # 2. Добавляем новые отзывы
+    new_feedbacks = []
+    for fb_data in feedbacks_from_wb:
+        author = fb_data.get('author', 'Аноним')
+        text = fb_data.get('text', '')
+        # Нормализуем текст для сравнения
+        normalized_text = text.strip().replace('\n', ' ').replace('\r', ' ').replace('  ', ' ')
+        key = (author, normalized_text)
+        
+        if key not in existing_feedback_keys:
+            # Новый отзыв - добавляем в базу
+            # Разбираем текст на части
+            main_text = None
+            pros_text = None
+            cons_text = None
+            
+            if 'Достоинства:' in text:
+                parts = text.split('Достоинства:')
+                main_text = parts[0].strip()
+                if 'Недостатки:' in parts[1]:
+                    pros_cons = parts[1].split('Недостатки:')
+                    pros_text = pros_cons[0].strip()
+                    cons_text = pros_cons[1].strip()
+                else:
+                    pros_text = parts[1].strip()
+            elif 'Недостатки:' in text:
+                parts = text.split('Недостатки:')
+                main_text = parts[0].strip()
+                cons_text = parts[1].strip()
+            else:
+                main_text = text
+                pros_text = None
+                cons_text = None
+            
+            # Обработка даты
+            date_obj = None
+            date_str = fb_data.get('date', '')
+            if date_str and isinstance(date_str, str) and date_str.strip():
+                date_obj = parse_wb_date(date_str)
+            
+            new_feedback = Feedback(
+                article=fb_data.get('article'),
+                brand=brand,
+                author=author,
+                rating=fb_data.get('rating', 0),
+                date=date_obj,
+                status=fb_data.get('status', 'Без подтверждения'),
+                text=text,
+                main_text=main_text,
+                pros_text=pros_text,
+                cons_text=cons_text,
+                user_id=user_id,
+                history_id=history_id,
+                is_negative=1 if fb_data.get('rating', 0) <= 2 else 0,
+                is_deleted=False,
+                deleted_at=None
+            )
+            new_feedbacks.append(new_feedback)
+            stats['new_feedbacks'] += 1
+    
+    # Сохраняем изменения
+    if new_feedbacks:
+        db.add_all(new_feedbacks)
+    
+    await db.commit()
+    
+    # Обновляем статистику
+    stats['total_after_sync'] = len(existing_feedbacks) + len(new_feedbacks)
+    
+    print(f"[SYNC] Статистика синхронизации для {brand}:")
+    print(f"  - Отзывов на WB: {stats['total_wb_feedbacks']}")
+    print(f"  - Отзывов в базе: {stats['total_existing_feedbacks']}")
+    print(f"  - Новых отзывов: {stats['new_feedbacks']}")
+    print(f"  - Восстановленных: {stats['restored_feedbacks']}")
+    print(f"  - Помеченных как удалённые: {stats['deleted_feedbacks']}")
+    print(f"  - Без изменений: {stats['unchanged_feedbacks']}")
+    
+    return stats

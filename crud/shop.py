@@ -53,13 +53,14 @@ async def delete_shop(db: AsyncSession, shop_id: int) -> bool:
     return False
 
 
-async def add_price_history(db: AsyncSession, vendor_code: str, shop_id: int, nm_id: int, 
-                     new_price: int, old_price: Optional[int] = None) -> Optional[PriceHistory]:
-    # Проверка на дублирование: ищем последнюю запись
+async def add_price_history(db: AsyncSession, vendor_code: str, shop_id: int, nm_id: str, 
+                     new_price: int, old_price: Optional[int] = None, market: str = "wb") -> Optional[PriceHistory]:
+    # Проверка на дублирование: ищем последнюю запись с учётом market
     result = await db.execute(
         select(PriceHistory).where(
-            PriceHistory.nm_id == nm_id,
-            PriceHistory.shop_id == shop_id
+            PriceHistory.nm_id == str(nm_id),
+            PriceHistory.shop_id == shop_id,
+            PriceHistory.market == market
         ).order_by(PriceHistory.price_date.desc())
     )
     last = result.scalars().first()
@@ -69,9 +70,10 @@ async def add_price_history(db: AsyncSession, vendor_code: str, shop_id: int, nm
     price_history = PriceHistory(
         vendor_code=vendor_code,
         shop_id=shop_id,
-        nm_id=nm_id,
+        nm_id=str(nm_id),
         new_price=new_price,
-        old_price=old_price
+        old_price=old_price,
+        market=market
     )
     db.add(price_history)
     await db.commit()
@@ -99,7 +101,7 @@ async def get_latest_price(db: AsyncSession, vendor_code: str, shop_id: int) -> 
     return result.scalars().first() 
 
 
-async def get_price_history_by_nmid(db: AsyncSession, nm_id: int, shop_id: int) -> List[PriceHistory]:
+async def get_price_history_by_nmid(db: AsyncSession, nm_id: str, shop_id: int) -> List[PriceHistory]:
     result = await db.execute(
         select(PriceHistory).where(
             PriceHistory.nm_id == nm_id,
@@ -109,7 +111,7 @@ async def get_price_history_by_nmid(db: AsyncSession, nm_id: int, shop_id: int) 
     return result.scalars().all() 
 
 
-async def save_price_change_history(db: AsyncSession, nm_id: int, shop_id: int, old_price: int, new_price: int):
+async def save_price_change_history(db: AsyncSession, nm_id: str, shop_id: int, old_price: int, new_price: int):
     from models.price_change_history import PriceChangeHistory
     from datetime import datetime
     change_data = {
@@ -119,7 +121,7 @@ async def save_price_change_history(db: AsyncSession, nm_id: int, shop_id: int, 
         "diff": new_price - old_price if old_price is not None else None
     }
     record = PriceChangeHistory(
-        nm_id=nm_id,
+        nm_id=str(nm_id),
         shop_id=shop_id,
         change_data=change_data
     )

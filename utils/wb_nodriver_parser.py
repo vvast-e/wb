@@ -113,12 +113,7 @@ async def _http_fallback_parser(article: int, max_count: int) -> List[Dict[str, 
                             log_path = os.path.join(os.path.dirname(__file__), 'wb_api_dates.log')
                             with open(log_path, 'a', encoding='utf-8') as logf:
                                 logf.write(date_str + '\n')
-                            if date_str and 'T' in date_str:
-                                # Убираем часовой пояс из ISO строки
-                                if '+' in date_str:
-                                    date_str = date_str.split('+')[0]
-                                elif 'Z' in date_str:
-                                    date_str = date_str.replace('Z', '')
+                            # НЕ обрабатываем дату здесь - это будет сделано в parse_wb_date
                             
                             # Формируем текст с правильными разделителями
                             main_text = fb.get('text', '')

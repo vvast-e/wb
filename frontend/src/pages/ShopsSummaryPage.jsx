@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Card, Row, Col, Spinner, Alert, Badge } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 import ShopSummaryWidget from '../components/ShopSummaryWidget';
 
 const ShopsSummaryPage = () => {
@@ -20,9 +20,7 @@ const ShopsSummaryPage = () => {
 
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/shops-summary`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const response = await api.get(`/shops-summary`);
             setShopsSummary(response.data);
         } catch (err) {
             if (err.response?.status === 500) {

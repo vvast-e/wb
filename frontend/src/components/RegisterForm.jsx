@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api';
 import { useNavigate } from 'react-router-dom';
 import { Form, Button, Alert, Card, Spinner, Row, Col } from 'react-bootstrap';
 
@@ -31,7 +31,7 @@ export default function RegisterForm({ isAdminCreating = false, onSuccess }) {
             try {
                 setLoadingBrands(true);
                 const token = localStorage.getItem('token');
-                const response = await axios.get(
+                const response = await api.get(
                     `${import.meta.env.VITE_API_URL}/admin/brands`,
                     {
                         headers: { 'Authorization': `Bearer ${token}` }
@@ -94,7 +94,7 @@ export default function RegisterForm({ isAdminCreating = false, onSuccess }) {
                 ...(isAdminCreating && { owner_admin: ownerAdmin })
             };
 
-            await axios.post(
+            await api.post(
                 `${import.meta.env.VITE_API_URL}/admin/register`,
                 payload,
                 {

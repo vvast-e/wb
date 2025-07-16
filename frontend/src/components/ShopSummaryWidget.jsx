@@ -4,7 +4,7 @@ import DateRangePicker from './DateRangePicker';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList
 } from 'recharts';
-import axios from 'axios';
+import api from '../api';
 import { eachDayOfInterval, format } from 'date-fns';
 
 const filterOptions = [
@@ -75,7 +75,7 @@ const ShopSummaryWidget = ({ shopType }) => {
         setLoadingBrands(true);
         setErrorBrands(null);
         const token = localStorage.getItem('token');
-        axios.get(`${API_URL}/brands`, {
+        api.get(`${API_URL}/brands`, {
             params: { shop: shopType },
             headers: token ? { 'Authorization': `Bearer ${token}` } : {},
         })
@@ -105,7 +105,7 @@ const ShopSummaryWidget = ({ shopType }) => {
         setLoadingProducts(true);
         setErrorProducts(null);
         const token = localStorage.getItem('token');
-        axios.get(`${API_URL}/products`, {
+        api.get(`${API_URL}/products`, {
             params: { shop: shopType, brand_id: selectedBrand },
             headers: token ? { 'Authorization': `Bearer ${token}` } : {},
         })
@@ -161,7 +161,7 @@ const ShopSummaryWidget = ({ shopType }) => {
                 metrics: selectedFilter,
             };
             const token = localStorage.getItem('token');
-            return axios.get(`${API_URL}/reviews/summary`, {
+            return api.get(`${API_URL}/reviews/summary`, {
                 params,
                 headers: token ? { 'Authorization': `Bearer ${token}` } : {},
             });
@@ -223,11 +223,11 @@ const ShopSummaryWidget = ({ shopType }) => {
         };
         const token = localStorage.getItem('token');
         Promise.all([
-            axios.get(`${API_URL}/reviews/tops`, {
+            api.get(`${API_URL}/reviews/tops`, {
                 params: { ...paramsBase, type: 'products_negative' },
                 headers: token ? { 'Authorization': `Bearer ${token}` } : {},
             }),
-            axios.get(`${API_URL}/reviews/tops`, {
+            api.get(`${API_URL}/reviews/tops`, {
                 params: { ...paramsBase, type: 'reasons_negative' },
                 headers: token ? { 'Authorization': `Bearer ${token}` } : {},
             })

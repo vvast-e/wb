@@ -28,6 +28,7 @@ class Feedback(Base):
     user = relationship("User", back_populates="feedbacks")
     history = relationship("History", back_populates="feedbacks")
     is_deleted = Column(Boolean, default=False)  # Новый флаг для удалённых отзывов
+    deleted_at = Column(DateTime(timezone=True), nullable=True)  # Время удаления отзыва
 
 class FeedbackAnalytics(Base):
     __tablename__ = "feedback_analytics"

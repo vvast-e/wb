@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Card, Row, Col, Form, Spinner, Alert, Badge, ProgressBar } from 'react-bootstrap';
-import axios from 'axios';
+import api from '../api';
 import DateRangePicker from '../components/DateRangePicker';
 
 const ReputationEfficiencyPage = () => {
@@ -38,7 +38,7 @@ const ReputationEfficiencyPage = () => {
     const fetchShops = async () => {
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/analytics/shops`, {
+            const response = await api.get(`/analytics/shops`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             setShops(response.data);
@@ -50,7 +50,7 @@ const ReputationEfficiencyPage = () => {
     const fetchProducts = async () => {
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/analytics/shop/${selectedShop}/products`, {
+            const response = await api.get(`/analytics/shop/${selectedShop}/products`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             setProducts(response.data);
@@ -74,7 +74,7 @@ const ReputationEfficiencyPage = () => {
                 params.product_id = selectedProduct;
             }
 
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/analytics/efficiency/${selectedShop}`, {
+            const response = await api.get(`/analytics/efficiency/${selectedShop}`, {
                 headers: { 'Authorization': `Bearer ${token}` },
                 params
             });

@@ -345,3 +345,5 @@ async def get_feedbacks(article: int = Query(..., description="Артикул т
     if feedbacks is None:
         raise HTTPException(status_code=500, detail="Ошибка парсинга отзывов")
     return {"count": len(feedbacks), "feedbacks": feedbacks}
+
+

@@ -5,6 +5,7 @@ import { Container, Row, Col, Card, Form, Button, Spinner, Alert, Carousel } fro
 import Hls from 'hls.js';
 import { BiArrowBack } from 'react-icons/bi';
 import MediaUploader from "./MediaUploader.jsx";
+import api from '../api';
 
 export default function ProductEdit() {
     const { nm_id } = useParams();
@@ -49,9 +50,8 @@ export default function ProductEdit() {
         const fetchData = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const res = await axios.get(
-                    `${import.meta.env.VITE_API_URL}/items/${nm_id}?brand=${encodeURIComponent(brand)}`,
-                    { headers: { Authorization: `Bearer ${token}` } }
+                const res = await api.get(
+                    `/items/${nm_id}?brand=${encodeURIComponent(brand)}`
                 );
                 if (!res.data.success) throw new Error('Не удалось загрузить товар');
                 const data = res.data.data;
@@ -142,10 +142,8 @@ export default function ProductEdit() {
             const formDataUpload = new FormData();
             formDataUpload.append('file', file);
 
-            const uploadRes = await axios.post(
-                `${import.meta.env.VITE_API_URL}/items/${nm_id}/upload-imgbb?brand=${encodeURIComponent(brand)}`,
-                formDataUpload,
-                { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } }
+            const uploadRes = await api.post(
+                `/items/${nm_id}/upload-imgbb?brand=${encodeURIComponent(brand)}`
             );
 
             const newUrl = uploadRes.data.data.url;
@@ -172,10 +170,8 @@ export default function ProductEdit() {
                     fileForm.append('photo_number', fileData.photoNumber.toString());
                     fileForm.append('media_type', fileData.mediaType || 'image');
                     fileForm.append('scheduled_at', scheduled_at);
-                    await axios.post(
-                        `${import.meta.env.VITE_API_URL}/items/${nm_id}/upload-media-file?brand=${encodeURIComponent(brand)}`,
-                        fileForm,
-                        { headers: { ...headers, 'Content-Type': 'multipart/form-data' } }
+                    await api.post(
+                        `/items/${nm_id}/upload-media-file?brand=${encodeURIComponent(brand)}`
                     );
                 }
                 setChanges({ mediaFiles: false, mediaLinks: false, content: false, characteristics: false });
@@ -202,8 +198,8 @@ export default function ProductEdit() {
                 const index = parseInt(Object.keys(replacedPhotos)[0], 10);
 
                 requests.push(
-                    axios.post(
-                        `${import.meta.env.VITE_API_URL}/items/${nm_id}/media?brand=${encodeURIComponent(brand)}`,
+                    api.post(
+                        `/items/${nm_id}/media?brand=${encodeURIComponent(brand)}`,
                         { nmId: parseInt(nm_id), media: updatedPhotos, index, scheduled_at },
                         { headers }
                     )
@@ -218,8 +214,8 @@ export default function ProductEdit() {
             // 3. Обновление контента и характеристик
             if (changes.content || changes.characteristics) {
                 requests.push(
-                    axios.post(
-                        `${import.meta.env.VITE_API_URL}/items/${nm_id}/schedule?brand=${encodeURIComponent(brand)}`,
+                    api.post(
+                        `/items/${nm_id}/schedule?brand=${encodeURIComponent(brand)}`,
                         {
                             content: {
                                 title: formData.title,

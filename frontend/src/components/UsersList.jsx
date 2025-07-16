@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../api';
 import { Table, Button, Spinner, Alert, Card } from 'react-bootstrap';
 import { BiUserPlus } from 'react-icons/bi';
 import { useNavigate } from 'react-router-dom';
@@ -16,7 +16,7 @@ export default function UsersList() {
                 setLoading(true);
                 setError(null);
                 const token = localStorage.getItem('token');
-                const response = await axios.get(
+                const response = await api.get(
                     `${import.meta.env.VITE_API_URL}/admin/users`,
                     {
                         headers: { 'Authorization': `Bearer ${token}` }
@@ -53,7 +53,7 @@ export default function UsersList() {
 
         try {
             const token = localStorage.getItem('token');
-            await axios.delete(`${import.meta.env.VITE_API_URL}/admin/users/${id}`, {
+            await api.delete(`${import.meta.env.VITE_API_URL}/admin/users/${id}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             setUsers(users.filter(user => user.id !== id));
@@ -66,7 +66,7 @@ export default function UsersList() {
         const newStatus = currentStatus === 'admin' ? 'user' : 'admin';
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.patch(
+            const response = await api.patch(
                 `${import.meta.env.VITE_API_URL}/admin/users/${id}/status?new_status=${newStatus}`,
                 {},
                 {
@@ -112,38 +112,38 @@ export default function UsersList() {
                     <>
                         <Table striped bordered hover variant="dark">
                             <thead>
-                            <tr>
-                                <th>Email</th>
-                                <th>Магазин</th>
-                                <th>Статус</th>
-                                <th>Действия</th>
-                            </tr>
+                                <tr>
+                                    <th>Email</th>
+                                    <th>Магазин</th>
+                                    <th>Статус</th>
+                                    <th>Действия</th>
+                                </tr>
                             </thead>
                             <tbody>
-                            {users.map(user => (
-                                <tr key={user.id}>
-                                    <td>{user.email}</td>
-                                    <td>{user.wb_api_key ? Object.keys(user.wb_api_key).join(', ') : '-'}</td>
-                                    <td>{user.status}</td>
-                                    <td>
-                                        <Button
-                                            variant={user.status === 'admin' ? 'warning' : 'secondary'}
-                                            size="sm"
-                                            className="me-2"
-                                            onClick={() => handleChangeStatus(user.id, user.status)}
-                                        >
-                                            {user.status === 'admin' ? 'Сделать user' : 'Сделать admin'}
-                                        </Button>
-                                        <Button
-                                            variant="danger"
-                                            size="sm"
-                                            onClick={() => handleDeleteUser(user.id)}
-                                        >
-                                            Удалить
-                                        </Button>
-                                    </td>
-                                </tr>
-                            ))}
+                                {users.map(user => (
+                                    <tr key={user.id}>
+                                        <td>{user.email}</td>
+                                        <td>{user.wb_api_key ? Object.keys(user.wb_api_key).join(', ') : '-'}</td>
+                                        <td>{user.status}</td>
+                                        <td>
+                                            <Button
+                                                variant={user.status === 'admin' ? 'warning' : 'secondary'}
+                                                size="sm"
+                                                className="me-2"
+                                                onClick={() => handleChangeStatus(user.id, user.status)}
+                                            >
+                                                {user.status === 'admin' ? 'Сделать user' : 'Сделать admin'}
+                                            </Button>
+                                            <Button
+                                                variant="danger"
+                                                size="sm"
+                                                onClick={() => handleDeleteUser(user.id)}
+                                            >
+                                                Удалить
+                                            </Button>
+                                        </td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </Table>
                         <div className="d-flex justify-content-end mt-3">

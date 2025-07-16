@@ -1,7 +1,10 @@
 import asyncio
 import json
 import logging
+
 from typing import Dict, Any, Optional
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +22,7 @@ class Connection:
         try:
             # Сначала получаем список таргетов через HTTP API
             import aiohttp
+            import websockets
             async with aiohttp.ClientSession() as session:
                 async with session.get(f'http://{self.host}:{self.port}/json') as resp:
                     if resp.status != 200:
@@ -40,7 +44,6 @@ class Connection:
                         return False
                     
                     # Подключаемся к WebSocket таргета
-                    import websockets
                     ws_url = page_target.get('webSocketDebuggerUrl')
                     if not ws_url:
                         logger.error("WebSocket URL не найден в таргете")

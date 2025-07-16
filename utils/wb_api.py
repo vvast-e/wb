@@ -95,6 +95,7 @@ class WBAPIClient:
         return response
 
     async def update_card_content(self, nm_id: int, content: dict) -> WBApiResponse:
+        nm_id = str(nm_id)
         current_card = await self.get_card_by_nm(nm_id)
         if not current_card.success:
             print(f"❌ Не удалось получить карточку nm_id={nm_id}: {current_card.error}")
@@ -137,6 +138,7 @@ class WBAPIClient:
         return response
 
     async def upload_media(self, nm_id: int, media_urls: list[str]) -> WBApiResponse:
+        nm_id = str(nm_id)
         current_card = await self.get_card_by_nm(nm_id)
         if not current_card.success:
             return WBApiResponse(success=False, error="Карточка не найдена")
@@ -174,6 +176,7 @@ class WBAPIClient:
 
     async def upload_mediaFile(self, nm_id: int, file_data: bytes, photo_number: int,
                                media_type: str = 'image') -> WBApiResponse:
+        nm_id = str(nm_id)
         if media_type == 'video' and photo_number != 1:
             logger.error("[upload_mediaFile] Попытка загрузить видео не в позицию 1 (photo_number=%s)", photo_number)
             return WBApiResponse(success=False, error="Video can only be uploaded to position 1")
@@ -183,7 +186,7 @@ class WBAPIClient:
 
         headers = {
             "Authorization": self.api_key,
-            "X-Nm-Id": str(nm_id),
+            "X-Nm-Id": nm_id,
             "X-Photo-Number": str(1 if media_type == "video" else photo_number),
         }
 
@@ -225,6 +228,7 @@ class WBAPIClient:
             return WBApiResponse(success=False, error=str(e))
 
     async def get_card_by_nm(self, nm_id: int):
+        nm_id = str(nm_id)
         response = await self.get_cards_list()
 
         if not response.success:
@@ -239,7 +243,7 @@ class WBAPIClient:
 
         for card in cards:
             current_nm_id = card.get("nmID")
-            if isinstance(current_nm_id, int) and current_nm_id == nm_id:
+            if str(current_nm_id) == nm_id:
                 return WBApiResponse(
                     success=True,
                     data=card
@@ -323,13 +327,14 @@ class WBAPIClient:
                         brand = card.get("brand")
                         if nm_id is None:
                             continue
-                        result = await db.execute(select(Product).where(Product.nm_id == nm_id))
+                        nm_id_str = str(nm_id)
+                        result = await db.execute(select(Product).where(Product.nm_id == nm_id_str))
                         exists = result.scalars().first()
                         if not exists:
-                            db.add(Product(nm_id=nm_id, vendor_code=vendor_code, brand=brand))
-                            print(f"[Product Save] Добавлена карточка: nm_id={nm_id}, vendor_code={vendor_code}, brand={brand}")
+                            db.add(Product(nm_id=nm_id_str, vendor_code=vendor_code, brand=brand))
+                            print(f"[Product Save] Добавлена карточка: nm_id={nm_id_str}, vendor_code={vendor_code}, brand={brand}")
                         else:
-                            print(f"[Product Save] Пропущена (уже есть): nm_id={nm_id}")
+                            print(f"[Product Save] Пропущена (уже есть): nm_id={nm_id_str}")
                     await db.commit()
                     if len(cards) < limit:
                         break

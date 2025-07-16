@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../api';
 import ProductCard from '../components/ProductCard';
 import { Container, Row, Col, Spinner, Alert, Button, Form, InputGroup, ButtonGroup } from 'react-bootstrap';
 import { BiKey, BiUserCircle, BiRefresh } from 'react-icons/bi';
@@ -32,7 +32,7 @@ const Home = () => {
         try {
             setBrandsLoading(true);
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/admin/brands`, {
+            const response = await api.get(`/admin/brands`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const brandData = response.data;
@@ -60,7 +60,7 @@ const Home = () => {
     const fetchUserData = async () => {
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/admin/check-admin`, {
+            const response = await api.get(`/admin/check-admin`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             setUserStatus(response.data.status);
@@ -76,7 +76,7 @@ const Home = () => {
             const token = localStorage.getItem('token');
             const url = `${import.meta.env.VITE_API_URL}/items?brand=${encodeURIComponent(brand)}`;
 
-            const response = await axios.get(url, {
+            const response = await api.get(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -110,7 +110,7 @@ const Home = () => {
                 await fetchProducts(selectedBrand);
             } else {
                 // Если есть vendorCode - ищем конкретный товар
-                const response = await axios.get(
+                const response = await api.get(
                     `${import.meta.env.VITE_API_URL}/items/search/${encodeURIComponent(vendorCode)}?brand=${encodeURIComponent(selectedBrand)}`,
                     {
                         headers: { 'Authorization': `Bearer ${token}` }

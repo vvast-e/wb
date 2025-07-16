@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Card, Row, Col, Badge, Spinner, Alert, Pagination } from 'react-bootstrap';
 import { useSearchParams } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 import ReviewFilters from '../components/ReviewFilters';
 
 const ReviewAnalyzerPage = () => {
@@ -63,7 +63,7 @@ const ReviewAnalyzerPage = () => {
     const fetchShops = async () => {
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/analytics/shops`, {
+            const response = await api.get(`/analytics/shops`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             setShops(response.data);
@@ -75,7 +75,7 @@ const ReviewAnalyzerPage = () => {
     const fetchProducts = async (shopId) => {
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/analytics/shop/${shopId}/products`, {
+            const response = await api.get(`/analytics/shop/${shopId}/products`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             setProducts(response.data || []);
@@ -117,7 +117,7 @@ const ReviewAnalyzerPage = () => {
             console.log('Отправляем запрос с фильтрами:', params);
             console.log('filters.negative:', filters.negative, 'тип:', typeof filters.negative);
 
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/analytics/reviews`, {
+            const response = await api.get(`/analytics/reviews`, {
                 headers: { 'Authorization': `Bearer ${token}` },
                 params
             });
