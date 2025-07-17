@@ -20,6 +20,7 @@ from config import settings
 import concurrent.futures
 import tempfile
 from seleniumwire import webdriver  # Добавить импорт
+import json
 
 # Селекторы для поиска товаров и цен (адаптированы под ваш опыт)
 PRODUCT_LINK_SELECTORS = [
@@ -72,9 +73,19 @@ def start_driver(headless_mode: str = 'headless', proxy_url: str = None):
     return driver
 
 
+def load_cookies(driver, cookies_file):
+    with open(cookies_file, "r", encoding="utf-8") as f:
+        cookies = json.load(f)
+    for cookie in cookies:
+        driver.add_cookie(cookie)
+
+
 def get_products_from_seller_page(driver, seller_url, max_products=None):
     print(f"Загружаем страницу продавца: {seller_url}")
     driver.get(seller_url)
+    # Загружаем cookies и обновляем страницу
+    load_cookies(driver, "ozon_cookies.json")
+    driver.refresh()
     # Сохраняем HTML для отладки
     with open("ozon_debug.html", "w", encoding="utf-8") as f:
         f.write(driver.page_source)
