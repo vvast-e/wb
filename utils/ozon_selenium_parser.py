@@ -19,6 +19,7 @@ import asyncio
 from config import settings
 import concurrent.futures
 import tempfile
+from seleniumwire import webdriver  # Добавить импорт
 
 # Селекторы для поиска товаров и цен (адаптированы под ваш опыт)
 PRODUCT_LINK_SELECTORS = [
@@ -40,22 +41,29 @@ def clean_price_text(price_text):
     return ''.join(filter(str.isdigit, price_text.replace('\u2009', '').replace('\xa0', '')))
 
 
-def start_driver(headless_mode: str = 'headless'):
-    """Запуск браузера с настройками. headless_mode: None | 'headless' | 'headless=chrome' | 'headless=new'"""
+def start_driver(headless_mode: str = 'headless', proxy_url: str = None):
+    """Запуск браузера с настройками и поддержкой прокси через selenium-wire."""
     options = uc.ChromeOptions()
+    # Отключаем загрузку картинок для экономии трафика
+    prefs = {"profile.managed_default_content_settings.images": 2}
+    options.add_experimental_option("prefs", prefs)
     if headless_mode:
         options.add_argument(f"--{headless_mode}")
-        # Для headless добавляем user-agent и window-size
         options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
         options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    # Уникальная временная папка профиля для каждого драйвера
     options.add_argument(f'--user-data-dir={tempfile.mkdtemp()}')
+    seleniumwire_options = {}
+    if proxy_url:
+        seleniumwire_options['proxy'] = {
+            'http': proxy_url,
+            'https': proxy_url
+        }
     try:
-        driver = uc.Chrome(options=options)
+        driver = uc.Chrome(options=options, seleniumwire_options=seleniumwire_options)
     except Exception as e:
         print("[ОШИБКА] Не удалось запустить Chrome. Убедитесь, что браузер Chrome или Chromium установлен на вашем компьютере.")
         print(f"Детали ошибки: {e}")
