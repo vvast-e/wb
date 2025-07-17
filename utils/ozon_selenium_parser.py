@@ -76,8 +76,16 @@ def start_driver(headless_mode: str = 'headless', proxy_url: str = None):
 def load_cookies(driver, cookies_file):
     with open(cookies_file, "r", encoding="utf-8") as f:
         cookies = json.load(f)
+    current_domain = driver.current_url.split("/")[2]
     for cookie in cookies:
-        driver.add_cookie(cookie)
+        # Добавлять только если домен cookie совпадает с доменом страницы или является его поддоменом
+        if cookie["domain"].lstrip(".") in current_domain:
+            try:
+                driver.add_cookie(cookie)
+            except Exception as e:
+                print(f"Не удалось добавить cookie {cookie['name']}: {e}")
+        else:
+            print(f"Пропущен cookie {cookie['name']} из-за несовпадения домена: {cookie['domain']} vs {current_domain}")
 
 
 def get_products_from_seller_page(driver, seller_url, max_products=None):
