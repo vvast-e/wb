@@ -67,6 +67,9 @@ def start_driver(headless_mode: str = 'headless'):
 def get_products_from_seller_page(driver, seller_url, max_products=None):
     print(f"Загружаем страницу продавца: {seller_url}")
     driver.get(seller_url)
+    # Сохраняем HTML для отладки
+    with open("ozon_debug.html", "w", encoding="utf-8") as f:
+        f.write(driver.page_source)
     time.sleep(3)
     # Скроллим для подгрузки товаров
     print("Скроллим страницу для загрузки товаров...")
