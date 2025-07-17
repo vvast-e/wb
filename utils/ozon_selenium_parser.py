@@ -63,7 +63,7 @@ def start_driver(headless_mode: str = 'headless', proxy_url: str = None):
             'https': proxy_url
         }
     try:
-        driver = uc.Chrome(options=options, seleniumwire_options=seleniumwire_options)
+        driver = webdriver.Chrome(options=options, seleniumwire_options=seleniumwire_options)
     except Exception as e:
         print("[ОШИБКА] Не удалось запустить Chrome. Убедитесь, что браузер Chrome или Chromium установлен на вашем компьютере.")
         print(f"Детали ошибки: {e}")
