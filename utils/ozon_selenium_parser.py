@@ -6,18 +6,14 @@
 
 import time
 import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
 import re
 import asyncio
-import zipfile
 import logging
 from utils.ozon_api import fetch_ozon_products_v3, save_ozon_products_to_db
 from database import AsyncSessionLocal
-# from seleniumwire import undetected_chromedriver as uc  # УДАЛЕНО
 import requests
+import os
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -28,63 +24,11 @@ PROXY_PORT = 15184
 PROXY_USER = 'uek7t66y'
 PROXY_PASS = 'zbygddap'
 # Путь к папке с расширением Chrome Proxy (см. инструкцию ниже)
-PROXY_EXTENSION_PATH = 'chrome_proxy_extension'  # Папка с manifest.json и background.js
+PROXY_EXTENSION_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..', 'chrome_proxy_extension')
+)
 
-# ---
-# Инструкция:
-# 1. Создайте папку chrome_proxy_extension в корне проекта.
-# 2. В неё положите два файла:
-#    - manifest.json (см. пример ниже)
-#    - background.js (см. пример ниже)
-# 3. В background.js пропишите свои host, port, username, password, scheme ('https' если нужен HTTPS-прокси).
-# 4. В start_driver ниже расширение будет подключено автоматически.
-#
-# Пример manifest.json:
-# {
-#     "version": "1.0.0",
-#     "manifest_version": 2,
-#     "name": "Chrome Proxy",
-#     "permissions": [
-#         "proxy",
-#         "tabs",
-#         "unlimitedStorage",
-#         "storage",
-#         "<all_urls>",
-#         "webRequest",
-#         "webRequestBlocking"
-#     ],
-#     "background": {
-#         "scripts": ["background.js"]
-#     },
-#     "minimum_chrome_version": "22.0.0"
-# }
-#
-# Пример background.js:
-# var config = {
-#     mode: "fixed_servers",
-#     rules: {
-#         singleProxy: {
-#             scheme: "https", // или "http"
-#             host: "p15184.ltespace.net",
-#             port: parseInt(15184)
-#         },
-#         bypassList: ["localhost"]
-#     }
-# };
-# chrome.proxy.settings.set({value: config, scope: "regular"}, function() {});
-# function callbackFn(details) {
-#     return {
-#         authCredentials: {
-#             username: "uek7t66y",
-#             password: "zbygddap"
-#         }
-#     };
-# }
-# chrome.webRequest.onAuthRequired.addListener(
-#     callbackFn,
-#     {urls: ["<all_urls>"]},
-#     ['blocking']
-# );
+
 
 # Селекторы для поиска товаров и цен (адаптированы под ваш опыт)
 PRODUCT_LINK_SELECTORS = [
@@ -123,7 +67,7 @@ def start_driver(headless_mode: str = 'headless'):
     check_proxy_ip_via_requests()
     options = uc.ChromeOptions()
     if headless_mode:
-        options.add_argument(f"--{headless_mode}")
+        options.add_argument("--headless=new")
         options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
         options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-gpu")
