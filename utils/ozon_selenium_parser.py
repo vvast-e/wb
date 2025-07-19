@@ -119,7 +119,7 @@ def check_proxy_ip_via_requests():
 
 
 def start_driver(headless_mode: str = 'headless'):
-    """Запуск браузера с настройками и мобильным прокси с авторизацией через расширение."""
+    """Запуск браузера с настройками и мобильным прокси с авторизацией через расширение и явный аргумент."""
     # Проверяем внешний IP через requests перед запуском браузера
     check_proxy_ip_via_requests()
     options = uc.ChromeOptions()
@@ -131,6 +131,8 @@ def start_driver(headless_mode: str = 'headless'):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled")
+    # --- Явно указываем прокси для Chrome ---
+    options.add_argument(f"--proxy-server=http://{PROXY_HOST}:{PROXY_PORT}")
     # --- Используем расширение для прокси с авторизацией ---
     proxy_extension = create_proxy_auth_extension(
         PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS, scheme='http', plugin_path='proxy_auth_plugin.zip')
@@ -142,6 +144,13 @@ def start_driver(headless_mode: str = 'headless'):
         logger.error(f"Детали ошибки: {e}")
         raise
     driver.implicitly_wait(5)
+    # --- Проверяем внешний IP через Selenium ---
+    try:
+        driver.get("https://api.ipify.org")
+        ip_in_browser = driver.page_source.strip()
+        logger.info(f"[ПРОКСИ] Внешний IP через Selenium: {ip_in_browser}")
+    except Exception as e:
+        logger.error(f"[ПРОКСИ] Не удалось получить IP через Selenium: {e}")
     return driver
 
 
