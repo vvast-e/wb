@@ -13,8 +13,12 @@ from urllib.parse import urljoin
 import re
 import asyncio
 import zipfile
+import logging
 from utils.ozon_api import fetch_ozon_products_v3, save_ozon_products_to_db
 from database import AsyncSessionLocal
+
+# Настройка логирования
+logger = logging.getLogger(__name__)
 
 # === Прокси параметры ===
 PROXY_HOST = 'p15184.ltespace.net'
@@ -116,29 +120,37 @@ def start_driver(headless_mode: str = 'headless'):
     try:
         driver = uc.Chrome(options=options)
     except Exception as e:
-        print("[ОШИБКА] Не удалось запустить Chrome. Убедитесь, что браузер Chrome или Chromium установлен на вашем компьютере.")
-        print(f"Детали ошибки: {e}")
+        logger.error("[ОШИБКА] Не удалось запустить Chrome. Убедитесь, что браузер Chrome или Chromium установлен на вашем компьютере.")
+        logger.error(f"Детали ошибки: {e}")
         raise
     driver.implicitly_wait(5)
+    # --- Проверка IP через api.ipify.org ---
+    try:
+        driver.get('https://api.ipify.org')
+        time.sleep(3)
+        ip = driver.page_source.strip()
+        logger.info(f"[ПРОКСИ] Текущий внешний IP через Selenium: {ip}")
+    except Exception as e:
+        logger.error(f"[ПРОКСИ] Не удалось получить IP через api.ipify.org: {e}")
     return driver
 
 
 def get_products_from_seller_page(driver, seller_url, max_products=None):
-    print(f"Загружаем страницу продавца: {seller_url}")
+    logger.info(f"Загружаем страницу продавца: {seller_url}")
     driver.get(seller_url)
     time.sleep(3)
     # Скроллим для подгрузки товаров
-    print("Скроллим страницу для загрузки товаров...")
+    logger.info("Скроллим страницу для загрузки товаров...")
     for i in range(5):
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(1)
-        print(f"Скролл {i+1}/5")
+        logger.info(f"Скролл {i+1}/5")
     soup = BeautifulSoup(driver.page_source, "lxml")
     products = set()
-    print("Ищем товары по селекторам...")
+    logger.info("Ищем товары по селекторам...")
     for selector in PRODUCT_LINK_SELECTORS:
         links = soup.select(selector)
-        print(f"Найдено товаров с селектором '{selector}': {len(links)}")
+        logger.info(f"Найдено товаров с селектором '{selector}': {len(links)}")
         for link in links:
             href = link.get('href')
             if isinstance(href, list):
@@ -150,12 +162,12 @@ def get_products_from_seller_page(driver, seller_url, max_products=None):
                 break
         if max_products and len(products) >= max_products:
             break
-    print(f"Всего найдено товаров: {len(products)}")
+    logger.info(f"Всего найдено товаров: {len(products)}")
     return list(products) if not max_products else list(products)[:max_products]
 
 
 def get_product_price_new_tab(driver, product_url, main_handle):
-    print(f"Получаем цену товара: {product_url}")
+    logger.info(f"Получаем цену товара: {product_url}")
     try:
         handles_before = set(driver.window_handles)
         driver.switch_to.window(main_handle)
@@ -165,7 +177,7 @@ def get_product_price_new_tab(driver, product_url, main_handle):
         handles_after = set(driver.window_handles)
         new_handles = handles_after - handles_before
         if not new_handles:
-            print("Не удалось открыть новую вкладку!")
+            logger.warning("Не удалось открыть новую вкладку!")
             return None
         new_handle = new_handles.pop()
         driver.switch_to.window(new_handle)
@@ -188,7 +200,7 @@ def get_product_price_new_tab(driver, product_url, main_handle):
                 price_discount = clean_price_text(price_discount_text)
                 if price_discount:
                     price_discount = int(price_discount)
-                    print(f"Найдена цена со скидкой: {price_discount_text} ({price_discount} ₽)")
+                    logger.info(f"Найдена цена со скидкой: {price_discount_text} ({price_discount} ₽)")
                     break
         # Ищем обычную цену по всем возможным селекторам
         regular_selectors = [
@@ -202,13 +214,13 @@ def get_product_price_new_tab(driver, product_url, main_handle):
                 price_regular = clean_price_text(price_regular_text)
                 if price_regular:
                     price_regular = int(price_regular)
-                    print(f"Найдена обычная цена: {price_regular_text} ({price_regular} ₽)")
+                    logger.info(f"Найдена обычная цена: {price_regular_text} ({price_regular} ₽)")
                     break
         try:
             driver.close()
             driver.switch_to.window(main_handle)
         except Exception as e:
-            print(f"Ошибка при закрытии вкладки: {e}")
+            logger.error(f"Ошибка при закрытии вкладки: {e}")
         return {
             'href': product_url,
             'price_discount': price_discount,
@@ -218,13 +230,13 @@ def get_product_price_new_tab(driver, product_url, main_handle):
             'product_url': product_url
         }
     except Exception as e:
-        print(f"Ошибка при парсинге товара: {e}")
+        logger.error(f"Ошибка при парсинге товара: {e}")
         try:
             if len(driver.window_handles) > 1:
                 driver.close()
                 driver.switch_to.window(main_handle)
         except Exception as e2:
-            print(f"Ошибка при аварийном закрытии вкладки: {e2}")
+            logger.error(f"Ошибка при аварийном закрытии вкладки: {e2}")
         return None
 
 
@@ -243,65 +255,79 @@ def extract_seller_id(seller_url: str) -> int:
         return int(match.group(1))
     raise ValueError(f"Не удалось извлечь seller_id из ссылки: {seller_url}")
 
+ROTATION_PERIOD = 300  # 5 минут (секунд)
 
 def get_all_products_prices(seller_url, max_products=None, headless_mode: str = 'headless'):
-    """Получение цен всех товаров продавца"""
+    """Получение цен всех товаров продавца с обработкой ротации прокси."""
     driver = start_driver(headless_mode=headless_mode)
+    proxy_start_time = time.time()
     try:
-        print(f"=== ПАРСИНГ ЦЕН OZON ===")
-        print(f"URL продавца: {seller_url}")
+        logger.info(f"=== ПАРСИНГ ЦЕН OZON ===")
+        logger.info(f"URL продавца: {seller_url}")
         if max_products:
-            print(f"Максимальное количество товаров: {max_products}")
+            logger.info(f"Максимальное количество товаров: {max_products}")
         # Получаем seller_id
         try:
             seller_id = extract_seller_id(seller_url)
         except Exception as e:
-            print(f"Ошибка извлечения seller_id: {e}")
+            logger.error(f"Ошибка извлечения seller_id: {e}")
             seller_id = None
         # Получаем список товаров
         products = get_products_from_seller_page(driver, seller_url, max_products)
         if not products:
-            print("Товары не найдены!")
+            logger.warning("Товары не найдены!")
             return []
-        print(f"\nНайдено товаров: {len(products)}")
+        logger.info(f"\nНайдено товаров: {len(products)}")
         # Получаем цены товаров
         prices_data = []
         main_handle = driver.current_window_handle
         for i, product_url in enumerate(products):
-            print(f"\n--- Обрабатываем товар {i+1}/{len(products)} ---")
+            # --- Проверка на ротацию прокси ---
+            elapsed = time.time() - proxy_start_time
+            if elapsed > ROTATION_PERIOD - 6:
+                logger.info('[ПРОКСИ] Жду ротацию IP...')
+                time.sleep(ROTATION_PERIOD - elapsed + 2)
+                proxy_start_time = time.time()
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+                driver = start_driver(headless_mode=headless_mode)
+                main_handle = driver.current_window_handle
+            logger.info(f"\n--- Обрабатываем товар {i+1}/{len(products)} ---")
             price_info = get_product_price_new_tab(driver, product_url, main_handle)
             if price_info:
                 # Извлекаем nm_id
                 try:
                     nm_id = extract_nm_id(product_url)
                 except Exception as e:
-                    print(f"Ошибка извлечения nm_id: {e}")
+                    logger.error(f"Ошибка извлечения nm_id: {e}")
                     nm_id = None
                 price_info['nm_id'] = str(nm_id)
                 price_info['seller_id'] = seller_id
                 prices_data.append(price_info)
-                print(f"✅ Товар {i+1} обработан (nm_id={nm_id}, seller_id={seller_id})")
+                logger.info(f"✅ Товар {i+1} обработан (nm_id={nm_id}, seller_id={seller_id})")
             else:
-                print(f"❌ Не удалось получить цену для товара {i+1}")
+                logger.warning(f"❌ Не удалось получить цену для товара {i+1}")
                 break  # Если сессия потеряна — прекращаем парсинг
             # Пауза между товарами
             if i < len(products) - 1:
                 time.sleep(1)
-        print(f"\n=== РЕЗУЛЬТАТ ===")
-        print(f"Получено цен: {len(prices_data)}")
+        logger.info(f"\n=== РЕЗУЛЬТАТ ===")
+        logger.info(f"Получено цен: {len(prices_data)}")
         for i, price_data in enumerate(prices_data):
-            print(f"\nТовар {i+1}:")
-            print(f"  Ссылка: {price_data['href']}")
-            print(f"  nm_id: {price_data.get('nm_id', 'N/A')}")
-            print(f"  seller_id: {price_data.get('seller_id', 'N/A')}")
-            print(f"  Цена со скидкой: {price_data.get('price_discount', 'N/A')} ₽")
-            print(f"  Полный текст цены со скидкой: {price_data.get('price_discount_text', 'N/A')}")
-            print(f"  Обычная цена: {price_data.get('price_regular', 'N/A')} ₽")
-            print(f"  Полный текст обычной цены: {price_data.get('price_regular_text', 'N/A')}")
-            print(f"  URL товара: {price_data.get('product_url', 'N/A')}")
+            logger.info(f"\nТовар {i+1}:")
+            logger.info(f"  Ссылка: {price_data['href']}")
+            logger.info(f"  nm_id: {price_data.get('nm_id', 'N/A')}")
+            logger.info(f"  seller_id: {price_data.get('seller_id', 'N/A')}")
+            logger.info(f"  Цена со скидкой: {price_data.get('price_discount', 'N/A')} ₽")
+            logger.info(f"  Полный текст цены со скидкой: {price_data.get('price_discount_text', 'N/A')}")
+            logger.info(f"  Обычная цена: {price_data.get('price_regular', 'N/A')} ₽")
+            logger.info(f"  Полный текст обычной цены: {price_data.get('price_regular_text', 'N/A')}")
+            logger.info(f"  URL товара: {price_data.get('product_url', 'N/A')}")
         return prices_data
     finally:
-        print("Закрываем браузер...")
+        logger.info("Закрываем браузер...")
         driver.quit()
 
 
@@ -312,13 +338,13 @@ def get_all_products_prices_async(*args, **kwargs):
 
 
 def load_ozon_products_to_db():
-    print("=== load_ozon_products_to_db: старт ===")
+    logger.info("=== load_ozon_products_to_db: старт ===")
     async def _load():
-        print("=== _load: старт ===")
+        logger.info("=== _load: старт ===")
         async with AsyncSessionLocal() as db:
             items = await fetch_ozon_products_v3([])
             await save_ozon_products_to_db(db, items)
-            print(f"[OZON] Загружено товаров: {len(items)}")
+            logger.info(f"[OZON] Загружено товаров: {len(items)}")
     asyncio.run(_load())
 
 
@@ -333,7 +359,7 @@ def test_ozon_api_prices():
 
 
 def main():
-    print("=== main: старт ===")
+    logger.info("=== main: старт ===")
     # Сначала загружаем товары из OZON API в БД
     load_ozon_products_to_db()
     # Далее — стандартный парсинг цен
@@ -348,30 +374,30 @@ def main():
     ]
     
     for i, url in enumerate(test_urls):
-        print(f"\n{'='*50}")
-        print(f"ПОПЫТКА {i+1}/{len(test_urls)}")
-        print(f"URL: {url}")
-        print(f"{'='*50}")
+        logger.info(f"\n{'='*50}")
+        logger.info(f"ПОПЫТКА {i+1}/{len(test_urls)}")
+        logger.info(f"URL: {url}")
+        logger.info(f"{'='*50}")
         
         try:
             prices = get_all_products_prices(url)
             if prices:
-                print(f"\n✅ УСПЕХ! Получено {len(prices)} товаров!")
+                logger.info(f"\n✅ УСПЕХ! Получено {len(prices)} товаров!")
                 break
             else:
-                print(f"\n❌ Товары не найдены, пробуем следующий URL...")
+                logger.warning(f"\n❌ Товары не найдены, пробуем следующий URL...")
         except Exception as e:
-            print(f"\n❌ Ошибка: {e}")
+            logger.error(f"\n❌ Ошибка: {e}")
             import traceback
             traceback.print_exc()
         
         # Пауза между попытками
         if i < len(test_urls) - 1:
-            print("Ждем 5 секунд перед следующей попыткой...")
+            logger.info("Ждем 5 секунд перед следующей попыткой...")
             time.sleep(5)
     
-    print("\nТест завершен")
-    print("\nТест OZON API (цены):")
+    logger.info("\nТест завершен")
+    logger.info("\nТест OZON API (цены):")
     test_ozon_api_prices()
 
 
