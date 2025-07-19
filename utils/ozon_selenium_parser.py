@@ -14,6 +14,8 @@ from utils.ozon_api import fetch_ozon_products_v3, save_ozon_products_to_db
 from database import AsyncSessionLocal
 import requests
 import os
+import tempfile
+import contextlib
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -62,25 +64,47 @@ def check_proxy_ip_via_requests():
         logger.error(f"[ПРОКСИ] Не удалось получить IP через requests: {e}")
 
 
+# --- Динамическое создание расширения для прокси с авторизацией ---
+def create_temp_proxy_extension(proxy_host, proxy_port, proxy_username, proxy_password, scheme='https'):
+    context = tempfile.TemporaryDirectory()
+    extension_dir = context.name
+    manifest_json = '{"version":"1.0.0","manifest_version":2,"name":"Chrome Proxy","permissions":["proxy","tabs","unlimitedStorage","storage","<all_urls>","webRequest","webRequestBlocking"],"background":{"scripts":["background.js"]},"minimum_chrome_version":"22.0.0"}'
+    background_js = (
+        'var e={mode:"fixed_servers",rules:{singleProxy:{scheme:"%s",host:"%s",port:parseInt(%s)},bypassList:["localhost"]}};'
+        'chrome.proxy.settings.set({value:e,scope:"regular"},function(){}),'
+        'chrome.webRequest.onAuthRequired.addListener((function(e){return{authCredentials:{username:"%s",password:"%s"}}}),{urls:["<all_urls>"]},["blocking"]);'
+        % (scheme, proxy_host, proxy_port, proxy_username, proxy_password)
+    )
+    with open(f"{extension_dir}/manifest.json", "w", encoding="utf8") as f:
+        f.write(manifest_json)
+    with open(f"{extension_dir}/background.js", "w", encoding="utf8") as f:
+        f.write(background_js)
+    return context, extension_dir
+
+
 def start_driver(headless_mode: str = 'headless'):
-    """Запуск браузера с настройками и мобильным прокси через готовое расширение."""
+    """Запуск браузера с настройками и мобильным прокси через динамическое расширение."""
     check_proxy_ip_via_requests()
     options = uc.ChromeOptions()
     if headless_mode:
-        options.add_argument("--headless=new")
+        options.add_argument(f"--{headless_mode}")
         options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
         options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    # --- Подключаем расширение с прокси ---
-    options.add_argument(f"--load-extension={PROXY_EXTENSION_PATH}")
+    # --- Динамически создаём расширение для прокси ---
+    proxy_context, extension_dir = create_temp_proxy_extension(
+        PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS, scheme='https')
+    options.add_argument(f"--load-extension={extension_dir}")
+    # proxy_context будет жить до конца функции (и драйвера)
     try:
         driver = uc.Chrome(options=options)
     except Exception as e:
         logger.error("[ОШИБКА] Не удалось запустить Chrome. Убедитесь, что браузер Chrome или Chromium установлен на вашем компьютере.")
         logger.error(f"Детали ошибки: {e}")
+        proxy_context.cleanup()
         raise
     driver.implicitly_wait(5)
     # --- Проверяем внешний IP через Selenium ---
@@ -90,6 +114,8 @@ def start_driver(headless_mode: str = 'headless'):
         logger.info(f"[ПРОКСИ] Внешний IP через Selenium: {ip_in_browser}")
     except Exception as e:
         logger.error(f"[ПРОКСИ] Не удалось получить IP через Selenium: {e}")
+    # --- Возвращаем драйвер и контекст, чтобы не удалять расширение раньше времени ---
+    driver._proxy_context = proxy_context  # чтобы не удалился до закрытия драйвера
     return driver
 
 
