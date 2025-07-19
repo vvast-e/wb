@@ -16,6 +16,8 @@ import zipfile
 import logging
 from utils.ozon_api import fetch_ozon_products_v3, save_ozon_products_to_db
 from database import AsyncSessionLocal
+# from seleniumwire import undetected_chromedriver as uc  # УДАЛЕНО
+import requests
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -103,8 +105,23 @@ def clean_price_text(price_text):
     return ''.join(filter(str.isdigit, price_text.replace('\u2009', '').replace('\xa0', '')))
 
 
+def check_proxy_ip_via_requests():
+    """Проверяет внешний IP через requests с теми же прокси, что и для Selenium."""
+    proxies = {
+        "http": f"http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}",
+        "https": f"http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}",
+    }
+    try:
+        response = requests.get("https://api.ipify.org", proxies=proxies, timeout=10)
+        logger.info(f"[ПРОКСИ] Внешний IP через requests: {response.text}")
+    except Exception as e:
+        logger.error(f"[ПРОКСИ] Не удалось получить IP через requests: {e}")
+
+
 def start_driver(headless_mode: str = 'headless'):
-    """Запуск браузера с настройками и мобильным прокси с авторизацией."""
+    """Запуск браузера с настройками и мобильным прокси с авторизацией через расширение."""
+    # Проверяем внешний IP через requests перед запуском браузера
+    check_proxy_ip_via_requests()
     options = uc.ChromeOptions()
     if headless_mode:
         options.add_argument(f"--{headless_mode}")
@@ -114,9 +131,10 @@ def start_driver(headless_mode: str = 'headless'):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    # --- Подключаем расширение для прокси ---
-    plugin_path = create_proxy_auth_extension(PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS)
-    options.add_extension(plugin_path)
+    # --- Используем расширение для прокси с авторизацией ---
+    proxy_extension = create_proxy_auth_extension(
+        PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS, scheme='http', plugin_path='proxy_auth_plugin.zip')
+    options.add_extension(proxy_extension)
     try:
         driver = uc.Chrome(options=options)
     except Exception as e:
@@ -124,14 +142,6 @@ def start_driver(headless_mode: str = 'headless'):
         logger.error(f"Детали ошибки: {e}")
         raise
     driver.implicitly_wait(5)
-    # --- Проверка IP через api.ipify.org ---
-    try:
-        driver.get('https://api.ipify.org')
-        time.sleep(3)
-        ip = driver.page_source.strip()
-        logger.info(f"[ПРОКСИ] Текущий внешний IP через Selenium: {ip}")
-    except Exception as e:
-        logger.error(f"[ПРОКСИ] Не удалось получить IP через api.ipify.org: {e}")
     return driver
 
 
@@ -139,6 +149,10 @@ def get_products_from_seller_page(driver, seller_url, max_products=None):
     logger.info(f"Загружаем страницу продавца: {seller_url}")
     driver.get(seller_url)
     time.sleep(3)
+    # Сохраняем HTML-код страницы Ozon для отладки
+    with open('ozon_debug.html', 'w', encoding='utf-8') as f:
+        f.write(driver.page_source)
+    logger.info("HTML-код страницы Ozon сохранён в ozon_debug.html")
     # Скроллим для подгрузки товаров
     logger.info("Скроллим страницу для загрузки товаров...")
     for i in range(5):
