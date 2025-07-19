@@ -12,15 +12,74 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import re
 import asyncio
-from utils.ozon_api import fetch_ozon_products_v3
+import zipfile
+from utils.ozon_api import fetch_ozon_products_v3, save_ozon_products_to_db
+from utils.ozon_api import fetch_all_offer_ids_from_ozon, fetch_products_info_by_offer_ids, save_ozon_prices_to_txt
 from database import AsyncSessionLocal
-import httpx
-import asyncio
-from config import settings
-import concurrent.futures
-import tempfile
-from seleniumwire import webdriver  # Добавить импорт
-import json
+
+# === Прокси параметры ===
+PROXY_HOST = 'p15184.ltespace.net'
+PROXY_PORT = 15184
+PROXY_USER = 'uek7t66y'
+PROXY_PASS = 'zbygddap'
+
+# --- Функция для создания расширения с авторизацией ---
+def create_proxy_auth_extension(proxy_host, proxy_port, proxy_username, proxy_password, scheme='http', plugin_path=None):
+    if plugin_path is None:
+        plugin_path = 'proxy_auth_plugin.zip'
+
+    manifest_json = """
+    {
+        "version": "1.0.0",
+        "manifest_version": 2,
+        "name": "Proxy Auth Extension",
+        "permissions": [
+            "proxy",
+            "tabs",
+            "unlimitedStorage",
+            "storage",
+            "<all_urls>",
+            "webRequest",
+            "webRequestBlocking"
+        ],
+        "background": {
+            "scripts": ["background.js"]
+        }
+    }
+    """
+
+    background_js = f"""
+    var config = {{
+            mode: "fixed_servers",
+            rules: {{
+            singleProxy: {{
+                scheme: "{scheme}",
+                host: "{proxy_host}",
+                port: parseInt({proxy_port})
+            }},
+            bypassList: ["localhost"]
+            }}
+        }};
+    chrome.proxy.settings.set({{value: config, scope: "regular"}}, function() {{}});
+    function callbackFn(details) {{
+        return {{
+            authCredentials: {{
+                username: "{proxy_username}",
+                password: "{proxy_password}"
+            }}
+        }};
+    }}
+    chrome.webRequest.onAuthRequired.addListener(
+        callbackFn,
+        {{urls: ["<all_urls>"]}},
+        ['blocking']
+    );
+    """
+
+    with zipfile.ZipFile(plugin_path, 'w') as zp:
+        zp.writestr("manifest.json", manifest_json)
+        zp.writestr("background.js", background_js)
+    return plugin_path
 
 # Селекторы для поиска товаров и цен (адаптированы под ваш опыт)
 PRODUCT_LINK_SELECTORS = [
@@ -36,18 +95,14 @@ PRICE_SELECTORS = [
     'span.z5k_27.kz6_27.z9k_27',  # обычная цена
 ]
 
-
 def clean_price_text(price_text):
     # Удаляем неразрывные пробелы, символ рубля и лишние символы
     return ''.join(filter(str.isdigit, price_text.replace('\u2009', '').replace('\xa0', '')))
 
 
-def start_driver(headless_mode: str = 'headless', proxy_url: str = None):
-    """Запуск браузера с настройками и поддержкой прокси через selenium-wire."""
+def start_driver(headless_mode: str = 'headless'):
+    """Запуск браузера с настройками и мобильным прокси с авторизацией."""
     options = uc.ChromeOptions()
-    # Отключаем загрузку картинок для экономии трафика
-    prefs = {"profile.managed_default_content_settings.images": 2}
-    options.add_experimental_option("prefs", prefs)
     if headless_mode:
         options.add_argument(f"--{headless_mode}")
         options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
@@ -56,15 +111,11 @@ def start_driver(headless_mode: str = 'headless', proxy_url: str = None):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument(f'--user-data-dir={tempfile.mkdtemp()}')
-    seleniumwire_options = {}
-    if proxy_url:
-        seleniumwire_options['proxy'] = {
-            'http': proxy_url,
-            'https': proxy_url
-        }
+    # --- Подключаем расширение для прокси ---
+    plugin_path = create_proxy_auth_extension(PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS)
+    options.add_extension(plugin_path)
     try:
-        driver = webdriver.Chrome(options=options, seleniumwire_options=seleniumwire_options)
+        driver = uc.Chrome(options=options)
     except Exception as e:
         print("[ОШИБКА] Не удалось запустить Chrome. Убедитесь, что браузер Chrome или Chromium установлен на вашем компьютере.")
         print(f"Детали ошибки: {e}")
@@ -73,30 +124,9 @@ def start_driver(headless_mode: str = 'headless', proxy_url: str = None):
     return driver
 
 
-def load_cookies(driver, cookies_file):
-    with open(cookies_file, "r", encoding="utf-8") as f:
-        cookies = json.load(f)
-    current_domain = driver.current_url.split("/")[2]
-    for cookie in cookies:
-        # Добавлять только если домен cookie совпадает с доменом страницы или является его поддоменом
-        if cookie["domain"].lstrip(".") in current_domain:
-            try:
-                driver.add_cookie(cookie)
-            except Exception as e:
-                print(f"Не удалось добавить cookie {cookie['name']}: {e}")
-        else:
-            print(f"Пропущен cookie {cookie['name']} из-за несовпадения домена: {cookie['domain']} vs {current_domain}")
-
-
 def get_products_from_seller_page(driver, seller_url, max_products=None):
     print(f"Загружаем страницу продавца: {seller_url}")
     driver.get(seller_url)
-    # Загружаем cookies и обновляем страницу
-    load_cookies(driver, "ozon_cookies.json")
-    driver.refresh()
-    # Сохраняем HTML для отладки
-    with open("ozon_debug.html", "w", encoding="utf-8") as f:
-        f.write(driver.page_source)
     time.sleep(3)
     # Скроллим для подгрузки товаров
     print("Скроллим страницу для загрузки товаров...")
@@ -112,9 +142,10 @@ def get_products_from_seller_page(driver, seller_url, max_products=None):
         print(f"Найдено товаров с селектором '{selector}': {len(links)}")
         for link in links:
             href = link.get('href')
-            if href and '/product/' in str(href):
-                href_str = str(href)
-                full_url = href_str if href_str.startswith('http') else 'https://www.ozon.ru' + href_str
+            if isinstance(href, list):
+                href = href[0] if href else None
+            if href and '/product/' in href:
+                full_url = href if href.startswith('http') else 'https://www.ozon.ru' + str(href)
                 products.add(full_url)
             if max_products and len(products) >= max_products:
                 break
@@ -215,8 +246,7 @@ def extract_seller_id(seller_url: str) -> int:
 
 
 def get_all_products_prices(seller_url, max_products=None, headless_mode: str = 'headless'):
-    """Получение цен всех товаров продавца (параллельно, каждый поток — свой драйвер)"""
-    # 1. Открываем браузер только для сбора ссылок на товары
+    """Получение цен всех товаров продавца"""
     driver = start_driver(headless_mode=headless_mode)
     try:
         print(f"=== ПАРСИНГ ЦЕН OZON ===")
@@ -235,18 +265,14 @@ def get_all_products_prices(seller_url, max_products=None, headless_mode: str = 
             print("Товары не найдены!")
             return []
         print(f"\nНайдено товаров: {len(products)}")
-    finally:
-        print("Закрываем браузер после сбора ссылок...")
-        driver.quit()
-
-    # 2. Параллельно парсим карточки товаров (каждый поток — свой браузер)
-    import concurrent.futures
-    import random
-    def parse_product(product_url):
-        driver = start_driver(headless_mode=headless_mode)
-        try:
-            price_info = get_product_price_new_tab(driver, product_url, driver.current_window_handle)
+        # Получаем цены товаров
+        prices_data = []
+        main_handle = driver.current_window_handle
+        for i, product_url in enumerate(products):
+            print(f"\n--- Обрабатываем товар {i+1}/{len(products)} ---")
+            price_info = get_product_price_new_tab(driver, product_url, main_handle)
             if price_info:
+                # Извлекаем nm_id
                 try:
                     nm_id = extract_nm_id(product_url)
                 except Exception as e:
@@ -254,68 +280,36 @@ def get_all_products_prices(seller_url, max_products=None, headless_mode: str = 
                     nm_id = None
                 price_info['nm_id'] = str(nm_id)
                 price_info['seller_id'] = seller_id
-            return price_info
-        finally:
-            driver.quit()
-            # Случайная небольшая задержка для избежания блокировок
-            time.sleep(0.2 + random.random() * 0.3)
-
-    prices_data = []
-    max_workers = 3
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_url = {executor.submit(parse_product, url): url for url in products}
-        for i, future in enumerate(concurrent.futures.as_completed(future_to_url)):
-            product_url = future_to_url[future]
-            try:
-                price_info = future.result()
-            except Exception as exc:
-                print(f"❌ Ошибка при парсинге товара {product_url}: {exc}")
-                price_info = None
-            if price_info:
                 prices_data.append(price_info)
-                print(f"✅ Товар {i+1} обработан (nm_id={price_info.get('nm_id')}, seller_id={seller_id})")
+                print(f"✅ Товар {i+1} обработан (nm_id={nm_id}, seller_id={seller_id})")
             else:
                 print(f"❌ Не удалось получить цену для товара {i+1}")
-    print(f"\n=== РЕЗУЛЬТАТ ===")
-    print(f"Получено цен: {len(prices_data)}")
-    for i, price_data in enumerate(prices_data):
-        print(f"\nТовар {i+1}:")
-        print(f"  Ссылка: {price_data['href']}")
-        print(f"  nm_id: {price_data.get('nm_id', 'N/A')}")
-        print(f"  seller_id: {price_data.get('seller_id', 'N/A')}")
-        print(f"  Цена со скидкой: {price_data.get('price_discount', 'N/A')} ₽")
-        print(f"  Полный текст цены со скидкой: {price_data.get('price_discount_text', 'N/A')}")
-        print(f"  Обычная цена: {price_data.get('price_regular', 'N/A')} ₽")
-        print(f"  Полный текст обычной цены: {price_data.get('price_regular_text', 'N/A')}")
-        print(f"  URL товара: {price_data.get('product_url', 'N/A')}")
-    return prices_data
+                break  # Если сессия потеряна — прекращаем парсинг
+            # Пауза между товарами
+            if i < len(products) - 1:
+                time.sleep(1)
+        print(f"\n=== РЕЗУЛЬТАТ ===")
+        print(f"Получено цен: {len(prices_data)}")
+        for i, price_data in enumerate(prices_data):
+            print(f"\nТовар {i+1}:")
+            print(f"  Ссылка: {price_data['href']}")
+            print(f"  nm_id: {price_data.get('nm_id', 'N/A')}")
+            print(f"  seller_id: {price_data.get('seller_id', 'N/A')}")
+            print(f"  Цена со скидкой: {price_data.get('price_discount', 'N/A')} ₽")
+            print(f"  Полный текст цены со скидкой: {price_data.get('price_discount_text', 'N/A')}")
+            print(f"  Обычная цена: {price_data.get('price_regular', 'N/A')} ₽")
+            print(f"  Полный текст обычной цены: {price_data.get('price_regular_text', 'N/A')}")
+            print(f"  URL товара: {price_data.get('product_url', 'N/A')}")
+        return prices_data
+    finally:
+        print("Закрываем браузер...")
+        driver.quit()
 
 
-async def get_offer_info_by_product_id(product_id, client_id, api_key):
-    url = "https://api-seller.ozon.ru/v1/product/info/description"
-    headers = {
-        "Client-Id": client_id,
-        "Api-Key": api_key,
-        "Content-Type": "application/json"
-    }
-    payload = {"product_id": int(product_id)}
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(url, headers=headers, json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get("result", {})
-
-async def get_all_products_prices_async(seller_url, max_products=None, headless_mode: str = 'headless'):
-    loop = asyncio.get_running_loop()
-    prices_data = await loop.run_in_executor(None, get_all_products_prices, seller_url, max_products, headless_mode)
-    product_ids = [p.get("nm_id") for p in prices_data if p.get("nm_id")]
-    # Получаем offer_id по всем product_id через Ozon API v3
-    offer_ids = await fetch_ozon_products_v3(product_ids)
-    enriched = []
-    for product, offer_id in zip(prices_data, offer_ids):
-        product["offer_id"] = offer_id
-        enriched.append(product)
-    return enriched
+def get_all_products_prices_async(*args, **kwargs):
+    """Асинхронная обёртка для совместимости с telegram_bot.py (реально остаётся синхронной)."""
+    loop = asyncio.get_event_loop()
+    return loop.run_in_executor(None, get_all_products_prices, *args, **kwargs)
 
 
 def load_ozon_products_to_db():
@@ -323,14 +317,19 @@ def load_ozon_products_to_db():
     async def _load():
         print("=== _load: старт ===")
         async with AsyncSessionLocal() as db:
-            data = await fetch_ozon_products_v3([]) # Assuming fetch_ozon_products_v3 can handle an empty list or needs a specific call
-            result = data.get("result") or {}
-            items = result.get("items", [])
-            # The original code had save_ozon_products_to_db, but it's not imported.
-            # Assuming the intent was to save the items if the function was available.
-            # For now, removing the call as per the edit hint.
+            items = await fetch_ozon_products_v3([])
+            await save_ozon_products_to_db(db, items)
             print(f"[OZON] Загружено товаров: {len(items)}")
     asyncio.run(_load())
+
+
+def test_ozon_api_prices():
+    import asyncio
+    async def run():
+        offer_ids = await fetch_all_offer_ids_from_ozon()
+        items = await fetch_products_info_by_offer_ids(offer_ids)
+        save_ozon_prices_to_txt(items)
+    asyncio.run(run())
 
 
 def main():
@@ -372,6 +371,8 @@ def main():
             time.sleep(5)
     
     print("\nТест завершен")
+    print("\nТест OZON API (цены):")
+    test_ozon_api_prices()
 
 
 if __name__ == "__main__":

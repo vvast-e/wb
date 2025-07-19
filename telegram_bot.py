@@ -36,6 +36,8 @@ user_context = {}
 
 # Словарь для хранения задач парсинга по пользователям
 user_parsing_tasks = {}
+# Словарь для хранения событий остановки парсера по пользователям
+user_stop_events = {}
 
 class PriceMonitorBot:
     def __init__(self):
@@ -473,15 +475,23 @@ class PriceMonitorBot:
     
     async def monitor_prices_task(self, context: ContextTypes.DEFAULT_TYPE):
         """Задача мониторинга цен - каждые 30 минут для всех товаров по supplier_id из supplier_ids.py"""
+        stop_event_key = context.job.data.get("stop_event_key")
+        stop_event = user_stop_events.get(stop_event_key)
         try:
             total_prices = 0
             
             # Мониторинг Wildberries
             async with AsyncSessionLocal() as db:
                 for supplier_id, shop_name in SUPPLIERS.items():
+                    if stop_event and stop_event.is_set():
+                        print(f"[WB Monitor] Остановка по запросу пользователя {stop_event_key}")
+                        return
                     try:
                         nm_ids = await self.parser.get_products_by_supplier_id(supplier_id)
                         for nm_id in nm_ids:
+                            if stop_event and stop_event.is_set():
+                                print(f"[WB Monitor] Остановка по запросу пользователя {stop_event_key}")
+                                return
                             try:
                                 # Получаем текущую цену с WB
                                 current_price, _ = await fetch_wb_current_price(nm_id)
@@ -597,13 +607,21 @@ class PriceMonitorBot:
         if user_parsing_tasks.get((user_id, "wb")):
             await update.callback_query.answer("Парсер WB уже запущен.", show_alert=True)
             return
+        # Создаём Event для остановки
+        import asyncio
+        stop_event = asyncio.Event()
+        user_stop_events[(user_id, "wb")] = stop_event
         # Запуск WB-парсера (пример: через job_queue)
-        job = context.job_queue.run_repeating(self.monitor_prices_task, interval=900, first=1, name=f"wb_{user_id}", data={"user_id": user_id, "market": "wb"})
+        job = context.job_queue.run_repeating(self.monitor_prices_task, interval=900, first=1, name=f"wb_{user_id}", data={"user_id": user_id, "market": "wb", "stop_event_key": (user_id, "wb")})
         user_parsing_tasks[(user_id, "wb")] = job
         await update.callback_query.answer("Парсер WB запущен!", show_alert=True)
         await self.show_main_menu(update, context)
 
     async def stop_wb_parser(self, update, context, user_id):
+        # Останавливаем Event
+        stop_event = user_stop_events.pop((user_id, "wb"), None)
+        if stop_event:
+            stop_event.set()
         job = user_parsing_tasks.pop((user_id, "wb"), None)
         if job:
             job.schedule_removal()
@@ -616,13 +634,21 @@ class PriceMonitorBot:
         if user_parsing_tasks.get((user_id, "ozon")):
             await update.callback_query.answer("Парсер Ozon уже запущен.", show_alert=True)
             return
+        # Создаём Event для остановки
+        import asyncio
+        stop_event = asyncio.Event()
+        user_stop_events[(user_id, "ozon")] = stop_event
         # Запуск Ozon-парсера (через job_queue, отдельная задача)
-        job = context.job_queue.run_repeating(self.monitor_ozon_task, interval=900, first=1, name=f"ozon_{user_id}", data={"user_id": user_id, "market": "ozon"})
+        job = context.job_queue.run_repeating(self.monitor_ozon_task, interval=900, first=1, name=f"ozon_{user_id}", data={"user_id": user_id, "market": "ozon", "stop_event_key": (user_id, "ozon")})
         user_parsing_tasks[(user_id, "ozon")] = job
         await update.callback_query.answer("Парсер Ozon запущен!", show_alert=True)
         await self.show_main_menu(update, context)
 
     async def stop_ozon_parser(self, update, context, user_id):
+        # Останавливаем Event
+        stop_event = user_stop_events.pop((user_id, "ozon"), None)
+        if stop_event:
+            stop_event.set()
         job = user_parsing_tasks.pop((user_id, "ozon"), None)
         if job:
             job.schedule_removal()
@@ -633,6 +659,8 @@ class PriceMonitorBot:
 
     async def monitor_ozon_task(self, context: ContextTypes.DEFAULT_TYPE):
         """Периодическая задача парсинга Ozon для пользователя"""
+        stop_event_key = context.job.data.get("stop_event_key")
+        stop_event = user_stop_events.get(stop_event_key)
         OZON_SELLER_URL = "https://www.ozon.ru/seller/11i-professional-975642/products/?__rr=3&miniapp=seller_975642"
         try:
             total_prices = 0
@@ -641,22 +669,22 @@ class PriceMonitorBot:
             from models.product import Product
             from sqlalchemy import select
             async with AsyncSessionLocal() as db:
-                # Получаем товары с enriched offer_id
                 products = await get_all_products_prices_async(OZON_SELLER_URL)
                 for product in products:
-                    nm_id = product.get('nm_id')  # SKU (sku)
-                    offer_id = product.get('offer_id')  # vendor_code (offer_id)
+                    if stop_event and stop_event.is_set():
+                        print(f"[Ozon Monitor] Остановка по запросу пользователя {stop_event_key}")
+                        return
+                    nm_id = product.get('nm_id')
+                    offer_id = product.get('offer_id')
                     seller_id = product.get('seller_id')
                     new_price = product.get('price_regular')
                     if not (nm_id and seller_id and new_price and offer_id):
                         continue
-                    # Сохраняем/обновляем product
                     result = await db.execute(select(Product).where(Product.vendor_code == str(offer_id)))
                     exists = result.scalars().first()
                     if not exists:
                         db.add(Product(nm_id=nm_id, vendor_code=offer_id, brand="11i Professional OZON"))
                         await db.commit()
-                    # Получаем последнюю цену из базы по vendor_code (offer_id)
                     result = await db.execute(
                         select(PriceHistory).where(
                             PriceHistory.vendor_code == str(offer_id),
@@ -666,7 +694,6 @@ class PriceMonitorBot:
                     )
                     latest_price = result.scalars().first()
                     old_price = latest_price.new_price if latest_price else None
-                    # Если цена изменилась — уведомляем и сохраняем
                     if old_price is not None and old_price != int(new_price):
                         await self.send_price_change_notification(
                             shop_name="11i professional OZON",
@@ -679,7 +706,6 @@ class PriceMonitorBot:
                         )
                         from crud.shop import save_price_change_history
                         await save_price_change_history(db, offer_id, seller_id, old_price, int(new_price))
-                    # Сохраняем новую цену (vendor_code — основной ключ, nm_id — справочно)
                     await add_price_history(
                         db, offer_id, seller_id, nm_id, int(new_price), old_price, market="ozon"
                     )
