@@ -21,15 +21,8 @@ import contextlib
 logger = logging.getLogger(__name__)
 
 # === Прокси параметры ===
-PROXY_HOST = 'p15184.ltespace.net'
-PROXY_PORT = 15184
-PROXY_USER = 'uek7t66y'
-PROXY_PASS = 'zbygddap'
-# Путь к папке с расширением Chrome Proxy (см. инструкцию ниже)
-PROXY_EXTENSION_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), '..', 'chrome_proxy_extension')
-)
-
+PROXY_HOST = 'localhost'
+PROXY_PORT = 3128  # порт, который ты укажешь в 3proxy
 
 
 # Селекторы для поиска товаров и цен (адаптированы под ваш опыт)
@@ -54,8 +47,8 @@ def clean_price_text(price_text):
 def check_proxy_ip_via_requests():
     """Проверяет внешний IP через requests с теми же прокси, что и для Selenium."""
     proxies = {
-        "http": f"http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}",
-        "https": f"http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}",
+        "http": f"http://{PROXY_HOST}:{PROXY_PORT}",
+        "https": f"https://{PROXY_HOST}:{PROXY_PORT}",
     }
     try:
         response = requests.get("https://api.ipify.org", proxies=proxies, timeout=10)
@@ -68,7 +61,7 @@ def check_proxy_ip_via_requests():
 def create_temp_proxy_extension(proxy_host, proxy_port, proxy_username, proxy_password, scheme='https'):
     context = tempfile.TemporaryDirectory()
     extension_dir = context.name
-    manifest_json = '{"version":"1.0.0","manifest_version":2,"name":"Chrome Proxy","permissions":["proxy","tabs","unlimitedStorage","storage","<all_urls>","webRequest","webRequestBlocking"],"background":{"scripts":["background.js"]},"minimum_chrome_version":"22.0.0"}'
+    manifest_json = '{"version":"1.0.0","manifest_version":2,"name":"Chrome Proxy","permissions":["proxy","tabs","unlimitedStorage","storage","<all_urls>","webRequest","webRequestBlocking"],"background":{"scripts":["auth.js"]},"minimum_chrome_version":"22.0.0"}'
     background_js = (
         'var e={mode:"fixed_servers",rules:{singleProxy:{scheme:"%s",host:"%s",port:parseInt(%s)},bypassList:["localhost"]}};'
         'chrome.proxy.settings.set({value:e,scope:"regular"},function(){}),'
@@ -77,14 +70,13 @@ def create_temp_proxy_extension(proxy_host, proxy_port, proxy_username, proxy_pa
     )
     with open(f"{extension_dir}/manifest.json", "w", encoding="utf8") as f:
         f.write(manifest_json)
-    with open(f"{extension_dir}/background.js", "w", encoding="utf8") as f:
+    with open(f"{extension_dir}/auth.js", "w", encoding="utf8") as f:
         f.write(background_js)
     return context, extension_dir
 
 
 def start_driver(headless_mode: str = 'headless'):
-    """Запуск браузера с настройками и мобильным прокси через динамическое расширение."""
-    check_proxy_ip_via_requests()
+    """Запуск браузера с настройками и локальным прокси-гейтом (без авторизации)."""
     options = uc.ChromeOptions()
     if headless_mode:
         options.add_argument(f"--{headless_mode}")
@@ -94,17 +86,13 @@ def start_driver(headless_mode: str = 'headless'):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    # --- Динамически создаём расширение для прокси ---
-    proxy_context, extension_dir = create_temp_proxy_extension(
-        PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS, scheme='https')
-    options.add_argument(f"--load-extension={extension_dir}")
-    # proxy_context будет жить до конца функции (и драйвера)
+    # --- Указываем прокси без авторизации ---
+    options.add_argument(f"--proxy-server={PROXY_HOST}:{PROXY_PORT}")
     try:
         driver = uc.Chrome(options=options)
     except Exception as e:
         logger.error("[ОШИБКА] Не удалось запустить Chrome. Убедитесь, что браузер Chrome или Chromium установлен на вашем компьютере.")
         logger.error(f"Детали ошибки: {e}")
-        proxy_context.cleanup()
         raise
     driver.implicitly_wait(5)
     # --- Проверяем внешний IP через Selenium ---
@@ -114,8 +102,6 @@ def start_driver(headless_mode: str = 'headless'):
         logger.info(f"[ПРОКСИ] Внешний IP через Selenium: {ip_in_browser}")
     except Exception as e:
         logger.error(f"[ПРОКСИ] Не удалось получить IP через Selenium: {e}")
-    # --- Возвращаем драйвер и контекст, чтобы не удалять расширение раньше времени ---
-    driver._proxy_context = proxy_context  # чтобы не удалился до закрытия драйвера
     return driver
 
 
