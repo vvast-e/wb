@@ -14,7 +14,6 @@ import re
 import asyncio
 import zipfile
 from utils.ozon_api import fetch_ozon_products_v3, save_ozon_products_to_db
-from utils.ozon_api import fetch_all_offer_ids_from_ozon, fetch_products_info_by_offer_ids, save_ozon_prices_to_txt
 from database import AsyncSessionLocal
 
 # === Прокси параметры ===
@@ -326,9 +325,10 @@ def load_ozon_products_to_db():
 def test_ozon_api_prices():
     import asyncio
     async def run():
-        offer_ids = await fetch_all_offer_ids_from_ozon()
-        items = await fetch_products_info_by_offer_ids(offer_ids)
-        save_ozon_prices_to_txt(items)
+        # offer_ids = await fetch_all_offer_ids_from_ozon() # Удален
+        # items = await fetch_products_info_by_offer_ids(offer_ids) # Удален
+        # save_ozon_prices_to_txt(items) # Удален
+        pass # Удален
     asyncio.run(run())
 
 
