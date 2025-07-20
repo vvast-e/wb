@@ -390,7 +390,7 @@ def test_ozon_api_prices():
 def main():
     logger.info("=== main: старт ===")
     # Сначала загружаем товары из OZON API в БД
-    load_ozon_products_to_db()
+    # load_ozon_products_to_db()
     # Далее — стандартный парсинг цен
     # Тестовый URL продавца
     seller_url = "https://www.ozon.ru/seller/11i-professional-975642/products/"
