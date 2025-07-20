@@ -18,6 +18,7 @@ import tempfile
 import contextlib
 import json
 import zipfile
+from seleniumwire import webdriver
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -119,29 +120,29 @@ chrome.webRequest.onAuthRequired.addListener(
     return zip_path
 
 
-def start_driver(headless_mode: str = 'headless'):
-    """Запуск браузера с расширением для прокси с авторизацией (manifest_version 3, ZIP)."""
-    options = uc.ChromeOptions()
-    if headless_mode:
-        options.add_argument(f"--{headless_mode}")
-        options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
-        options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    # НЕ добавлять --proxy-server, иначе будет конфликт с расширением!
-    # Генерируем расширение для текущего прокси (ZIP)
-    extension_zip = create_proxy_extension_zip(
-        PROXY_HOST, PROXY_PORT, PROXY_USERNAME, PROXY_PASSWORD, PROXY_SCHEME
-    )
-    options.add_extension(extension_zip)
-    try:
-        driver = uc.Chrome(options=options)
-    except Exception as e:
-        logger.error("[ОШИБКА] Не удалось запустить Chrome. Убедитесь, что браузер Chrome или Chromium установлен на вашем компьютере.")
-        logger.error(f"Детали ошибки: {e}")
-        raise
+def start_driver():
+    """Запуск браузера с прокси через selenium-wire и маскировкой под обычного пользователя (headless всегда включён)."""
+    proxy_options = {
+        'proxy': {
+            'http': f'https://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}',
+            'https': f'https://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}',
+            'no_proxy': 'localhost,127.0.0.1'
+        }
+    }
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless=new')
+    options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
+    options.add_argument('--window-size=1920,1080')
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
+    options.add_argument('--disable-infobars')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    driver = webdriver.Chrome(seleniumwire_options=proxy_options, options=options)
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+        "source": """
+        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+        """
+    })
     driver.implicitly_wait(5)
     # --- Проверяем внешний IP через Selenium ---
     try:
@@ -281,7 +282,7 @@ ROTATION_PERIOD = 300  # 5 минут (секунд)
 
 def get_all_products_prices(seller_url, max_products=None, headless_mode: str = 'headless'):
     """Получение цен всех товаров продавца с обработкой ротации прокси."""
-    driver = start_driver(headless_mode=headless_mode)
+    driver = start_driver()
     proxy_start_time = time.time()
     try:
         logger.info(f"=== ПАРСИНГ ЦЕН OZON ===")
@@ -314,7 +315,7 @@ def get_all_products_prices(seller_url, max_products=None, headless_mode: str = 
                     driver.quit()
                 except Exception:
                     pass
-                driver = start_driver(headless_mode=headless_mode)
+                driver = start_driver()
                 main_handle = driver.current_window_handle
             logger.info(f"\n--- Обрабатываем товар {i+1}/{len(products)} ---")
             price_info = get_product_price_new_tab(driver, product_url, main_handle)
