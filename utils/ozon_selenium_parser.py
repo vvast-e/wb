@@ -123,6 +123,7 @@ chrome.webRequest.onAuthRequired.addListener(
 
 def start_driver():
     """Запуск браузера с прокси через selenium-wire, headless и маскировкой под обычного пользователя (без user-data-dir)."""
+    import uuid  # Добавим импорт здесь, чтобы не было конфликтов
     proxy_options = {
         'proxy': {
             'http': f'https://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}',
@@ -138,6 +139,9 @@ def start_driver():
     options.add_experimental_option('useAutomationExtension', False)
     options.add_argument('--disable-infobars')
     options.add_argument('--disable-blink-features=AutomationControlled')
+    # === Уникальная директория профиля для каждого запуска ===
+    user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_" + str(uuid.uuid4()))
+    options.add_argument(f'--user-data-dir={user_data_dir}')
     driver = webdriver.Chrome(seleniumwire_options=proxy_options, options=options)
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": """
