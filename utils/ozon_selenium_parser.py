@@ -17,16 +17,17 @@ import os
 import tempfile
 import contextlib
 import json
+import zipfile
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
 
-# === Прокси параметры ===
-PROXY_HOST = 'p15184.ltespace.net'
-PROXY_PORT = 15184
-PROXY_USERNAME = 'uek7t66y'
-PROXY_PASSWORD = 'zbygddap'
-PROXY_SCHEME = 'http'  # или 'https', если требуется
+# === Прокси параметры (можно задать через переменные окружения) ===
+PROXY_HOST = os.getenv('OZON_PROXY_HOST', 'p15184.ltespace.net')
+PROXY_PORT = int(os.getenv('OZON_PROXY_PORT', 15184))
+PROXY_USERNAME = os.getenv('OZON_PROXY_USERNAME', 'uek7t66y')
+PROXY_PASSWORD = os.getenv('OZON_PROXY_PASSWORD', 'zbygddap')
+PROXY_SCHEME = os.getenv('OZON_PROXY_SCHEME', 'http')  # или 'https', если требуется
 
 
 # Селекторы для поиска товаров и цен (адаптированы под ваш опыт)
@@ -61,72 +62,65 @@ def check_proxy_ip_via_requests():
         logger.error(f"[ПРОКСИ] Не удалось получить IP через requests: {e}")
 
 
-# --- Динамическое создание расширения для прокси с авторизацией (MV3) ---
-def create_temp_proxy_extension_mv3(proxy_host, proxy_port, proxy_username, proxy_password, scheme='http'):
-    context = tempfile.TemporaryDirectory()
-    extension_dir = context.name
+# --- Динамическое создание расширения для прокси с авторизацией (MV3, ZIP) ---
+def create_proxy_extension_zip(proxy_host, proxy_port, proxy_username, proxy_password, scheme='http'):
+    temp_dir = tempfile.mkdtemp()
     manifest = {
-        "name": "Proxy Auth Extension",
-        "version": "1.0",
         "manifest_version": 3,
-        "permissions": [
-            "proxy",
-            "storage",
-            "webRequest",
-            "webRequestAuthProvider",
-            "webRequestBlocking",
-            "scripting"
-        ],
-        "host_permissions": [
-            "<all_urls>"
-        ],
-        "background": {
-            "service_worker": "background.js"
-        }
+        "version": "1.0.0",
+        "name": "Proxy Auth Extension",
+        "permissions": ["proxy", "webRequest", "webRequestAuthProvider"],
+        "background": {"service_worker": "background.js"}
     }
     background_js = f'''
-chrome.runtime.onInstalled.addListener(() => {{
-  chrome.proxy.settings.set(
-    {{
-      value: {{
+const PROXY_HOST = "{proxy_host}";
+const PROXY_PORT = {proxy_port};
+const PROXY_USER = "{proxy_username}";
+const PROXY_PASS = "{proxy_password}";
+
+chrome.proxy.settings.set({{
+    scope: "regular",
+    value: {{
         mode: "fixed_servers",
         rules: {{
-          singleProxy: {{
-            scheme: "{scheme}",
-            host: "{proxy_host}",
-            port: {proxy_port}
-          }},
-          bypassList: ["localhost"]
+            singleProxy: {{
+                scheme: "{scheme}",
+                host: PROXY_HOST,
+                port: PROXY_PORT
+            }},
+            bypassList: ["localhost"]
         }}
-      }},
-      scope: "regular"
-    }},
-    function() {{}}
-  );
+    }}
 }});
 
 chrome.webRequest.onAuthRequired.addListener(
-  function(details) {{
-    return {{
-      authCredentials: {{
-        username: "{proxy_username}",
-        password: "{proxy_password}"
-      }}
-    }};
-  }},
-  {{urls: ["<all_urls>"]}},
-  ["blocking"]
+    (details, callback) => {{
+        callback({{
+            authCredentials: {{
+                username: PROXY_USER,
+                password: PROXY_PASS
+            }}
+        }});
+    }},
+    {{ urls: ["<all_urls>"] }},
+    ["blocking"]
 );
 '''
-    with open(f"{extension_dir}/manifest.json", "w", encoding="utf8") as f:
+    manifest_path = os.path.join(temp_dir, "manifest.json")
+    background_path = os.path.join(temp_dir, "background.js")
+    with open(manifest_path, "w", encoding="utf8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
-    with open(f"{extension_dir}/background.js", "w", encoding="utf8") as f:
+    with open(background_path, "w", encoding="utf8") as f:
         f.write(background_js)
-    return context, extension_dir
+    zip_path = os.path.join(temp_dir, "proxy_auth_extension.zip")
+    with zipfile.ZipFile(zip_path, "w") as zp:
+        zp.write(manifest_path, "manifest.json")
+        zp.write(background_path, "background.js")
+    return zip_path
 
 
 def start_driver(headless_mode: str = 'headless'):
-    """Запуск браузера с расширением для прокси с авторизацией (manifest_version 3)."""
+    """Запуск браузера с расширением для прокси с авторизацией (manifest_version 3, ZIP)."""
     options = uc.ChromeOptions()
     if headless_mode:
         options.add_argument(f"--{headless_mode}")
@@ -137,11 +131,11 @@ def start_driver(headless_mode: str = 'headless'):
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled")
     # НЕ добавлять --proxy-server, иначе будет конфликт с расширением!
-    # Генерируем расширение для текущего прокси
-    proxy_context, extension_dir = create_temp_proxy_extension_mv3(
+    # Генерируем расширение для текущего прокси (ZIP)
+    extension_zip = create_proxy_extension_zip(
         PROXY_HOST, PROXY_PORT, PROXY_USERNAME, PROXY_PASSWORD, PROXY_SCHEME
     )
-    options.add_argument(f"--load-extension={extension_dir}")
+    options.add_extension(extension_zip)
     try:
         driver = uc.Chrome(options=options)
     except Exception as e:
@@ -156,7 +150,6 @@ def start_driver(headless_mode: str = 'headless'):
         logger.info(f"[ПРОКСИ] Внешний IP через Selenium: {ip_in_browser}")
     except Exception as e:
         logger.error(f"[ПРОКСИ] Не удалось получить IP через Selenium: {e}")
-    # proxy_context будет жить, пока жив driver (не удалять вручную)
     return driver
 
 
