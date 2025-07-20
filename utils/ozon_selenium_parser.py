@@ -140,7 +140,14 @@ def start_driver():
     options.add_argument('--disable-infobars')
     options.add_argument('--disable-blink-features=AutomationControlled')
     # НЕ добавляем --user-data-dir!
-    driver = webdriver.Chrome(seleniumwire_options=proxy_options, options=options)
+    print("Chrome options:", options.arguments)
+    logger.info(f"Chrome options: {options.arguments}")
+    # Если используется undetected_chromedriver, явно указать user_data_dir=None
+    try:
+        import undetected_chromedriver as uc
+        driver = webdriver.Chrome(seleniumwire_options=proxy_options, options=options)
+    except ImportError:
+        driver = webdriver.Chrome(seleniumwire_options=proxy_options, options=options)
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": """
         Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
