@@ -122,7 +122,7 @@ chrome.webRequest.onAuthRequired.addListener(
 
 
 def start_driver():
-    """Запуск браузера с прокси через selenium-wire, headless, маскировкой и уникальным user-data-dir."""
+    """Запуск браузера с прокси через selenium-wire, headless и маскировкой под обычного пользователя (без user-data-dir)."""
     proxy_options = {
         'proxy': {
             'http': f'https://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}',
@@ -138,8 +138,6 @@ def start_driver():
     options.add_experimental_option('useAutomationExtension', False)
     options.add_argument('--disable-infobars')
     options.add_argument('--disable-blink-features=AutomationControlled')
-    user_data_dir = tempfile.mkdtemp()
-    options.add_argument(f'--user-data-dir={user_data_dir}')
     driver = webdriver.Chrome(seleniumwire_options=proxy_options, options=options)
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": """
@@ -154,7 +152,7 @@ def start_driver():
         logger.info(f"[ПРОКСИ] Внешний IP через Selenium: {ip_in_browser}")
     except Exception as e:
         logger.error(f"[ПРОКСИ] Не удалось получить IP через Selenium: {e}")
-    return driver, user_data_dir
+    return driver
 
 
 def get_products_from_seller_page(driver, seller_url, max_products=None):
@@ -285,7 +283,7 @@ ROTATION_PERIOD = 300  # 5 минут (секунд)
 
 def get_all_products_prices(seller_url, max_products=None, headless_mode: str = 'headless'):
     """Получение цен всех товаров продавца с обработкой ротации прокси."""
-    driver, user_data_dir = start_driver()
+    driver = start_driver()
     proxy_start_time = time.time()
     try:
         logger.info(f"=== ПАРСИНГ ЦЕН OZON ===")
@@ -316,10 +314,9 @@ def get_all_products_prices(seller_url, max_products=None, headless_mode: str = 
                 proxy_start_time = time.time()
                 try:
                     driver.quit()
-                    shutil.rmtree(user_data_dir, ignore_errors=True)
                 except Exception:
                     pass
-                driver, user_data_dir = start_driver()
+                driver = start_driver()
                 main_handle = driver.current_window_handle
             logger.info(f"\n--- Обрабатываем товар {i+1}/{len(products)} ---")
             price_info = get_product_price_new_tab(driver, product_url, main_handle)
@@ -356,7 +353,6 @@ def get_all_products_prices(seller_url, max_products=None, headless_mode: str = 
     finally:
         logger.info("Закрываем браузер...")
         driver.quit()
-        shutil.rmtree(user_data_dir, ignore_errors=True)
 
 
 def get_all_products_prices_async(*args, **kwargs):
