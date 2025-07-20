@@ -16,13 +16,17 @@ import requests
 import os
 import tempfile
 import contextlib
+import json
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
 
 # === Прокси параметры ===
-PROXY_HOST = 'localhost'
-PROXY_PORT = 3128  # порт, который ты укажешь в 3proxy
+PROXY_HOST = 'p15184.ltespace.net'
+PROXY_PORT = 15184
+PROXY_USERNAME = 'uek7t66y'
+PROXY_PASSWORD = 'zbygddap'
+PROXY_SCHEME = 'http'  # или 'https', если требуется
 
 
 # Селекторы для поиска товаров и цен (адаптированы под ваш опыт)
@@ -57,26 +61,72 @@ def check_proxy_ip_via_requests():
         logger.error(f"[ПРОКСИ] Не удалось получить IP через requests: {e}")
 
 
-# --- Динамическое создание расширения для прокси с авторизацией ---
-def create_temp_proxy_extension(proxy_host, proxy_port, proxy_username, proxy_password, scheme='https'):
+# --- Динамическое создание расширения для прокси с авторизацией (MV3) ---
+def create_temp_proxy_extension_mv3(proxy_host, proxy_port, proxy_username, proxy_password, scheme='http'):
     context = tempfile.TemporaryDirectory()
     extension_dir = context.name
-    manifest_json = '{"version":"1.0.0","manifest_version":2,"name":"Chrome Proxy","permissions":["proxy","tabs","unlimitedStorage","storage","<all_urls>","webRequest","webRequestBlocking"],"background":{"scripts":["auth.js"]},"minimum_chrome_version":"22.0.0"}'
-    background_js = (
-        'var e={mode:"fixed_servers",rules:{singleProxy:{scheme:"%s",host:"%s",port:parseInt(%s)},bypassList:["localhost"]}};'
-        'chrome.proxy.settings.set({value:e,scope:"regular"},function(){}),'
-        'chrome.webRequest.onAuthRequired.addListener((function(e){return{authCredentials:{username:"%s",password:"%s"}}}),{urls:["<all_urls>"]},["blocking"]);'
-        % (scheme, proxy_host, proxy_port, proxy_username, proxy_password)
-    )
+    manifest = {
+        "name": "Proxy Auth Extension",
+        "version": "1.0",
+        "manifest_version": 3,
+        "permissions": [
+            "proxy",
+            "storage",
+            "webRequest",
+            "webRequestAuthProvider",
+            "webRequestBlocking",
+            "scripting"
+        ],
+        "host_permissions": [
+            "<all_urls>"
+        ],
+        "background": {
+            "service_worker": "background.js"
+        }
+    }
+    background_js = f'''
+chrome.runtime.onInstalled.addListener(() => {{
+  chrome.proxy.settings.set(
+    {{
+      value: {{
+        mode: "fixed_servers",
+        rules: {{
+          singleProxy: {{
+            scheme: "{scheme}",
+            host: "{proxy_host}",
+            port: {proxy_port}
+          }},
+          bypassList: ["localhost"]
+        }}
+      }},
+      scope: "regular"
+    }},
+    function() {{}}
+  );
+}});
+
+chrome.webRequest.onAuthRequired.addListener(
+  function(details) {{
+    return {{
+      authCredentials: {{
+        username: "{proxy_username}",
+        password: "{proxy_password}"
+      }}
+    }};
+  }},
+  {{urls: ["<all_urls>"]}},
+  ["blocking"]
+);
+'''
     with open(f"{extension_dir}/manifest.json", "w", encoding="utf8") as f:
-        f.write(manifest_json)
-    with open(f"{extension_dir}/auth.js", "w", encoding="utf8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+    with open(f"{extension_dir}/background.js", "w", encoding="utf8") as f:
         f.write(background_js)
     return context, extension_dir
 
 
 def start_driver(headless_mode: str = 'headless'):
-    """Запуск браузера с настройками и локальным прокси-гейтом (без авторизации)."""
+    """Запуск браузера с расширением для прокси с авторизацией (manifest_version 3)."""
     options = uc.ChromeOptions()
     if headless_mode:
         options.add_argument(f"--{headless_mode}")
@@ -86,8 +136,12 @@ def start_driver(headless_mode: str = 'headless'):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    # --- Указываем прокси без авторизации ---
-    options.add_argument(f"--proxy-server={PROXY_HOST}:{PROXY_PORT}")
+    # НЕ добавлять --proxy-server, иначе будет конфликт с расширением!
+    # Генерируем расширение для текущего прокси
+    proxy_context, extension_dir = create_temp_proxy_extension_mv3(
+        PROXY_HOST, PROXY_PORT, PROXY_USERNAME, PROXY_PASSWORD, PROXY_SCHEME
+    )
+    options.add_argument(f"--load-extension={extension_dir}")
     try:
         driver = uc.Chrome(options=options)
     except Exception as e:
@@ -102,6 +156,7 @@ def start_driver(headless_mode: str = 'headless'):
         logger.info(f"[ПРОКСИ] Внешний IP через Selenium: {ip_in_browser}")
     except Exception as e:
         logger.error(f"[ПРОКСИ] Не удалось получить IP через Selenium: {e}")
+    # proxy_context будет жить, пока жив driver (не удалять вручную)
     return driver
 
 

@@ -1,25 +1,33 @@
-var config = {
-    mode: "fixed_servers",
-    rules: {
-        singleProxy: {
-            scheme: "https", // или "http"
-            host: "p15184.ltespace.net",
-            port: parseInt(15184)
+// background.js для manifest_version 3
+chrome.runtime.onInstalled.addListener(() => {
+    chrome.proxy.settings.set(
+        {
+            value: {
+                mode: "fixed_servers",
+                rules: {
+                    singleProxy: {
+                        scheme: "http",
+                        host: "p15184.ltespace.net",
+                        port: 15184
+                    },
+                    bypassList: ["localhost"]
+                }
+            },
+            scope: "regular"
         },
-        bypassList: ["localhost"]
-    }
-};
-chrome.proxy.settings.set({value: config, scope: "regular"}, function() {});
-function callbackFn(details) {
-    return {
-        authCredentials: {
-            username: "uek7t66y",
-            password: "zbygddap"
-        }
-    };
-}
+        function () { }
+    );
+});
+
 chrome.webRequest.onAuthRequired.addListener(
-    callbackFn,
-    {urls: ["<all_urls>"]},
-    ['blocking']
+    function (details) {
+        return {
+            authCredentials: {
+                username: "uek7t66y",
+                password: "zbygddap"
+            }
+        };
+    },
+    { urls: ["<all_urls>"] },
+    ["blocking"]
 );
