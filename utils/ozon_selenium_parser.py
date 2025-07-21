@@ -130,6 +130,8 @@ def start_driver():
     # Создаем уникальный временный каталог для профиля Chrome
     temp_dir = tempfile.mkdtemp(prefix='sw_chrome_')
     os.chmod(temp_dir, 0o755)
+    logger.info(f"[TEMP] Создана временная папка профиля Chrome: {temp_dir}")
+    print(f"[TEMP] Создана временная папка профиля Chrome: {temp_dir}")
 
     proxy_options = {
         'proxy': {
@@ -170,6 +172,8 @@ def start_driver():
         return driver
     except Exception as e:
         shutil.rmtree(temp_dir, ignore_errors=True)
+        logger.info(f"[TEMP] Удалена временная папка профиля Chrome (ошибка): {temp_dir}")
+        print(f"[TEMP] Удалена временная папка профиля Chrome (ошибка): {temp_dir}")
         raise RuntimeError(f"Не удалось запустить драйвер: {str(e)}")
 
 
@@ -376,6 +380,8 @@ def get_all_products_prices(seller_url, max_products=None, headless_mode: str = 
                 if hasattr(driver, 'temp_dir'):
                     import shutil
                     shutil.rmtree(driver.temp_dir, ignore_errors=True)
+                    logger.info(f"[TEMP] Удалена временная папка профиля Chrome: {driver.temp_dir}")
+                    print(f"[TEMP] Удалена временная папка профиля Chrome: {driver.temp_dir}")
             except Exception as e:
                 logger.error(f"Ошибка при закрытии драйвера: {e}")
 
