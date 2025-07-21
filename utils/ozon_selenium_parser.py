@@ -132,8 +132,10 @@ def start_driver():
         'disable_capture': True
     }
     options = webdriver.ChromeOptions()
-    import uuid
-    options.add_argument(f'--user-data-dir=/tmp/chrome_profile_{uuid.uuid4()}')
+    import uuid, os
+    profile_dir = f"/root/chrome_profiles/chrome_profile_{uuid.uuid4()}"
+    os.makedirs(profile_dir, exist_ok=True)
+    options.add_argument(f'--user-data-dir={profile_dir}')
     options.add_argument('--headless=new')
     options.add_argument('--incognito')
     options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
@@ -142,7 +144,6 @@ def start_driver():
     options.add_experimental_option('useAutomationExtension', False)
     options.add_argument('--disable-infobars')
     options.add_argument('--disable-blink-features=AutomationControlled')
-    # НЕ добавляем --user-data-dir!
     print("Chrome options:", options.arguments)
     logger.info(f"Chrome options: {options.arguments}")
     # Если используется undetected_chromedriver, явно указать user_data_dir=None
