@@ -52,7 +52,7 @@ async def get_all_products_prices_playwright(seller_url, max_products=None):
         await stealth.apply_stealth_async(page)
         # Проверка IP-адреса
         logger.info('[PLAYWRIGHT] Проверка IP-адреса...')
-        await page.goto('https://ifconfig.me', timeout=25000)
+        await page.goto('https://ifconfig.me', timeout=40000)
         await asyncio.sleep(2)
         ip_html = await page.content()
         ip_soup = BeautifulSoup(ip_html, 'lxml')
