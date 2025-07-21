@@ -121,7 +121,7 @@ def start_scheduler():
         process_scheduled_tasks,
         'interval',
         seconds=5,
-        max_instances=1,
+        max_instances=20,
         timezone='Europe/Moscow'
     )
     scheduler.add_job(
