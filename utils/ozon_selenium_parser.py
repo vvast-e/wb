@@ -129,6 +129,7 @@ def start_driver():
             'https': f'https://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}',
             'no_proxy': 'localhost,127.0.0.1'
         }
+        'disable_capture': True
     }
     options = webdriver.ChromeOptions()
     options.add_argument('--headless=new')
