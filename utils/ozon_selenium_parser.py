@@ -164,6 +164,14 @@ def start_driver():
             """
         })
         driver.implicitly_wait(5)
+        # Логируем внешний IP через Selenium
+        try:
+            driver.get("https://api.ipify.org")
+            ip_in_browser = driver.page_source.strip()
+            logger.info(f"[ПРОКСИ] Внешний IP через Selenium: {ip_in_browser}")
+            print(f"[ПРОКСИ] Внешний IP через Selenium: {ip_in_browser}")
+        except Exception as e:
+            logger.error(f"[ПРОКСИ] Не удалось получить IP через Selenium: {e}")
         return driver
     except Exception as e:
         shutil.rmtree(temp_dir, ignore_errors=True)
