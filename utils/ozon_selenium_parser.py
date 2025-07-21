@@ -176,11 +176,13 @@ def get_products_from_seller_page(driver, seller_url, max_products=None):
     time.sleep(10)
     # --- Эмуляция действий пользователя ---
     actions = ActionChains(driver)
-    # Случайные движения мыши
+    from selenium.webdriver.common.by import By
+    body = driver.find_element(By.TAG_NAME, "body")
+    # Случайные движения мыши в пределах окна
     for _ in range(random.randint(3, 7)):
-        x = random.randint(100, 1800)
-        y = random.randint(100, 900)
-        actions.move_by_offset(x, y).perform()
+        x = random.randint(0, 1800)
+        y = random.randint(0, 900)
+        actions.move_to_element_with_offset(body, x, y).perform()
         time.sleep(random.uniform(0.5, 1.5))
     # Случайные скроллы
     for _ in range(random.randint(2, 5)):
