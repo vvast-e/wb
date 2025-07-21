@@ -159,9 +159,10 @@ def start_driver():
     try:
         driver = webdriver.Chrome(seleniumwire_options=proxy_options, options=options)
         driver.implicitly_wait(5)
-        # Маскировка webdriver и navigator
+        # Маскировка webdriver и navigator, Canvas, Audio, WebGL, шрифтов, разрешения экрана, поведения мыши
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": """
+                // webdriver и navigator
                 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
                 window.navigator.chrome = { runtime: {} };
                 Object.defineProperty(navigator, 'languages', {get: () => ['ru-RU', 'ru']});
@@ -169,6 +170,53 @@ def start_driver():
                 Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
                 Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
                 Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+                // Canvas fingerprint
+                const getContext = HTMLCanvasElement.prototype.getContext;
+                HTMLCanvasElement.prototype.getContext = function(type, ...args) {
+                    const ctx = getContext.apply(this, [type, ...args]);
+                    if(type === '2d') {
+                        const getImageData = ctx.getImageData;
+                        ctx.getImageData = function(...args) {
+                            // Модифицируем данные, чтобы Canvas fingerprint был уникальным
+                            const imageData = getImageData.apply(this, args);
+                            for (let i = 0; i < imageData.data.length; i += 4) {
+                                imageData.data[i] = imageData.data[i] ^ 0x12;
+                            }
+                            return imageData;
+                        };
+                    }
+                    return ctx;
+                };
+                // Audio fingerprint
+                const getChannelData = AudioBuffer.prototype.getChannelData;
+                AudioBuffer.prototype.getChannelData = function() {
+                    const data = getChannelData.apply(this, arguments);
+                    for (let i = 0; i < data.length; i += 100) {
+                        data[i] = data[i] + 0.0001;
+                    }
+                    return data;
+                };
+                // WebGL fingerprint
+                const getParameter = WebGLRenderingContext.prototype.getParameter;
+                WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                    // Модифицируем vendor и renderer
+                    if (parameter === 37445) return 'Intel Inc.';
+                    if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+                    return getParameter.apply(this, arguments);
+                };
+                // Шрифты
+                document.fonts && document.fonts.forEach(font => { font.family = 'Arial'; });
+                // Разрешение экрана
+                Object.defineProperty(window, 'screen', {value: {width: 1920, height: 1080}});
+                // Поведение мыши
+                window.addEventListener('mousemove', function(e) {
+                    window.lastMouseMove = Date.now();
+                });
+                // Симуляция движения мыши
+                setInterval(() => {
+                    const event = new MouseEvent('mousemove', {clientX: 100, clientY: 100});
+                    window.dispatchEvent(event);
+                }, 10000);
             """
         })
         try:
