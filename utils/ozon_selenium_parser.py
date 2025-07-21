@@ -19,6 +19,8 @@ import contextlib
 import json
 import zipfile
 import shutil
+import random
+from selenium.webdriver.common.action_chains import ActionChains
 # from seleniumwire import webdriver  # Удаляем seleniumwire
 
 # Настройка логирования
@@ -129,18 +131,30 @@ def start_driver():
         PROXY_HOST, PROXY_PORT, PROXY_USERNAME, PROXY_PASSWORD, scheme=PROXY_SCHEME
     )
     options = uc.ChromeOptions()
+    # --- Маскировка: уникальный user-agent и профиль ---
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+    ]
+    ua = random.choice(user_agents)
+    options.add_argument(f'--user-agent={ua}')
+    # Уникальный профиль для каждой сессии
+    temp_profile = tempfile.mkdtemp(prefix="ozon_profile_")
+    options.add_argument(f'--user-data-dir={temp_profile}')
     options.add_argument('--window-size=1920,1080')
     options.add_argument('--disable-blink-features=AutomationControlled')
     options.add_argument('--remote-debugging-port=9222')
-    options.add_argument('--user-data-dir=C:/Temp/cleanprofile')
     options.add_argument(f'--proxy-server={PROXY_SCHEME}://{PROXY_HOST}:{PROXY_PORT}')
     options.add_argument(f'--load-extension={proxy_extension_dir}')
     try:
         driver = uc.Chrome(options=options)
         driver.implicitly_wait(5)
+        # Проверка IP через браузер
         try:
             driver.get("https://ifconfig.me")
-            # Дать странице загрузиться через прокси
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(driver.page_source, "lxml")
             ip_in_browser = soup.text.strip()
@@ -158,7 +172,21 @@ def start_driver():
 def get_products_from_seller_page(driver, seller_url, max_products=None):
     logger.info(f"Загружаем страницу продавца: {seller_url}")
     driver.get(seller_url)
+    import time
     time.sleep(10)
+    # --- Эмуляция действий пользователя ---
+    actions = ActionChains(driver)
+    # Случайные движения мыши
+    for _ in range(random.randint(3, 7)):
+        x = random.randint(100, 1800)
+        y = random.randint(100, 900)
+        actions.move_by_offset(x, y).perform()
+        time.sleep(random.uniform(0.5, 1.5))
+    # Случайные скроллы
+    for _ in range(random.randint(2, 5)):
+        scroll_y = random.randint(200, 1200)
+        driver.execute_script(f"window.scrollBy(0, {scroll_y});")
+        time.sleep(random.uniform(1, 2))
     # Сохраняем HTML-код страницы Ozon для отладки
     with open('ozon_debug.html', 'w', encoding='utf-8') as f:
         f.write(driver.page_source)
