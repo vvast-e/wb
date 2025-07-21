@@ -131,6 +131,8 @@ def start_driver():
         PROXY_HOST, PROXY_PORT, PROXY_USERNAME, PROXY_PASSWORD, scheme=PROXY_SCHEME
     )
     options = uc.ChromeOptions()
+    # --- Антидетект-опции ---
+    # (excludeSwitches и useAutomationExtension не добавляем, чтобы избежать ошибки)
     # --- Маскировка: уникальный user-agent и профиль ---
     user_agents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
