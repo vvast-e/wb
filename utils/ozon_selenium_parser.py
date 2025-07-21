@@ -151,12 +151,7 @@ def start_driver():
     logger.info(f"Chrome options: {options.arguments}")
     driver = None
     try:
-        try:
-            import undetected_chromedriver as uc
-            driver = uc.Chrome(options=options, seleniumwire_options=proxy_options)
-        except ImportError:
-            from selenium import webdriver as swd
-            driver = webdriver.Chrome(options=options, seleniumwire_options=proxy_options)
+        driver = webdriver.Chrome(seleniumwire_options=proxy_options, options=options)
         driver.temp_dir = temp_dir
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": """
