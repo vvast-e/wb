@@ -123,19 +123,24 @@ chrome.webRequest.onAuthRequired.addListener(
 
 def start_driver():
     """Запуск браузера с прокси через selenium-wire, headless и маскировкой под обычного пользователя (без user-data-dir, с инкогнито)."""
+    import tempfile
+    import os
+    from seleniumwire import webdriver
+    import shutil
+    # Создаем уникальный временный каталог для профиля Chrome
+    temp_dir = tempfile.mkdtemp(prefix='sw_chrome_')
+    os.chmod(temp_dir, 0o755)
+
     proxy_options = {
         'proxy': {
-            'http': f'https://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}',
-            'https': f'https://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}',
+            'http': f'http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}',
+            'https': f'http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}',
             'no_proxy': 'localhost,127.0.0.1'
         },
         'disable_capture': True
     }
     options = webdriver.ChromeOptions()
-    import uuid, os
-    profile_dir = f"/root/chrome_profiles/chrome_profile_{uuid.uuid4()}"
-    os.makedirs(profile_dir, exist_ok=True)
-    options.add_argument(f'--user-data-dir={profile_dir}')
+    options.add_argument(f'--user-data-dir={temp_dir}')
     options.add_argument('--headless=new')
     options.add_argument('--incognito')
     options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
@@ -146,26 +151,25 @@ def start_driver():
     options.add_argument('--disable-blink-features=AutomationControlled')
     print("Chrome options:", options.arguments)
     logger.info(f"Chrome options: {options.arguments}")
-    # Если используется undetected_chromedriver, явно указать user_data_dir=None
+    driver = None
     try:
-        import undetected_chromedriver as uc
-        driver = webdriver.Chrome(seleniumwire_options=proxy_options, options=options)
-    except ImportError:
-        driver = webdriver.Chrome(seleniumwire_options=proxy_options, options=options)
-    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": """
-        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        """
-    })
-    driver.implicitly_wait(5)
-    # --- Проверяем внешний IP через Selenium ---
-    try:
-        driver.get("https://api.ipify.org")
-        ip_in_browser = driver.page_source.strip()
-        logger.info(f"[ПРОКСИ] Внешний IP через Selenium: {ip_in_browser}")
+        try:
+            import undetected_chromedriver as uc
+            driver = uc.Chrome(options=options, seleniumwire_options=proxy_options)
+        except ImportError:
+            from selenium import webdriver as swd
+            driver = webdriver.Chrome(options=options, seleniumwire_options=proxy_options)
+        driver.temp_dir = temp_dir
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            """
+        })
+        driver.implicitly_wait(5)
+        return driver
     except Exception as e:
-        logger.error(f"[ПРОКСИ] Не удалось получить IP через Selenium: {e}")
-    return driver
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise RuntimeError(f"Не удалось запустить драйвер: {str(e)}")
 
 
 def get_products_from_seller_page(driver, seller_url, max_products=None):
@@ -365,7 +369,14 @@ def get_all_products_prices(seller_url, max_products=None, headless_mode: str = 
         return prices_data
     finally:
         logger.info("Закрываем браузер...")
-        driver.quit()
+        if driver:
+            try:
+                driver.quit()
+                if hasattr(driver, 'temp_dir'):
+                    import shutil
+                    shutil.rmtree(driver.temp_dir, ignore_errors=True)
+            except Exception as e:
+                logger.error(f"Ошибка при закрытии драйвера: {e}")
 
 
 def get_all_products_prices_async(*args, **kwargs):
