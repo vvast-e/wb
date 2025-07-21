@@ -19,7 +19,7 @@ import contextlib
 import json
 import zipfile
 import shutil
-from seleniumwire import webdriver
+# from seleniumwire import webdriver  # Удаляем seleniumwire
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -72,6 +72,7 @@ def create_proxy_extension_zip(proxy_host, proxy_port, proxy_username, proxy_pas
         "version": "1.0.0",
         "name": "Proxy Auth Extension",
         "permissions": ["proxy", "webRequest", "webRequestAuthProvider"],
+        "host_permissions": ["<all_urls>"],
         "background": {"service_worker": "background.js"}
     }
     background_js = f'''
@@ -118,134 +119,55 @@ chrome.webRequest.onAuthRequired.addListener(
     with zipfile.ZipFile(zip_path, "w") as zp:
         zp.write(manifest_path, "manifest.json")
         zp.write(background_path, "background.js")
-    return zip_path
+    return temp_dir  # Возвращаем папку, а не zip
 
 
 def start_driver():
-    import os
-    import shutil
-    logger.info("[TEMP] user-data-dir не используется, Chrome создаст временный профиль автоматически (headless mode)")
-    print("[TEMP] user-data-dir не используется, Chrome создаст временный профиль автоматически (headless mode)")
-    proxy_url = f'http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}'
-    from seleniumwire import webdriver
-    proxy_options = {
-        'proxy': {
-            'http': proxy_url,
-            'https': proxy_url,
-            'no_proxy': 'localhost,127.0.0.1'
-        },
-        'disable_capture': True
-    }
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless=new')
-    options.add_argument('--incognito')
+    logger.info("[UC] Запуск undetected-chromedriver с прокси через расширение")
+    print("[UC] Запуск undetected-chromedriver с прокси через расширение")
+    proxy_extension_dir = create_proxy_extension_zip(
+        PROXY_HOST, PROXY_PORT, PROXY_USERNAME, PROXY_PASSWORD, scheme=PROXY_SCHEME
+    )
+    options = uc.ChromeOptions()
     options.add_argument('--window-size=1920,1080')
-    options.add_argument('--disable-infobars')
     options.add_argument('--disable-blink-features=AutomationControlled')
-    options.add_argument('--disable-blink-features=AutomationControlled,WebRTC')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--lang=ru-RU,ru')
-    options.add_argument('--disable-extensions')
-    options.add_argument('--disable-default-apps')
-    options.add_argument('--disable-popup-blocking')
-    options.add_argument('--disable-notifications')
-    options.add_argument('--mute-audio')
-    # User-Agent максимально похожий на обычный браузер
-    options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
-    logger.info("[SW] Запуск selenium-wire с прокси и антибот-опциями")
-    print("[SW] Запуск selenium-wire с прокси и антибот-опциями")
+    options.add_argument('--remote-debugging-port=9222')
+    options.add_argument('--user-data-dir=C:/Temp/cleanprofile')
+    options.add_argument(f'--proxy-server={PROXY_SCHEME}://{PROXY_HOST}:{PROXY_PORT}')
+    options.add_argument(f'--load-extension={proxy_extension_dir}')
     try:
-        driver = webdriver.Chrome(seleniumwire_options=proxy_options, options=options)
+        driver = uc.Chrome(options=options)
         driver.implicitly_wait(5)
-        # Маскировка webdriver и navigator, Canvas, Audio, WebGL, шрифтов, разрешения экрана, поведения мыши
-        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-            "source": """
-                // webdriver и navigator
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                window.navigator.chrome = { runtime: {} };
-                Object.defineProperty(navigator, 'languages', {get: () => ['ru-RU', 'ru']});
-                Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
-                Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
-                Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
-                Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
-                // Canvas fingerprint
-                const getContext = HTMLCanvasElement.prototype.getContext;
-                HTMLCanvasElement.prototype.getContext = function(type, ...args) {
-                    const ctx = getContext.apply(this, [type, ...args]);
-                    if(type === '2d') {
-                        const getImageData = ctx.getImageData;
-                        ctx.getImageData = function(...args) {
-                            // Модифицируем данные, чтобы Canvas fingerprint был уникальным
-                            const imageData = getImageData.apply(this, args);
-                            for (let i = 0; i < imageData.data.length; i += 4) {
-                                imageData.data[i] = imageData.data[i] ^ 0x12;
-                            }
-                            return imageData;
-                        };
-                    }
-                    return ctx;
-                };
-                // Audio fingerprint
-                const getChannelData = AudioBuffer.prototype.getChannelData;
-                AudioBuffer.prototype.getChannelData = function() {
-                    const data = getChannelData.apply(this, arguments);
-                    for (let i = 0; i < data.length; i += 100) {
-                        data[i] = data[i] + 0.0001;
-                    }
-                    return data;
-                };
-                // WebGL fingerprint
-                const getParameter = WebGLRenderingContext.prototype.getParameter;
-                WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                    // Модифицируем vendor и renderer
-                    if (parameter === 37445) return 'Intel Inc.';
-                    if (parameter === 37446) return 'Intel Iris OpenGL Engine';
-                    return getParameter.apply(this, arguments);
-                };
-                // Шрифты
-                document.fonts && document.fonts.forEach(font => { font.family = 'Arial'; });
-                // Разрешение экрана
-                Object.defineProperty(window, 'screen', {value: {width: 1920, height: 1080}});
-                // Поведение мыши
-                window.addEventListener('mousemove', function(e) {
-                    window.lastMouseMove = Date.now();
-                });
-                // Симуляция движения мыши
-                setInterval(() => {
-                    const event = new MouseEvent('mousemove', {clientX: 100, clientY: 100});
-                    window.dispatchEvent(event);
-                }, 10000);
-            """
-        })
         try:
-            driver.get("https://api.ipify.org")
-            ip_in_browser = driver.page_source.strip()
-            logger.info(f"[ПРОКСИ] Внешний IP через SeleniumWire: {ip_in_browser}")
-            print(f"[ПРОКСИ] Внешний IP через SeleniumWire: {ip_in_browser}")
+            driver.get("https://ifconfig.me")
+            # Дать странице загрузиться через прокси
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(driver.page_source, "lxml")
+            ip_in_browser = soup.text.strip()
+            logger.info(f"[ПРОКСИ] Внешний IP через UC: {ip_in_browser}")
+            print(f"[ПРОКСИ] Внешний IP через UC: {ip_in_browser}")
         except Exception as e:
-            logger.error(f"[ПРОКСИ] Не удалось получить IP через SeleniumWire: {e}")
+            logger.error(f"[ПРОКСИ] Не удалось получить IP через UC: {e}")
         return driver
     except Exception as e:
-        logger.error(f"[SW] Не удалось запустить selenium-wire: {e}")
-        print(f"[SW] Не удалось запустить selenium-wire: {e}")
+        logger.error(f"[UC] Не удалось запустить undetected-chromedriver: {e}")
+        print(f"[UC] Не удалось запустить undetected-chromedriver: {e}")
         raise RuntimeError(f"Не удалось запустить драйвер: {str(e)}")
 
 
 def get_products_from_seller_page(driver, seller_url, max_products=None):
     logger.info(f"Загружаем страницу продавца: {seller_url}")
     driver.get(seller_url)
-    time.sleep(3)
+    time.sleep(10)
     # Сохраняем HTML-код страницы Ozon для отладки
     with open('ozon_debug.html', 'w', encoding='utf-8') as f:
         f.write(driver.page_source)
     logger.info("HTML-код страницы Ozon сохранён в ozon_debug.html")
     # Скроллим для подгрузки товаров
     logger.info("Скроллим страницу для загрузки товаров...")
-    for i in range(5):
+    for i in range(3):
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(1)
+        time.sleep(3)
         logger.info(f"Скролл {i+1}/5")
     soup = BeautifulSoup(driver.page_source, "lxml")
     products = set()
