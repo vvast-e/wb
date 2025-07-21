@@ -142,7 +142,9 @@ def start_driver():
         'disable_capture': True
     }
     options = webdriver.ChromeOptions()
-    options.add_argument(f'--user-data-dir={temp_dir}')
+    # options.add_argument(f'--user-data-dir={temp_dir}')  # Убрано, Chrome сам создаст временный профиль
+    logger.info("[TEMP] user-data-dir не используется, Chrome создаст временный профиль автоматически (headless mode)")
+    print("[TEMP] user-data-dir не используется, Chrome создаст временный профиль автоматически (headless mode)")
     options.add_argument('--headless=new')
     options.add_argument('--incognito')
     options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
