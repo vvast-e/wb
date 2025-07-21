@@ -178,17 +178,21 @@ def get_products_from_seller_page(driver, seller_url, max_products=None):
     actions = ActionChains(driver)
     from selenium.webdriver.common.by import By
     body = driver.find_element(By.TAG_NAME, "body")
-    # Случайные движения мыши в пределах окна
+    # Получаем размеры окна и body
+    window_width = driver.execute_script("return window.innerWidth;")
+    window_height = driver.execute_script("return window.innerHeight;")
+    body_width = driver.execute_script("return arguments[0].offsetWidth;", body)
+    body_height = driver.execute_script("return arguments[0].offsetHeight;", body)
+    max_x = min(window_width, body_width) - 1
+    max_y = min(window_height, body_height) - 1
     for _ in range(random.randint(3, 7)):
-        x = random.randint(0, 1800)
-        y = random.randint(0, 900)
-        actions.move_to_element_with_offset(body, x, y).perform()
+        x = random.randint(0, max(0, max_x))
+        y = random.randint(0, max(0, max_y))
+        try:
+            actions.move_to_element_with_offset(body, x, y).perform()
+        except Exception as e:
+            logger.warning(f"[MOUSE] move_to_element_with_offset({x},{y}) failed: {e}")
         time.sleep(random.uniform(0.5, 1.5))
-    # Случайные скроллы
-    for _ in range(random.randint(2, 5)):
-        scroll_y = random.randint(200, 1200)
-        driver.execute_script(f"window.scrollBy(0, {scroll_y});")
-        time.sleep(random.uniform(1, 2))
     # Сохраняем HTML-код страницы Ozon для отладки
     with open('ozon_debug.html', 'w', encoding='utf-8') as f:
         f.write(driver.page_source)
