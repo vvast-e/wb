@@ -3,6 +3,7 @@ import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import AsyncSession
+from apscheduler.executors.pool import ThreadPoolExecutor
 
 from crud import task as task_crud
 from crud.history import update_history_status
@@ -11,7 +12,7 @@ from dependencies import get_db, get_wb_api_key
 from crud.user import get_all_users
 from crud.analytics import parse_shop_feedbacks_crud
 
-scheduler = AsyncIOScheduler()
+scheduler = AsyncIOScheduler(executors={'default': ThreadPoolExecutor(1)})
 
 
 async def _get_wb_api_key_for_task(db: AsyncSession, task_id: int) -> str:
@@ -120,7 +121,7 @@ def start_scheduler():
         process_scheduled_tasks,
         'interval',
         seconds=5,
-        max_instances=20,
+        max_instances=1,
         timezone='Europe/Moscow'
     )
     scheduler.add_job(
