@@ -121,11 +121,10 @@ chrome.webRequest.onAuthRequired.addListener(
     return zip_path
 
 
-def start_driver():
+def start_driver(use_uc=True):
     """Запуск браузера с прокси через selenium-wire, headless и маскировкой под обычного пользователя (без user-data-dir, с инкогнито)."""
     import tempfile
     import os
-    from seleniumwire import webdriver
     import shutil
     # Создаем уникальный временный каталог для профиля Chrome
     temp_dir = tempfile.mkdtemp(prefix='sw_chrome_')
@@ -133,49 +132,70 @@ def start_driver():
     logger.info(f"[TEMP] Создана временная папка профиля Chrome: {temp_dir}")
     print(f"[TEMP] Создана временная папка профиля Chrome: {temp_dir}")
 
+    proxy_url = f'http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}'
+    options = None
+    driver = None
+    if use_uc:
+        try:
+            import undetected_chromedriver as uc
+            options = uc.ChromeOptions()
+            options.add_argument('--headless=new')
+            options.add_argument('--incognito')
+            options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
+            options.add_argument('--window-size=1920,1080')
+            options.add_argument('--disable-infobars')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument(f'--proxy-server={proxy_url}')
+            logger.info("[UC] Запуск undetected_chromedriver с прокси")
+            print("[UC] Запуск undetected_chromedriver с прокси")
+            driver = uc.Chrome(options=options)
+            driver.implicitly_wait(5)
+            # Логируем внешний IP через Selenium
+            try:
+                driver.get("https://api.ipify.org")
+                ip_in_browser = driver.page_source.strip()
+                logger.info(f"[ПРОКСИ] Внешний IP через UC: {ip_in_browser}")
+                print(f"[ПРОКСИ] Внешний IP через UC: {ip_in_browser}")
+            except Exception as e:
+                logger.error(f"[ПРОКСИ] Не удалось получить IP через UC: {e}")
+            return driver
+        except Exception as e:
+            logger.error(f"[UC] Не удалось запустить undetected_chromedriver: {e}")
+            print(f"[UC] Не удалось запустить undetected_chromedriver: {e}")
+            # fallback на selenium-wire
+    # selenium-wire fallback
+    from seleniumwire import webdriver
     proxy_options = {
         'proxy': {
-            'http': f'http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}',
-            'https': f'http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}',
+            'http': proxy_url,
+            'https': proxy_url,
             'no_proxy': 'localhost,127.0.0.1'
         },
         'disable_capture': True
     }
     options = webdriver.ChromeOptions()
-    # options.add_argument(f'--user-data-dir={temp_dir}')  # Убрано, Chrome сам создаст временный профиль
-    logger.info("[TEMP] user-data-dir не используется, Chrome создаст временный профиль автоматически (headless mode)")
-    print("[TEMP] user-data-dir не используется, Chrome создаст временный профиль автоматически (headless mode)")
     options.add_argument('--headless=new')
     options.add_argument('--incognito')
     options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
     options.add_argument('--window-size=1920,1080')
     options.add_argument('--disable-infobars')
     options.add_argument('--disable-blink-features=AutomationControlled')
-    print("Chrome options:", options.arguments)
-    logger.info(f"Chrome options: {options.arguments}")
-    driver = None
+    logger.info("[SW] Запуск selenium-wire с прокси")
+    print("[SW] Запуск selenium-wire с прокси")
     try:
         driver = webdriver.Chrome(seleniumwire_options=proxy_options, options=options)
-        driver.temp_dir = temp_dir
-        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-            "source": """
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            """
-        })
         driver.implicitly_wait(5)
-        # Логируем внешний IP через Selenium
         try:
             driver.get("https://api.ipify.org")
             ip_in_browser = driver.page_source.strip()
-            logger.info(f"[ПРОКСИ] Внешний IP через Selenium: {ip_in_browser}")
-            print(f"[ПРОКСИ] Внешний IP через Selenium: {ip_in_browser}")
+            logger.info(f"[ПРОКСИ] Внешний IP через SeleniumWire: {ip_in_browser}")
+            print(f"[ПРОКСИ] Внешний IP через SeleniumWire: {ip_in_browser}")
         except Exception as e:
-            logger.error(f"[ПРОКСИ] Не удалось получить IP через Selenium: {e}")
+            logger.error(f"[ПРОКСИ] Не удалось получить IP через SeleniumWire: {e}")
         return driver
     except Exception as e:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        logger.info(f"[TEMP] Удалена временная папка профиля Chrome (ошибка): {temp_dir}")
-        print(f"[TEMP] Удалена временная папка профиля Chrome (ошибка): {temp_dir}")
+        logger.error(f"[SW] Не удалось запустить selenium-wire: {e}")
+        print(f"[SW] Не удалось запустить selenium-wire: {e}")
         raise RuntimeError(f"Не удалось запустить драйвер: {str(e)}")
 
 
