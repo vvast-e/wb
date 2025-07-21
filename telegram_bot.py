@@ -17,7 +17,7 @@ from crud.shop import (
 from crud.user import get_user_by_email
 from models.user import User
 from utils.wb_price_parser import WBPriceParser, fetch_wb_price_history, fetch_wb_current_price
-from utils.ozon_selenium_parser import get_all_products_prices_async
+from utils.ozon_playwright_parser import get_all_products_prices_playwright
 from config import settings
 from supplier_ids import SUPPLIERS
 
@@ -669,7 +669,10 @@ class PriceMonitorBot:
             from models.product import Product
             from sqlalchemy import select
             async with AsyncSessionLocal() as db:
-                products = await get_all_products_prices_async(OZON_SELLER_URL)
+                # from utils.ozon_selenium_parser import get_all_products_prices
+                # import asyncio
+                # products = await asyncio.get_event_loop().run_in_executor(None, get_all_products_prices, OZON_SELLER_URL)
+                products = await get_all_products_prices_playwright(OZON_SELLER_URL)
                 for product in products:
                     if stop_event and stop_event.is_set():
                         print(f"[Ozon Monitor] Остановка по запросу пользователя {stop_event_key}")
