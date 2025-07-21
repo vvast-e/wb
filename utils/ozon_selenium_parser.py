@@ -131,6 +131,9 @@ def start_driver():
         PROXY_HOST, PROXY_PORT, PROXY_USERNAME, PROXY_PASSWORD, scheme=PROXY_SCHEME
     )
     options = uc.ChromeOptions()
+    # --- Антидетект-опции ---
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
     # --- Маскировка: уникальный user-agent и профиль ---
     user_agents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -141,7 +144,7 @@ def start_driver():
     ]
     ua = random.choice(user_agents)
     options.add_argument(f'--user-agent={ua}')
-    # Уникальный профиль для каждой сессии
+    # Уникальный профиль для каждой сессии (ротация профиля)
     temp_profile = tempfile.mkdtemp(prefix="ozon_profile_")
     options.add_argument(f'--user-data-dir={temp_profile}')
     options.add_argument('--window-size=1920,1080')
@@ -152,6 +155,12 @@ def start_driver():
     try:
         driver = uc.Chrome(options=options)
         driver.implicitly_wait(5)
+        # --- Дополнительная маскировка через execute_script ---
+        try:
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => false});")
+            driver.execute_script("window.chrome = {runtime: {}, loadTimes: function() {} };")
+        except Exception as e:
+            logger.warning(f"[ANTIDETECT] Не удалось внедрить JS-маскировку: {e}")
         # Проверка IP через браузер
         try:
             driver.get("https://ifconfig.me")
@@ -388,6 +397,13 @@ def get_all_products_prices(seller_url, max_products=None, headless_mode: str = 
         logger.info("Закрываем браузер...")
         if driver:
             try:
+                # Очистка cookies и localStorage
+                driver.delete_all_cookies()
+                try:
+                    driver.execute_script("localStorage.clear();")
+                    driver.execute_script("indexedDB.deleteDatabase('localforage');")
+                except Exception as e:
+                    logger.warning(f"[CLEANUP] Не удалось очистить localStorage/indexedDB: {e}")
                 driver.quit()
                 if hasattr(driver, 'temp_dir'):
                     import shutil
