@@ -3,7 +3,7 @@ import asyncio
 import random
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
-from playwright_stealth import Stealth
+from pw_anti_bot import bypass
 import logging
 
 logger = logging.getLogger(__name__)
@@ -45,14 +45,24 @@ async def get_all_products_prices_playwright(seller_url, max_products=None):
     else:
         logger.info('[PLAYWRIGHT] Прокси не задан, используется прямое соединение.')
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False, proxy=proxy)
-        context = await browser.new_context()
+        browser = await p.chromium.launch(headless="new", proxy=proxy)
+        # Device emulation (Windows desktop)
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        context = await browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            user_agent=user_agent,
+            locale="ru-RU",
+            timezone_id="Europe/Moscow",
+            extra_http_headers={
+                "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+                "User-Agent": user_agent
+            }
+        )
         page = await context.new_page()
-        stealth = Stealth()
-        await stealth.apply_stealth_async(page)
+        await bypass(page)
         # Проверка IP-адреса
         logger.info('[PLAYWRIGHT] Проверка IP-адреса...')
-        await page.goto('https://ifconfig.me', timeout=40000)
+        await page.goto('https://ifconfig.me', timeout=25000)
         await asyncio.sleep(2)
         ip_html = await page.content()
         ip_soup = BeautifulSoup(ip_html, 'lxml')
@@ -62,10 +72,18 @@ async def get_all_products_prices_playwright(seller_url, max_products=None):
         else:
             ip_text = ip_soup.text.strip().split()[0] if ip_soup.text.strip() else 'N/A'
         logger.info(f'[PLAYWRIGHT] Внешний IP через Playwright: {ip_text}')
-        # Переход на страницу продавца
+        # Переход на страницу продавца с обработкой JS-челленджа
         logger.info(f'[PLAYWRIGHT] Открываем страницу продавца: {seller_url}')
-        await page.goto(seller_url, timeout=60000)
-        await asyncio.sleep(3)
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            await page.goto(seller_url, timeout=60000, wait_until="networkidle")
+            await asyncio.sleep(3)
+            content = await page.content()
+            if ("enable JavaScript" in content or "not a robot" in content) and attempt < max_attempts - 1:
+                logger.warning("[PLAYWRIGHT] Антибот Ozon сработал! Пробуем перезагрузить...")
+                await asyncio.sleep(10)
+                continue
+            break
         # Эмуляция человеческих действий
         for _ in range(random.randint(3, 7)):
             scroll_y = random.randint(200, 1200)
@@ -102,7 +120,8 @@ async def get_all_products_prices_playwright(seller_url, max_products=None):
         for i, product_url in enumerate(products):
             logger.info(f'[{i+1}/{len(products)}] Парсим: {product_url}')
             prod_page = await context.new_page()
-            await prod_page.goto(product_url, timeout=30000)
+            await bypass(prod_page)
+            await prod_page.goto(product_url, timeout=30000, wait_until="networkidle")
             await asyncio.sleep(2)
             prod_html = await prod_page.content()
             prod_soup = BeautifulSoup(prod_html, 'lxml')
