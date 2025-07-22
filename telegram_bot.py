@@ -18,6 +18,7 @@ from crud.user import get_user_by_email
 from models.user import User
 from utils.wb_price_parser import WBPriceParser, fetch_wb_price_history, fetch_wb_current_price
 from utils.ozon_playwright_parser import get_all_products_prices_playwright
+from utils.ozon_selenium_parser import get_ozon_products_and_prices_seleniumwire
 from config import settings
 from supplier_ids import SUPPLIERS
 
@@ -386,21 +387,35 @@ class PriceMonitorBot:
             print(f"[Bot] Ошибка поиска vendor_code по nm_id: {e}")
             return None
 
-    async def show_product_current_price(self, update: Update, context: ContextTypes.DEFAULT_TYPE, nm_id: str, supplier_id: int):
+    async def show_product_current_price(self, update: Update, context: ContextTypes.DEFAULT_TYPE, nm_id: str,
+                                         supplier_id: int):
         await update.callback_query.edit_message_text("⏳ Получаем данные о товаре...")
         user_id = update.effective_user.id
         market = user_context.get(user_id, {}).get("market", "wb")
         try:
-            price, price_wallet = await fetch_wb_current_price(nm_id)
+            if supplier_id == 975642:  # Ozon
+                # Для Ozon получаем цену через Playwright-парсер
+                seller_url = f"https://www.ozon.ru/product/{nm_id}/"
+                price_info = await get_all_products_prices_playwright(seller_url, max_products=1)
+                if price_info:
+                    price = price_info[0].get('price_regular')
+                    price_discount = price_info[0].get('price_discount', price)
+                else:
+                    price = None
+                    price_discount = None
+            else:
+                # Для Wildberries
+                price, price_wallet = await fetch_wb_current_price(nm_id)
+
             async with AsyncSessionLocal() as db:
                 vendor_code = await self.get_vendor_code_by_nm_id(db, nm_id, supplier_id)
-            if not vendor_code:
-                product_data = await self.parser.get_product_details(nm_id)
-                vendor_code = product_data.get("vendorCode") if product_data else None
+
             display_code = vendor_code or nm_id
             keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=f"back_to_main")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
+
             if price is None:
+                # Пробуем получить последнюю сохраненную цену
                 from models.shop import PriceHistory
                 async with AsyncSessionLocal() as db:
                     result = await db.execute(
@@ -411,58 +426,34 @@ class PriceMonitorBot:
                     )
                     latest = result.scalars().first()
                     if latest:
-                        if supplier_id == 975642:
-                            price = latest.new_price
-                            price_str = f"{int(price):,}".replace(",", " ")
-                            text = f"📦 Товар: {display_code}\n💵 Текущая цена (по данным мониторинга): {price_str} ₽\n💳 С Ozon картой: {price_str} ₽"
-                        else:
-                            price = latest.new_price / 100
-                            price_wallet = int(price * 0.98)
-                            price_str = f"{int(price):,}".replace(",", " ")
-                            price_wallet_str = f"{price_wallet}".replace(",", " ")
-                            text = f"📦 Товар: {display_code}\n💵 Текущая цена (по данным мониторинга): {price_str} ₽\n💳 С WB кошельком: {price_wallet_str} ₽"
-                        try:
-                            await update.callback_query.edit_message_text(
-                                text,
-                                reply_markup=reply_markup
-                            )
-                        except Exception as e:
-                            if "Message is not modified" in str(e):
-                                await update.callback_query.answer()
-                            else:
-                                logger.error(f"Ошибка при показе текущей цены: {e}")
-                                await update.callback_query.answer("Произошла ошибка при обновлении цены")
-                        return
-                try:
-                    await update.callback_query.edit_message_text(
-                        f"Текущая цена для товара {display_code} не найдена.",
-                        reply_markup=reply_markup
-                    )
-                except Exception as e:
-                    if "Message is not modified" in str(e):
-                        await update.callback_query.answer()
-                    else:
-                        logger.error(f"Ошибка при показе текущей цены: {e}")
-                        await update.callback_query.answer("Произошла ошибка при обновлении цены")
-                return
-            if supplier_id == 975642:
-                price_str = f"{int(price):,}".replace(",", " ")
-                text = f"📦 Товар: {display_code}\n💵 Текущая цена: {price_str} ₽\n💳 С Ozon картой: {price_str} ₽"
-            else:
-                price_str = f"{int(price):,}".replace(",", " ")
-                price_wallet_str = f"{price_wallet}".replace(",", " ")
-                text = f"📦 Товар: {display_code}\n💵 Текущая цена: {price_str} ₽\n💳 С WB кошельком: {price_wallet_str} ₽"
-            try:
+                        price = latest.new_price
+                        price_discount = price
+
+            if price is None:
                 await update.callback_query.edit_message_text(
-                    text,
+                    f"Текущая цена для товара {display_code} не найдена.",
                     reply_markup=reply_markup
                 )
-            except Exception as e:
-                if "Message is not modified" in str(e):
-                    await update.callback_query.answer()
-                else:
-                    logger.error(f"Ошибка при показе текущей цены: {e}")
-                    await update.callback_query.answer("Произошла ошибка при обновлении цены")
+                return
+
+            # Форматируем вывод в зависимости от маркетплейса
+            if supplier_id == 975642:  # Ozon
+                price_str = f"{int(price):,}".replace(",", " ")
+                price_discount_str = f"{int(price_discount):,}".replace(",", " ") if price_discount else price_str
+                text = (f"📦 Товар: {display_code}\n"
+                        f"💵 Обычная цена: {price_str} ₽\n"
+                        f"💳 С Ozon картой: {price_discount_str} ₽")
+            else:
+                price_str = f"{int(price):,}".replace(",", " ")
+                price_wallet_str = f"{int(price_wallet):,}".replace(",", " ") if price_wallet else price_str
+                text = (f"📦 Товар: {display_code}\n"
+                        f"💵 Текущая цена: {price_str} ₽\n"
+                        f"💳 С WB кошельком: {price_wallet_str} ₽")
+
+            await update.callback_query.edit_message_text(
+                text,
+                reply_markup=reply_markup
+            )
         except Exception as e:
             await update.callback_query.edit_message_text(
                 f"❌ Ошибка при получении текущей цены: {str(e)}",
@@ -661,61 +652,89 @@ class PriceMonitorBot:
         """Периодическая задача парсинга Ozon для пользователя"""
         stop_event_key = context.job.data.get("stop_event_key")
         stop_event = user_stop_events.get(stop_event_key)
-        OZON_SELLER_URL = "https://www.ozon.ru/seller/11i-professional-975642/products/?__rr=3&miniapp=seller_975642"
+        OZON_SELLER_URL = "https://www.ozon.ru/seller/11i-professional-975642/products/"
         try:
             total_prices = 0
             from models.shop import PriceHistory
-            from crud.shop import add_price_history
+            from crud.shop import add_price_history, save_price_change_history
             from models.product import Product
             from sqlalchemy import select
+
             async with AsyncSessionLocal() as db:
-                # from utils.ozon_selenium_parser import get_all_products_prices
-                # import asyncio
-                # products = await asyncio.get_event_loop().run_in_executor(None, get_all_products_prices, OZON_SELLER_URL)
-                products = await get_all_products_prices_playwright(OZON_SELLER_URL)
+                # Используем новый seleniumwire-парсер (через executor)
+                loop = asyncio.get_running_loop()
+                products = await loop.run_in_executor(
+                    None,
+                    lambda: get_ozon_products_and_prices_seleniumwire(OZON_SELLER_URL, max_products=20, save_to_db=False)
+                )
+
                 for product in products:
                     if stop_event and stop_event.is_set():
                         print(f"[Ozon Monitor] Остановка по запросу пользователя {stop_event_key}")
                         return
+
                     nm_id = product.get('nm_id')
-                    offer_id = product.get('offer_id')
+                    price_regular = product.get('price_regular')
                     seller_id = product.get('seller_id')
-                    new_price = product.get('price_regular')
-                    if not (nm_id and seller_id and new_price and offer_id):
+
+                    if not (nm_id and seller_id and price_regular):
                         continue
-                    result = await db.execute(select(Product).where(Product.vendor_code == str(offer_id)))
-                    exists = result.scalars().first()
-                    if not exists:
-                        db.add(Product(nm_id=nm_id, vendor_code=offer_id, brand="11i Professional OZON"))
+
+                    # Ищем товар в базе по nm_id (для Ozon это SKU)
+                    result = await db.execute(select(Product).where(Product.nm_id == str(nm_id)))
+                    product_db = result.scalars().first()
+
+                    # Если товара нет в базе, создаем его
+                    if not product_db:
+                        product_db = Product(
+                            nm_id=str(nm_id),
+                            vendor_code=str(nm_id),  # Для Ozon используем nm_id как vendor_code
+                            brand="11i Professional OZON"
+                        )
+                        db.add(product_db)
                         await db.commit()
+
+                    # Получаем последнюю цену из истории
                     result = await db.execute(
                         select(PriceHistory).where(
-                            PriceHistory.vendor_code == str(offer_id),
+                            PriceHistory.nm_id == str(nm_id),
                             PriceHistory.shop_id == seller_id,
                             PriceHistory.market == 'ozon'
                         ).order_by(PriceHistory.price_date.desc())
                     )
                     latest_price = result.scalars().first()
                     old_price = latest_price.new_price if latest_price else None
-                    if old_price is not None and old_price != int(new_price):
+
+                    # Если цена изменилась - отправляем уведомление
+                    if old_price is not None and old_price != price_regular:
                         await self.send_price_change_notification(
                             shop_name="11i professional OZON",
-                            vendor_code=offer_id,
+                            vendor_code=str(nm_id),
                             old_price=old_price,
-                            new_price=int(new_price),
+                            new_price=price_regular,
                             product_name=str(nm_id),
                             nm_id=nm_id,
                             context=context
                         )
-                        from crud.shop import save_price_change_history
-                        await save_price_change_history(db, offer_id, seller_id, old_price, int(new_price))
+                        await save_price_change_history(db, nm_id, seller_id, old_price, price_regular)
+
+                    # Сохраняем новую цену
                     await add_price_history(
-                        db, offer_id, seller_id, nm_id, int(new_price), old_price, market="ozon"
+                        db,
+                        nm_id=str(nm_id),
+                        shop_id=seller_id,
+                        vendor_code=str(nm_id),
+                        new_price=price_regular,
+                        old_price=old_price,
+                        market="ozon"
                     )
                     total_prices += 1
+
             print(f"[Ozon Monitor] Успешно спарсено текущих цен: {total_prices}")
         except Exception as e:
             logger.error(f"Ошибка в задаче мониторинга цен Ozon: {e}")
+            import traceback
+            traceback.print_exc()
 
     def run(self):
         """Запуск бота"""
