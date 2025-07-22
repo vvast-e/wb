@@ -2,7 +2,7 @@ import os
 import asyncio
 import random
 from bs4 import BeautifulSoup
-import undetected_playwright as upw
+import undetected_playwright
 import logging
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,8 @@ async def get_all_products_prices_playwright(seller_url, max_products=None):
         logger.info(f'[PLAYWRIGHT] Используется прокси: {proxy}')
     else:
         logger.info('[PLAYWRIGHT] Прокси не задан, используется прямое соединение.')
-    async with upw.async_playwright() as p:
+    upw = undetected_playwright.UndetectedAsyncPlaywright()
+    async with upw.start() as p:
         browser = await p.chromium.launch(headless="new", proxy=proxy)
         user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         context = await browser.new_context(
