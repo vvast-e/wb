@@ -2,8 +2,7 @@ import os
 import asyncio
 import random
 from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright
-from pw_anti_bot import bypass
+import undetected_playwright as upw
 import logging
 
 logger = logging.getLogger(__name__)
@@ -44,9 +43,8 @@ async def get_all_products_prices_playwright(seller_url, max_products=None):
         logger.info(f'[PLAYWRIGHT] Используется прокси: {proxy}')
     else:
         logger.info('[PLAYWRIGHT] Прокси не задан, используется прямое соединение.')
-    async with async_playwright() as p:
+    async with upw.async_playwright() as p:
         browser = await p.chromium.launch(headless="new", proxy=proxy)
-        # Device emulation (Windows desktop)
         user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         context = await browser.new_context(
             viewport={"width": 1920, "height": 1080},
@@ -59,7 +57,6 @@ async def get_all_products_prices_playwright(seller_url, max_products=None):
             }
         )
         page = await context.new_page()
-        await bypass(page)
         # Проверка IP-адреса
         logger.info('[PLAYWRIGHT] Проверка IP-адреса...')
         await page.goto('https://ifconfig.me', timeout=25000)
@@ -120,7 +117,6 @@ async def get_all_products_prices_playwright(seller_url, max_products=None):
         for i, product_url in enumerate(products):
             logger.info(f'[{i+1}/{len(products)}] Парсим: {product_url}')
             prod_page = await context.new_page()
-            await bypass(prod_page)
             await prod_page.goto(product_url, timeout=30000, wait_until="networkidle")
             await asyncio.sleep(2)
             prod_html = await prod_page.content()
