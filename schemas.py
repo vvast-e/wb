@@ -173,6 +173,7 @@ class FeedbackBase(BaseModel):
     main_text: Optional[str] = None
     pros_text: Optional[str] = None
     cons_text: Optional[str] = None
+    aspects: Optional[Dict[str, List[str]]] = None  # Новое поле для аспектов
 
 
 class FeedbackCreate(FeedbackBase):
@@ -195,6 +196,9 @@ class FeedbackResponse(FeedbackBase):
     updated_at: datetime
     user_id: Optional[int] = None
     history_id: Optional[int] = None
+    is_deleted: bool = False
+    deleted_at: Optional[datetime] = None
+    aspects: Optional[Dict[str, List[str]]] = None  # Новое поле для аспектов
 
     class Config:
         orm_mode = True

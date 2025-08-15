@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from crud.feedback import (
     get_feedbacks, get_feedback_analytics, update_feedback_processing,
-    save_feedbacks_batch, get_unprocessed_negative_feedbacks
+    save_feedbacks_batch, get_unprocessed_negative_feedbacks, sync_feedbacks_with_soft_delete_optimized
 )
 from utils.wb_nodriver_parser import parse_feedbacks_optimized
 from models.user import User
@@ -47,14 +47,16 @@ async def parse_and_save_feedbacks(
         
         # Сохраняем в БД если нужно
         if request.save_to_db:
-            saved_feedbacks = await save_feedbacks_batch(
+            # Используем оптимизированную функцию синхронизации
+            sync_stats = await sync_feedbacks_with_soft_delete_optimized(
                 db=db,
-                feedbacks_data=feedbacks_data,
+                feedbacks_from_wb=feedbacks_data,
                 brand=request.brand,
                 user_id=current_user.id
             )
-            result["saved_count"] = len(saved_feedbacks)
-            result["message"] = f"Сохранено {len(saved_feedbacks)} отзывов в БД"
+            result["saved_count"] = sync_stats.get('new_feedbacks', 0)
+            result["message"] = f"Сохранено {sync_stats.get('new_feedbacks', 0)} новых отзывов в БД"
+            result["sync_stats"] = sync_stats
         
         return result
         
@@ -73,6 +75,7 @@ async def get_feedbacks_list(
     is_processed: Optional[int] = Query(None),
     date_from: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
+    include_deleted: bool = Query(False, description="Включить удаленные отзывы"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     order_by: str = Query("created_at"),
@@ -93,6 +96,7 @@ async def get_feedbacks_list(
         is_processed=is_processed,
         date_from=date_from,
         date_to=date_to,
+        include_deleted=include_deleted,
         limit=per_page,
         offset=offset,
         order_by=order_by,
@@ -110,6 +114,7 @@ async def get_feedbacks_list(
         is_processed=is_processed,
         date_from=date_from,
         date_to=date_to,
+        include_deleted=include_deleted,
         limit=10000,  # Большой лимит для подсчета
         offset=0
     )
@@ -183,6 +188,33 @@ async def update_feedback_processing_status(
         raise HTTPException(status_code=404, detail="Отзыв не найден")
     
     return FeedbackResponse.from_orm(feedback)
+
+
+@router.post("/sync", response_model=dict)
+async def sync_feedbacks_endpoint(
+    brand: str,
+    feedbacks_data: List[dict],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_with_wb_key)
+):
+    """Массовая синхронизация отзывов с использованием оптимизированной функции"""
+    try:
+        sync_stats = await sync_feedbacks_with_soft_delete_optimized(
+            db=db,
+            feedbacks_from_wb=feedbacks_data,
+            brand=brand,
+            user_id=current_user.id
+        )
+        
+        return {
+            "success": True,
+            "message": f"Синхронизация завершена для бренда {brand}",
+            "stats": sync_stats
+        }
+        
+    except Exception as e:
+        print(f"Ошибка при синхронизации отзывов: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка синхронизации: {str(e)}")
 
 
 @router.get("/dashboard/stats", response_model=dict)

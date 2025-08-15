@@ -6,3 +6,4 @@ from models.shop import Shop, PriceHistory
 from models.product import Product
 from models.telegram_user import TelegramUser
 from models.price_change_history import PriceChangeHistory
+from models.aspect import Aspect, FeedbackAspect

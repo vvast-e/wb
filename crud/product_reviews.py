@@ -21,7 +21,7 @@ async def get_product_reviews_crud(
         return {"items": [], "total": 0, "page": page, "per_page": per_page, "total_pages": 0}
     offset = (page - 1) * per_page
     query = select(Feedback).where(
-        and_(Feedback.article == article_int, Feedback.user_id == user_id)
+        and_(Feedback.article == str(article), Feedback.user_id == user_id)
     )
     if rating:
         query = query.where(Feedback.rating == rating)
@@ -75,7 +75,7 @@ async def get_product_stats_crud(
     except (ValueError, TypeError):
         return None
     query = select(Feedback).where(
-        and_(Feedback.article == article_int, Feedback.user_id == user_id)
+        and_(Feedback.article == str(article), Feedback.user_id == user_id)
     )
     # For period filter
     period_query = query

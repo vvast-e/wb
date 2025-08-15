@@ -3,16 +3,23 @@ import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import AsyncSession
-from apscheduler.executors.pool import ThreadPoolExecutor
+from apscheduler.executors.asyncio import AsyncIOExecutor
 
 from crud import task as task_crud
 from crud.history import update_history_status
 from utils.wb_api import WBAPIClient, WBApiResponse
-from dependencies import get_db, get_wb_api_key
-from crud.user import get_all_users
+from crud.user import get_all_users, get_decrypted_wb_key
 from crud.analytics import parse_shop_feedbacks_crud
+from utils.aspect_processor import AspectProcessor
+from database import AsyncSessionLocal
 
-scheduler = AsyncIOScheduler(executors={'default': ThreadPoolExecutor(1)})
+scheduler = AsyncIOScheduler(executors={'default': AsyncIOExecutor()})
+
+
+async def get_db_session() -> AsyncSession:
+    """Получение сессии базы данных для планировщика"""
+    async with AsyncSessionLocal() as session:
+        return session
 
 
 async def _get_wb_api_key_for_task(db: AsyncSession, task_id: int) -> str:
@@ -23,12 +30,14 @@ async def _get_wb_api_key_for_task(db: AsyncSession, task_id: int) -> str:
     if not task.brand:
         raise ValueError("Brand not specified in task")
 
-    wb_api_key = await get_wb_api_key(task.brand, task.owner, db)  # передаем brand!
+    # Используем get_decrypted_wb_key напрямую вместо get_wb_api_key с Depends
+    wb_api_key = await get_decrypted_wb_key(db, task.owner, task.brand)
     return wb_api_key
 
 
 async def process_scheduled_tasks():
-    async for db in get_db():
+    db = await get_db_session()
+    try:
         tasks = await task_crud.get_pending_tasks(db)
         for task in tasks:
             try:
@@ -95,11 +104,14 @@ async def process_scheduled_tasks():
                 task.error = str(e)
 
         await db.commit()
+    finally:
+        await db.close()
 
 
 async def parse_all_shops_feedbacks():
     print(f"[SCHEDULER] >>> Запуск парсера отзывов: {datetime.now().isoformat()}")
-    async for db in get_db():
+    db = await get_db_session()
+    try:
         users = await get_all_users(db)
         print(f"[SCHEDULER] Найдено пользователей: {len(users)}")
         for user in users:
@@ -113,10 +125,55 @@ async def parse_all_shops_feedbacks():
                     print(f"[SCHEDULER] Успешно: user_id={user.id}, brand={brand}")
                 except Exception as e:
                     print(f"[SCHEDULER] Ошибка: user_id={user.id}, brand={brand}, error={e}")
+    finally:
+        await db.close()
     print(f"[SCHEDULER] <<< Завершение парсера отзывов: {datetime.now().isoformat()}")
 
 
+async def analyze_all_new_feedbacks():
+    """Автоматический анализ всех новых отзывов без аспектов"""
+    print(f"[SCHEDULER] >>> Запуск анализатора аспектов: {datetime.now().isoformat()}")
+    
+    db = await get_db_session()
+    try:
+        # Создаем процессор аспектов
+        aspect_processor = AspectProcessor(db)
+        
+        print(f"[SCHEDULER] 🔍 Поиск новых отзывов для анализа...")
+        
+        # Получаем статистику по аспектам
+        stats = await aspect_processor.get_aspect_statistics()
+        print(f"[SCHEDULER] 📊 Текущая статистика: {stats.get('total_aspects', 0)} аспектов в БД")
+        
+        # Обрабатываем все существующие отзывы без аспектов
+        result = await aspect_processor.process_existing_feedbacks(limit=1000)
+        
+        processed = result.get('processed', 0)
+        new_aspects = result.get('new_aspects', 0)
+        skipped = result.get('skipped_already_analyzed', 0)
+        
+        print(f"[SCHEDULER] ✅ Анализ завершен:")
+        print(f"[SCHEDULER]    Обработано отзывов: {processed}")
+        print(f"[SCHEDULER]    Создано новых аспектов: {new_aspects}")
+        print(f"[SCHEDULER]    Пропущено уже проанализированных: {skipped}")
+        
+        if processed > 0:
+            print(f"[SCHEDULER] 🎯 Успешно проанализировано {processed} новых отзывов")
+        else:
+            print(f"[SCHEDULER] ℹ️  Новых отзывов для анализа не найдено")
+            
+    except Exception as e:
+        print(f"[SCHEDULER] ❌ Ошибка при анализе аспектов: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        await db.close()
+    
+    print(f"[SCHEDULER] <<< Завершение анализатора аспектов: {datetime.now().isoformat()}")
+
+
 def start_scheduler():
+    # Задача обработки запланированных задач (каждые 5 секунд)
     scheduler.add_job(
         process_scheduled_tasks,
         'interval',
@@ -124,6 +181,8 @@ def start_scheduler():
         max_instances=20,
         timezone='Europe/Moscow'
     )
+    
+    # Задача парсинга отзывов всех магазинов (каждые 30 минут)
     scheduler.add_job(
         parse_all_shops_feedbacks,
         'interval',
@@ -131,4 +190,19 @@ def start_scheduler():
         max_instances=1,
         timezone='Europe/Moscow'
     )
+    
+    # Задача анализа аспектов (каждые 32 минуты - через 2 минуты после парсера)
+    scheduler.add_job(
+        analyze_all_new_feedbacks,
+        'interval',
+        minutes=32,
+        max_instances=1,
+        timezone='Europe/Moscow'
+    )
+    
+    print("[SCHEDULER] 🚀 Планировщик запущен:")
+    print("[SCHEDULER]    📝 Парсер отзывов: каждые 30 минут")
+    print("[SCHEDULER]    🤖 Анализатор аспектов: каждые 32 минуты (через 2 мин после парсера)")
+    print("[SCHEDULER]    ⚙️  Обработка задач: каждые 5 секунд")
+    
     scheduler.start()

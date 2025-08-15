@@ -224,6 +224,50 @@ def get_ozon_products_and_prices_seleniumwire(seller_url, max_products=None, sav
         print("⏹ ЗАВЕРШЕНИЕ: Ozon SeleniumWire")
         print("="*50 + "\n")
 
+def get_amiunique_fingerprint(proxy_options=None):
+    """Открывает https://amiunique.org/ через seleniumwire и сохраняет HTML для анализа fingerprint."""
+    if sw_webdriver is None:
+        print("seleniumwire не установлен!")
+        return
+    print("=== Получение fingerprint через amiunique.org ===")
+    options = sw_webdriver.ChromeOptions()
+    options.add_argument('--window-size=1920,1080')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.add_argument('--disable-infobars')
+    options.add_argument('--incognito')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--headless=new')
+    user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    options.add_argument(f'--user-agent={user_agent}')
+    driver = sw_webdriver.Chrome(seleniumwire_options=proxy_options or {}, options=options)
+    driver.implicitly_wait(5)
+    try:
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        driver.execute_script("window.navigator.chrome = { runtime: {} }")
+        driver.execute_script("Object.defineProperty(navigator, 'languages', {get: () => ['ru-RU', 'ru', 'en-US', 'en']})")
+        driver.execute_script("Object.defineProperty(navigator, 'platform', {get: () => 'Win32'})")
+        driver.get("https://amiunique.org/")
+        time.sleep(10)
+        html = driver.page_source
+        with open("amiunique_fingerprint.html", "w", encoding="utf-8") as f:
+            f.write(html)
+        print("INFO: HTML сохранен в amiqunique_fingerprint.html")
+        # Можно добавить парсинг fingerprint-таблицы, если нужно
+    except Exception as e:
+        print(f"❌ Ошибка при получении fingerprint: {e}")
+    finally:
+        driver.quit()
+        print("⏹ Завершено: amiunique.org")
+
 if __name__ == "__main__":
     seller_url = "https://www.ozon.ru/seller/11i-professional-975642/products/"
-    get_ozon_products_and_prices_seleniumwire(seller_url, max_products=10, save_to_db=False) 
+    get_amiunique_fingerprint(proxy_options={
+        'proxy': {
+            'http': f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}",
+            'https': f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}",
+            'no_proxy': 'localhost,127.0.0.1'
+        }
+    })
+    get_ozon_products_and_prices_seleniumwire(seller_url, max_products=32, save_to_db=False)
+    # Для теста fingerprint на VPS

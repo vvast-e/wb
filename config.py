@@ -22,6 +22,11 @@ class Settings:
     # Telegram Bot настройки
     TELEGRAM_BOT_TOKEN: Optional[str] = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_WEBHOOK_URL: Optional[str] = os.getenv("TELEGRAM_WEBHOOK_URL", "")
+    
+    # ИИ-сервисы настройки
+    DEEPSEEK_TOKEN: Optional[str] = os.getenv("DEEPSEEK_TOKEN", "")
+    OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY", "")
+    AI_MODEL_NAME: str = os.getenv("AI_MODEL_NAME", "deepseek")
 
 
 settings = Settings()

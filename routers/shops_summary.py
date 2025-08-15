@@ -24,23 +24,25 @@ async def get_products(
 async def get_reviews_summary(
     shop: str = Query(..., description="Тип магазина: wb или ozon"),
     brand_id: Optional[str] = Query(None),
-    product_id: Optional[int] = Query(None),
+    product_id: Optional[str] = Query(None),  # Изменено с int на str
     date_from: date = Query(...),
     date_to: date = Query(...),
-    metrics: List[str] = Query(..., description="Список метрик"),
+    metrics: str = Query(..., description="Метрика для отображения"),
     filters: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user_with_wb_key)
 ):
     """Получение краткой статистики по отзывам (для графика)"""
-    summary = await get_reviews_summary_crud(db, current_user.id, shop, brand_id, product_id, date_from, date_to, metrics, filters)
+    # Преобразуем строку в список для совместимости с CRUD
+    metrics_list = [metrics]
+    summary = await get_reviews_summary_crud(db, current_user.id, shop, brand_id, product_id, date_from, date_to, metrics_list, filters)
     return summary
 
 @router.get("/reviews/tops")
 async def get_reviews_tops(
     shop: str = Query(...),
     brand_id: Optional[str] = Query(None),
-    product_id: Optional[int] = Query(None),
+    product_id: Optional[str] = Query(None),  # Изменено с int на str
     date_from: date = Query(...),
     date_to: date = Query(...),
     type: str = Query(..., description="products_negative или reasons_negative"),

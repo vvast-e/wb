@@ -1,10 +1,11 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
-from sqlalchemy import func, and_, or_, desc, asc
+from sqlalchemy import func, and_, or_, desc, asc, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload
 import re
+import logging
 
 from models.feedback import Feedback, FeedbackAnalytics
 from models.user import User
@@ -28,9 +29,13 @@ async def create_feedback(
     pros_text: Optional[str] = None,
     cons_text: Optional[str] = None,
     user_id: Optional[int] = None,
-    history_id: Optional[int] = None
+    history_id: Optional[int] = None,
+    aspects: Optional[Dict[str, List[str]]] = None
 ) -> Feedback:
     """Создание нового отзыва"""
+    # Определяем негативность по рейтингу (1-2 = негативный, 3 = нейтральный, 4-5 = позитивный)
+    is_negative = 1 if rating <= 2 else 0
+    
     feedback = Feedback(
         article=article,
         brand=brand,
@@ -44,7 +49,8 @@ async def create_feedback(
         cons_text=cons_text,
         user_id=user_id,
         history_id=history_id,
-        is_negative=1 if rating <= 2 else 0
+        is_negative=is_negative,
+        aspects=aspects
     )
     db.add(feedback)
     await db.commit()
@@ -73,7 +79,7 @@ async def get_feedbacks(
     
     # Применяем фильтры
     if article:
-        stmt = stmt.where(Feedback.article == article)
+        stmt = stmt.where(Feedback.article == str(article))
     if brand:
         stmt = stmt.where(Feedback.brand == brand)
     if rating_min is not None:
@@ -127,7 +133,7 @@ async def get_feedback_analytics(
     
     # Применяем фильтры
     if article:
-        stmt = stmt.where(Feedback.article == article)
+        stmt = stmt.where(Feedback.article == str(article))
     if brand:
         stmt = stmt.where(Feedback.brand == brand)
     if date_from:
@@ -204,23 +210,48 @@ async def update_feedback_processing(
 
 def parse_wb_date(date_str: str) -> datetime:
     """
-    Парсинг даты из Wildberries API с поддержкой различных форматов
+    Парсинг даты из Wildberries API с поддержкой ISO-формата с Z (например, 2025-07-22T22:30:23Z)
     """
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    
     if not date_str or not isinstance(date_str, str):
+        print(f"[DEBUG] parse_wb_date: пустая или неверная дата: {date_str}")
         return None
     
     date_str = date_str.strip()
     if not date_str:
+        print(f"[DEBUG] parse_wb_date: пустая строка даты")
         return None
     
-    # Словарь месяцев для русского формата
+    print(f"[DEBUG] parse_wb_date: парсим дату '{date_str}'")
+    
+    # 1. ISO-формат с Z (UTC): "2025-07-22T22:30:23Z"
+    try:
+        if date_str.endswith('Z'):
+            # Используем более точный формат для парсинга
+            dt = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
+            # Переводим в московское время
+            msk = ZoneInfo("Europe/Moscow")
+            dt = dt.replace(tzinfo=timezone.utc).astimezone(msk)
+            result = dt.replace(tzinfo=None)
+            print(f"[DEBUG] parse_wb_date: успешно распарсена ISO дата с Z: {result}")
+            return result
+        # 2. ISO-формат без Z
+        elif 'T' in date_str:
+            dt = datetime.fromisoformat(date_str)
+            print(f"[DEBUG] parse_wb_date: успешно распарсена ISO дата: {dt}")
+            return dt
+    except Exception as e:
+        print(f"[ERROR] parse_wb_date: не удалось распарсить ISO формат '{date_str}': {e}")
+    
+    # 3. Старый формат (русский) — если вдруг встретится
+    import re
     MONTHS = {
         'января': '01', 'февраля': '02', 'марта': '03', 'апреля': '04',
         'мая': '05', 'июня': '06', 'июля': '07', 'августа': '08',
         'сентября': '09', 'октября': '10', 'ноября': '11', 'декабря': '12'
     }
-    
-    # 1. Пробуем русский формат: "15 января 2024, 10:30"
     match = re.match(r'(\d+)\s+(\w+)(?:\s+(\d+))?,\s+(\d+):(\d+)', date_str)
     if match:
         day, month_str, year, hour, minute = match.groups()
@@ -235,70 +266,20 @@ def parse_wb_date(date_str: str) -> datetime:
         parsed_date_str = f"{year}-{month}-{day} {hour}:{minute}"
         try:
             parsed = datetime.strptime(parsed_date_str, "%Y-%m-%d %H:%M")
-            # Если год был подставлен и дата в будущем — уменьшить год на 1
             if year_was_missing and parsed > now:
                 parsed = parsed.replace(year=parsed.year - 1)
             if parsed > now:
                 print(f"[WARN] Будущая дата обнаружена: {parsed}, отзыв будет пропущен")
                 return None
+            print(f"[DEBUG] parse_wb_date: успешно распарсена русская дата: {parsed}")
             return parsed
         except Exception as e:
             print(f"[ERROR] strptime fail for '{parsed_date_str}': {e}")
             return None
-
-    # 2. Пробуем ISO формат: "2024-01-15T10:30:00" или "2024-01-15T10:30:00Z"
-    if 'T' in date_str:
-        try:
-            # Для ISO форматов с Z (UTC) используем специальную обработку
-            if 'Z' in date_str:
-                # Убираем Z и парсим как UTC
-                clean_date_str = date_str.replace('Z', '+00:00')
-                parsed = datetime.fromisoformat(clean_date_str)
-                # Конвертируем в московское время
-                from zoneinfo import ZoneInfo
-                moscow_tz = ZoneInfo("Europe/Moscow")
-                parsed = parsed.astimezone(moscow_tz)
-                # Убираем timezone info для сохранения в БД
-                parsed = parsed.replace(tzinfo=None)
-            else:
-                # Убираем часовой пояс если есть
-                clean_date_str = date_str
-                if '+' in clean_date_str:
-                    clean_date_str = clean_date_str.split('+')[0]
-                
-                # Парсим ISO формат
-                parsed = datetime.fromisoformat(clean_date_str)
-            
-            # Проверяем, что дата не в будущем (с запасом в 1 день)
-            now = datetime.now()
-            if parsed > now + timedelta(days=1):
-                print(f"[WARN] Будущая дата обнаружена: {parsed}, отзыв будет пропущен")
-                return None
-            return parsed
-        except Exception as e:
-            print(f"[WARN] Ошибка парсинга ISO даты '{date_str}': {e}")
-            return None
-
-    # 3. Пробуем другие форматы через dateutil
-    try:
-        from dateutil import parser
-        parsed = parser.parse(date_str, dayfirst=True)
-        # Конвертируем в московское время если есть timezone
-        if parsed.tzinfo:
-            from zoneinfo import ZoneInfo
-            moscow_tz = ZoneInfo("Europe/Moscow")
-            parsed = parsed.astimezone(moscow_tz)
-            parsed = parsed.replace(tzinfo=None)
-        
-        # Проверяем, что дата не в будущем (с запасом в 1 день)
-        now = datetime.now()
-        if parsed > now + timedelta(days=1):
-            print(f"[WARN] Будущая дата обнаружена: {parsed}, отзыв будет пропущен")
-            return None
-        return parsed
-    except Exception as e:
-        print(f"[WARN] Ошибка при парсинге даты '{date_str}': {e}")
-        return None
+    
+    # 4. Если ничего не подошло
+    print(f"[WARN] parse_wb_date: не удалось распарсить дату '{date_str}' - неизвестный формат")
+    return None
 
 
 async def save_feedbacks_batch(
@@ -312,8 +293,6 @@ async def save_feedbacks_batch(
     feedbacks = []
     
     for data in feedbacks_data:
-        # Проверяем, есть ли уже такой отзыв в базе (без учета user_id)
-        # Нормализуем текст для сравнения
         normalized_text = data.get('text', '').strip().replace('\n', ' ').replace('\r', ' ').replace('  ', ' ')
         existing_query = select(Feedback).where(
             and_(
@@ -356,18 +335,98 @@ async def save_feedbacks_batch(
             cons_text = None
         
         # Обработка даты
-        date_str = data.get('date')
+        date_str = data.get('createdDate')
         date_obj = None
         if date_str and isinstance(date_str, str) and date_str.strip():
             date_obj = parse_wb_date(date_str)
             if date_obj is None:
                 print(f"[WARN] Не удалось распарсить дату: '{date_str}' для отзыва: {data}")
         
+        # Определяем негативность по рейтингу (1-2 = негативный, 3 = нейтральный, 4-5 = позитивный)
+        rating = data.get('productValuation', 0)
+        is_negative = 1 if rating <= 3 else 0
+        
+        # Анализируем аспекты отзыва используя новую систему аспектов
+        aspects = None
+        
+        # Проверяем, есть ли текст для анализа
+        has_text_for_analysis = False
+        if text and text.strip():
+            has_text_for_analysis = True
+        if main_text and main_text.strip():
+            has_text_for_analysis = True
+        if pros_text and pros_text.strip():
+            has_text_for_analysis = True
+        if cons_text and cons_text.strip():
+            has_text_for_analysis = True
+        
+        if has_text_for_analysis:
+            try:
+                from utils.aspect_processor import AspectProcessor
+                aspect_processor = AspectProcessor(db)
+                
+                # Создаем временный объект Feedback для анализа
+                temp_feedback = Feedback(
+                    text=text,
+                    main_text=main_text,
+                    pros_text=pros_text,
+                    cons_text=cons_text,
+                    rating=rating
+                )
+                
+                # Анализируем аспекты
+                aspects_result = await aspect_processor.process_feedbacks_batch(
+                    [temp_feedback], 
+                    f"Товар {data.get('article', 'unknown')}"
+                )
+                
+                if aspects_result["processed"] > 0 and temp_feedback.aspects:
+                    aspects = temp_feedback.aspects
+                    logger.info(f"Новые аспекты для отзыва {data.get('article', 'unknown')}: {aspects}")
+                else:
+                    logger.warning(f"Не удалось проанализировать аспекты для отзыва {data.get('article', 'unknown')}")
+                    
+            except Exception as aspect_error:
+                logger.warning(f"Ошибка анализатора аспектов: {aspect_error}")
+                # Fallback на старую систему
+                try:
+                    from utils.ai_aspect_analyzer import ai_aspect_analyzer
+                    if ai_aspect_analyzer:
+                        aspects_result = await ai_aspect_analyzer.analyze_single_review(
+                            text, 
+                            rating
+                        )
+                        aspects = {
+                            "positive": aspects_result["positive"],
+                            "negative": aspects_result["negative"]
+                        }
+                        logger.info(f"ИИ-аспекты (fallback) для отзыва {data.get('article', 'unknown')}: {aspects}")
+                    else:
+                        raise Exception("ИИ-анализатор недоступен")
+                except Exception as ai_error:
+                    logger.warning(f"Ошибка ИИ-анализатора (fallback): {ai_error}")
+                    # Последний fallback на локальный анализатор
+                    from utils.aspect_analyzer import aspect_analyzer
+                    aspects_result = await aspect_analyzer.analyze_single_review(
+                        text, 
+                        rating
+                    )
+                    aspects = {
+                        "positive": aspects_result["positive"],
+                        "negative": aspects_result["negative"]
+                    }
+                    logger.info(f"Локальные аспекты (fallback) для отзыва {data.get('article', 'unknown')}: {aspects}")
+            except Exception as e:
+                logger.warning(f"Не удалось проанализировать аспекты для отзыва {data.get('article', 'unknown')}: {e}")
+                aspects = None
+        else:
+            logger.info(f"Отзыв {data.get('article', 'unknown')} пропущен - нет текста для анализа аспектов")
+        
         feedback = Feedback(
             article=data.get('article'),
             brand=brand,
             author=data.get('author', 'Аноним'),
-            rating=data.get('rating', 0),
+            rating=rating,
             date=date_obj,  # Используем обработанную дату
             status=data.get('status', 'Без подтверждения'),
             text=text,
@@ -376,7 +435,8 @@ async def save_feedbacks_batch(
             cons_text=cons_text,
             user_id=user_id,
             history_id=history_id,
-            is_negative=1 if data.get('rating', 0) <= 2 else 0
+            is_negative=is_negative,
+            aspects=aspects  # Добавляем проанализированные аспекты
         )
         feedbacks.append(feedback)
     
@@ -399,7 +459,8 @@ async def get_unprocessed_negative_feedbacks(
     stmt = select(Feedback).where(
         and_(
             Feedback.is_negative == 1,
-            Feedback.is_processed == 0
+            Feedback.is_processed == 0,
+            Feedback.is_deleted == False
         )
     ).options(joinedload(Feedback.user))
     
@@ -412,7 +473,7 @@ async def get_unprocessed_negative_feedbacks(
     return result.scalars().all()
 
 
-async def sync_feedbacks_with_soft_delete(
+async def sync_feedbacks_with_soft_delete_optimized(
     db: AsyncSession,
     feedbacks_from_wb: List[Dict[str, Any]],
     brand: str,
@@ -420,154 +481,202 @@ async def sync_feedbacks_with_soft_delete(
     history_id: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    Синхронизация отзывов с поддержкой soft delete.
-    
-    Args:
-        db: Сессия базы данных
-        feedbacks_from_wb: Список отзывов с Wildberries
-        brand: Бренд/магазин
-        user_id: ID пользователя
-        history_id: ID истории (опционально)
-    
-    Returns:
-        Dict с статистикой синхронизации
+    Оптимизированная синхронизация отзывов с поддержкой soft delete по wb_id.
     """
     from datetime import datetime
+    logger = logging.getLogger("feedback_sync")
+    logger.setLevel(logging.INFO)
     
-    # Получаем все отзывы из базы для данного бренда (без учета user_id)
-    existing_query = select(Feedback).where(Feedback.brand == brand)
+    # Очищаем существующие хендлеры
+    logger.handlers.clear()
+    
+    # Хендлер для файла
+    file_handler = logging.FileHandler("feedback_sync.log", encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(file_handler)
+    
+    # Хендлер для консоли
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter("[SYNC] %(levelname)s: %(message)s"))
+    logger.addHandler(console_handler)
+    logger.info(f"=== СТАРТ ОПТИМИЗИРОВАННОЙ СИНХРОНИЗАЦИИ ДЛЯ БРЕНДА: {brand} ===")
+    logger.info(f"Отзывов из WB: {len(feedbacks_from_wb)}")
+
+    # ОПТИМИЗАЦИЯ 1: Загружаем только wb_id вместо всех полей
+    existing_query = select(Feedback.wb_id, Feedback.id, Feedback.is_deleted).where(
+        and_(Feedback.brand == brand, Feedback.wb_id.isnot(None))
+    )
     existing_result = await db.execute(existing_query)
-    existing_feedbacks = existing_result.scalars().all()
-    
-    # Создаем уникальные ключи для отзывов из WB (только по автору и тексту)
-    wb_feedback_keys = set()
-    for fb in feedbacks_from_wb:
-        author = fb.get('author', 'Аноним')
-        text = fb.get('text', '')
-        # Нормализуем текст для сравнения
-        normalized_text = text.strip().replace('\n', ' ').replace('\r', ' ').replace('  ', ' ')
-        # Используем только автора и нормализованный текст для ключа (без даты)
-        key = (author, normalized_text)
-        wb_feedback_keys.add(key)
-    
-    # Создаем уникальные ключи для существующих отзывов
-    existing_feedback_keys = set()
-    for fb in existing_feedbacks:
-        author = fb.author or 'Аноним'
-        text = fb.text or ''
-        # Нормализуем текст для сравнения
-        normalized_text = text.strip().replace('\n', ' ').replace('\r', ' ').replace('  ', ' ')
-        # Используем только автора и нормализованный текст для ключа (без даты)
-        key = (author, normalized_text)
-        existing_feedback_keys.add(key)
-    
-    # Статистика
+    existing_feedbacks_data = existing_result.fetchall()
+
+    logger.info(f"Существующих отзывов в БД: {len(existing_feedbacks_data)}")
+
+    # Создаем словари для быстрого поиска
+    wb_ids = set(fb['id'] for fb in feedbacks_from_wb)
+    existing_wb_ids = {row.wb_id for row in existing_feedbacks_data}
+    existing_feedback_map = {row.wb_id: (row.id, row.is_deleted) for row in existing_feedbacks_data}
+
+    logger.info(f"Уникальных wb_id из WB: {len(wb_ids)}")
+    logger.info(f"Уникальных wb_id в БД: {len(existing_wb_ids)}")
+
     stats = {
         'total_wb_feedbacks': len(feedbacks_from_wb),
-        'total_existing_feedbacks': len(existing_feedbacks),
+        'total_existing_feedbacks': len(existing_feedbacks_data),
         'new_feedbacks': 0,
         'restored_feedbacks': 0,
         'deleted_feedbacks': 0,
         'unchanged_feedbacks': 0
     }
+
+    # ОПТИМИЗАЦИЯ 2: Батчевые операции для обновлений
+    to_delete = []
+    to_restore = []
     
     # 1. Помечаем как удалённые отзывы, которых нет на WB
-    for fb in existing_feedbacks:
-        author = fb.author or 'Аноним'
-        text = fb.text or ''
-        # Нормализуем текст для сравнения
-        normalized_text = text.strip().replace('\n', ' ').replace('\r', ' ').replace('  ', ' ')
-        key = (author, normalized_text)
-        
-        if key not in wb_feedback_keys and not fb.is_deleted:
-            # Отзыв есть в базе, но нет на WB - помечаем как удалённый
-            fb.is_deleted = True
-            fb.deleted_at = moscow_now()
+    logger.info("Проверяем отзывы для soft delete...")
+    for wb_id, (feedback_id, is_deleted) in existing_feedback_map.items():
+        if wb_id not in wb_ids and not is_deleted:
+            to_delete.append(feedback_id)
             stats['deleted_feedbacks'] += 1
-        elif key in wb_feedback_keys and fb.is_deleted:
-            # Отзыв есть на WB и в базе, но был помечен как удалённый - восстанавливаем
-            fb.is_deleted = False
-            fb.deleted_at = None
+        elif wb_id in wb_ids and is_deleted:
+            to_restore.append(feedback_id)
             stats['restored_feedbacks'] += 1
-        elif key in wb_feedback_keys and not fb.is_deleted:
-            # Отзыв есть и на WB, и в базе, и не удалён - без изменений
+        elif wb_id in wb_ids and not is_deleted:
             stats['unchanged_feedbacks'] += 1
-    
+
+    # Батчевое обновление удаленных отзывов
+    if to_delete:
+        await db.execute(
+            update(Feedback)
+            .where(Feedback.id.in_(to_delete))
+            .values(is_deleted=True, deleted_at=moscow_now())
+        )
+        logger.info(f"Помечено как удаленных: {len(to_delete)}")
+
+    # Батчевое восстановление отзывов
+    if to_restore:
+        await db.execute(
+            update(Feedback)
+            .where(Feedback.id.in_(to_restore))
+            .values(is_deleted=False, deleted_at=None)
+        )
+        logger.info(f"Восстановлено: {len(to_restore)}")
+
+    logger.info("Статистика после soft delete:")
+    logger.info(f"  Удаленных: {stats['deleted_feedbacks']}")
+    logger.info(f"  Восстановленных: {stats['restored_feedbacks']}")
+    logger.info(f"  Без изменений: {stats['unchanged_feedbacks']}")
+
     # 2. Добавляем новые отзывы
+    logger.info("Добавляем новые отзывы...")
+    
+    # Логируем структуру первых 3 отзывов для отладки
+    for i, fb_data in enumerate(feedbacks_from_wb[:3]):
+        logger.info(f"ПРИМЕР ОТЗЫВА {i+1}: {fb_data}")
+    
     new_feedbacks = []
     for fb_data in feedbacks_from_wb:
-        author = fb_data.get('author', 'Аноним')
-        text = fb_data.get('text', '')
-        # Нормализуем текст для сравнения
-        normalized_text = text.strip().replace('\n', ' ').replace('\r', ' ').replace('  ', ' ')
-        key = (author, normalized_text)
-        
-        if key not in existing_feedback_keys:
-            # Новый отзыв - добавляем в базу
-            # Разбираем текст на части
-            main_text = None
-            pros_text = None
-            cons_text = None
-            
-            if 'Достоинства:' in text:
-                parts = text.split('Достоинства:')
-                main_text = parts[0].strip()
-                if 'Недостатки:' in parts[1]:
-                    pros_cons = parts[1].split('Недостатки:')
-                    pros_text = pros_cons[0].strip()
-                    cons_text = pros_cons[1].strip()
-                else:
-                    pros_text = parts[1].strip()
-            elif 'Недостатки:' in text:
-                parts = text.split('Недостатки:')
-                main_text = parts[0].strip()
-                cons_text = parts[1].strip()
-            else:
-                main_text = text
-                pros_text = None
-                cons_text = None
-            
-            # Обработка даты
+        if fb_data['id'] not in existing_wb_ids:
+            # Обработка даты - используем поле 'date' из парсера
             date_obj = None
             date_str = fb_data.get('date', '')
             if date_str and isinstance(date_str, str) and date_str.strip():
                 date_obj = parse_wb_date(date_str)
+                if date_obj is None:
+                    logger.warning(f"Не удалось распарсить дату: '{date_str}' для отзыва {fb_data['id']}")
             
+            # Извлекаем имя пользователя - используем поле 'author' из парсера
+            author_name = fb_data.get('author', 'Аноним')
+            if not author_name or author_name.strip() == '':
+                author_name = 'Аноним'
+            
+            # Извлекаем рейтинг - используем поле 'rating' из парсера
+            rating = fb_data.get('rating', 0)
+            
+            # Определяем негативность по рейтингу (1-2 = негативный, 3 = нейтральный, 4-5 = позитивный)
+            is_negative = 1 if rating <= 2 else 0
+            
+            # Детальное логирование для отладки
+            logger.info(f"Обрабатываем отзыв {fb_data['id']}: rating={rating}, is_negative={is_negative}, author='{author_name}', date='{date_str}' -> {date_obj}")
+            
+            # Анализируем аспекты отзыва используя ИИ, если доступен
+            aspects = None
+            try:
+                # Сначала пробуем ИИ-анализатор
+                try:
+                    from utils.ai_aspect_analyzer import ai_aspect_analyzer
+                    if ai_aspect_analyzer:
+                        aspects_result = await ai_aspect_analyzer.analyze_single_review(
+                            fb_data.get('text', ''), 
+                            rating
+                        )
+                        aspects = {
+                            "positive": aspects_result["positive"],
+                            "negative": aspects_result["negative"]
+                        }
+                        logger.info(f"ИИ-аспекты для отзыва {fb_data['id']}: {aspects}")
+                    else:
+                        raise Exception("ИИ-анализатор недоступен")
+                except Exception as ai_error:
+                    logger.warning(f"Ошибка ИИ-анализатора, используем локальный: {ai_error}")
+                    # Fallback на локальный анализатор
+                    from utils.aspect_analyzer import aspect_analyzer
+                    aspects_result = await aspect_analyzer.analyze_single_review(
+                        fb_data.get('text', ''), 
+                        rating
+                    )
+                    aspects = {
+                        "positive": aspects_result["positive"],
+                        "negative": aspects_result["negative"]
+                    }
+                    logger.info(f"Локальные аспекты для отзыва {fb_data['id']}: {aspects}")
+            except Exception as e:
+                logger.warning(f"Не удалось проанализировать аспекты для отзыва {fb_data['id']}: {e}")
+                aspects = None
+
             new_feedback = Feedback(
-                article=fb_data.get('article'),
+                wb_id=fb_data['id'],
+                article=fb_data.get('article'),  # Используем поле 'article' из парсера
                 brand=brand,
-                author=author,
-                rating=fb_data.get('rating', 0),
+                author=author_name,
+                rating=rating,
                 date=date_obj,
-                status=fb_data.get('status', 'Без подтверждения'),
-                text=text,
-                main_text=main_text,
-                pros_text=pros_text,
-                cons_text=cons_text,
+                status=fb_data.get('status', 'Без подтверждения'),  # Используем поле 'status' из парсера
+                text=fb_data.get('text', ''),
+                main_text=fb_data.get('text', ''),
+                pros_text=fb_data.get('pros', ''),
+                cons_text=fb_data.get('cons', ''),
                 user_id=user_id,
                 history_id=history_id,
-                is_negative=1 if fb_data.get('rating', 0) <= 2 else 0,
+                is_negative=is_negative,
                 is_deleted=False,
-                deleted_at=None
+                deleted_at=None,
+                aspects=aspects  # Добавляем проанализированные аспекты
             )
             new_feedbacks.append(new_feedback)
             stats['new_feedbacks'] += 1
-    
-    # Сохраняем изменения
+
+    logger.info(f"Новых отзывов для добавления: {len(new_feedbacks)}")
+
+    # ОПТИМИЗАЦИЯ 3: Батчевое добавление новых отзывов
+    BATCH_SIZE = 1000
     if new_feedbacks:
-        db.add_all(new_feedbacks)
+        for i in range(0, len(new_feedbacks), BATCH_SIZE):
+            batch = new_feedbacks[i:i + BATCH_SIZE]
+            db.add_all(batch)
+            await db.commit()
+            logger.info(f"Добавлен батч {i//BATCH_SIZE + 1}: {len(batch)} отзывов")
+
+    stats['total_after_sync'] = len(existing_feedbacks_data) + len(new_feedbacks)
+    logger.info(f"Статистика оптимизированной синхронизации для {brand}: {stats}")
     
-    await db.commit()
-    
-    # Обновляем статистику
-    stats['total_after_sync'] = len(existing_feedbacks) + len(new_feedbacks)
-    
-    print(f"[SYNC] Статистика синхронизации для {brand}:")
-    print(f"  - Отзывов на WB: {stats['total_wb_feedbacks']}")
-    print(f"  - Отзывов в базе: {stats['total_existing_feedbacks']}")
-    print(f"  - Новых отзывов: {stats['new_feedbacks']}")
-    print(f"  - Восстановленных: {stats['restored_feedbacks']}")
-    print(f"  - Помеченных как удалённые: {stats['deleted_feedbacks']}")
-    print(f"  - Без изменений: {stats['unchanged_feedbacks']}")
+    logger.info("ИТОГОВАЯ СТАТИСТИКА ОПТИМИЗИРОВАННОЙ СИНХРОНИЗАЦИИ:")
+    logger.info(f"  Всего отзывов из WB: {stats['total_wb_feedbacks']}")
+    logger.info(f"  Существующих в БД: {stats['total_existing_feedbacks']}")
+    logger.info(f"  Новых: {stats['new_feedbacks']}")
+    logger.info(f"  Восстановленных: {stats['restored_feedbacks']}")
+    logger.info(f"  Удаленных: {stats['deleted_feedbacks']}")
+    logger.info(f"  Без изменений: {stats['unchanged_feedbacks']}")
+    logger.info(f"  Всего после синхронизации: {stats['total_after_sync']}")
     
     return stats

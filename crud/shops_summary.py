@@ -30,16 +30,16 @@ async def get_products_by_brand(db: AsyncSession, user_id: int, shop: str, brand
 
         cards = response.data.get("cards", [])
         # Получаем vendor_code для всех nmID
-        nm_ids = [card["nmID"] for card in cards]
+        nm_ids = [str(card["nmID"]) for card in cards]  # Преобразуем в строки
         vendor_codes = {}
         if nm_ids:
             product_query = select(Product.nm_id, Product.vendor_code).where(Product.nm_id.in_(nm_ids))
             product_result = await db.execute(product_query)
             products_data_db = product_result.fetchall()
             for nm_id, vendor_code in products_data_db:
-                vendor_codes[nm_id] = vendor_code or str(nm_id)
+                vendor_codes[nm_id] = vendor_code or nm_id
         
-        return [{"id": str(vendor_codes.get(card["nmID"], card["nmID"])), "name": f"товар {vendor_codes.get(card['nmID'], card['nmID'])}"} for card in cards]
+        return [{"id": str(vendor_codes.get(str(card["nmID"]), card["nmID"])), "name": f"товар {vendor_codes.get(str(card['nmID']), card['nmID'])}"} for card in cards]
     else:
         # Получаем артикулы из отзывов
         query = select(Feedback.article).where(
@@ -51,12 +51,13 @@ async def get_products_by_brand(db: AsyncSession, user_id: int, shop: str, brand
         # Получаем vendor_code для всех артикулов
         vendor_codes = {}
         if articles:
-            # Преобразуем строковые артикулы в целые числа
+            # Преобразуем артикулы в строки для поиска в таблице products
             nm_ids = []
             for article in articles:
                 try:
-                    nm_id = int(article)
-                    nm_ids.append(nm_id)
+                    # Преобразуем в строку для поиска в Product.nm_id
+                    nm_id_str = str(article)
+                    nm_ids.append(nm_id_str)
                 except (ValueError, TypeError):
                     continue
             
@@ -65,16 +66,16 @@ async def get_products_by_brand(db: AsyncSession, user_id: int, shop: str, brand
                 product_result = await db.execute(product_query)
                 products_data_db = product_result.fetchall()
                 for nm_id, vendor_code in products_data_db:
-                    vendor_codes[nm_id] = vendor_code or str(nm_id)
+                    vendor_codes[nm_id] = vendor_code or nm_id
         
-        return [{"id": str(vendor_codes.get(a, a)), "name": f"товар {vendor_codes.get(a, a)}"} for a in articles]
+        return [{"id": str(vendor_codes.get(str(a), a)), "name": f"товар {vendor_codes.get(str(a), a)}"} for a in articles]
 
 async def get_reviews_summary_crud(
         db: AsyncSession,
         user_id: int,
         shop: str,
         brand_id: Optional[str],
-        product_id: Optional[str],
+        product_id: Optional[str],  # Изменено с int на str
         date_from,
         date_to,
         metrics: List[str],
@@ -85,10 +86,18 @@ async def get_reviews_summary_crud(
         query = query.where(Feedback.brand == brand_id)
     if product_id:
         try:
-            article_int = int(product_id)
-            query = query.where(Feedback.article == article_int)
-        except Exception:
-            pass
+            # Если product_id - это vendor_code, ищем соответствующий nm_id
+            product_query = select(Product.nm_id).where(Product.vendor_code == product_id)
+            product_result = await db.execute(product_query)
+            product_data = product_result.scalars().first()
+            
+            if product_data:
+                # Приводим nm_id к строке для сравнения с Feedback.article
+                query = query.where(Feedback.article == str(product_data))
+            else:
+                print(f"[DEBUG] Товар с vendor_code '{product_id}' не найден")
+        except Exception as e:
+            print(f"[DEBUG] Ошибка при поиске товара по vendor_code '{product_id}': {e}")
     if date_from:
         query = query.where(Feedback.date >= date_from)
     if date_to:
@@ -116,6 +125,11 @@ async def get_reviews_summary_crud(
     feedbacks = result.scalars().all()
     total_reviews = len(feedbacks)
     by_day = {}
+    
+    # Если нет отзывов, возвращаем пустой результат
+    if total_reviews == 0:
+        return {"total_reviews": 0, "by_day": []}
+    
     for f in feedbacks:
         d = f.date.date().isoformat() if f.date else None
         if not d:
@@ -129,25 +143,9 @@ async def get_reviews_summary_crud(
         if 'deleted' in metrics and getattr(f, 'is_deleted', False):
             by_day[d]['deleted'] += 1
         
-        # Подсчет отзывов по рейтингам
+        # Подсчет отзывов по рейтингам (1, 2, 3, 4, 5)
         if str(f.rating) in metrics:
             by_day[d][str(f.rating)] += 1
-        
-        # Подсчет отзывов по итоговому рейтингу
-        if f.rating == 5 and '5.0' in metrics:
-            by_day[d]['5.0'] += 1
-        elif f.rating == 4 and '4.9' in metrics:
-            by_day[d]['4.9'] += 1
-        elif f.rating == 4 and '4.8' in metrics:
-            by_day[d]['4.8'] += 1
-        elif f.rating == 4 and '4.7' in metrics:
-            by_day[d]['4.7'] += 1
-        elif f.rating == 4 and '4.6' in metrics:
-            by_day[d]['4.6'] += 1
-        elif f.rating == 4 and '4.5' in metrics:
-            by_day[d]['4.5'] += 1
-        elif f.rating < 4 and '<4.5' in metrics:
-            by_day[d]['<4.5'] += 1
     
     # Вычисление долей
     for d in by_day:
@@ -158,6 +156,7 @@ async def get_reviews_summary_crud(
             by_day[d]['negative_share'] = round((neg / total) * 100, 1) if total > 0 else 0.0
         if 'deleted_share' in metrics:
             by_day[d]['deleted_share'] = round((deleted / total) * 100, 1) if total > 0 else 0.0
+    
     by_day_list = [{"date": d, **by_day[d]} for d in sorted(by_day.keys())]
     return {"total_reviews": total_reviews, "by_day": by_day_list}
 
@@ -167,10 +166,18 @@ async def get_reviews_tops_crud(db: AsyncSession, user_id: int, shop: str, brand
         query = query.where(Feedback.brand == brand_id)
     if product_id:
         try:
-            article_int = int(product_id)
-            query = query.where(Feedback.article == article_int)
-        except Exception:
-            pass
+            # Если product_id - это vendor_code, ищем соответствующий nm_id
+            product_query = select(Product.nm_id).where(Product.vendor_code == product_id)
+            product_result = await db.execute(product_query)
+            product_data = product_result.scalars().first()
+            
+            if product_data:
+                # Приводим nm_id к строке для сравнения с Feedback.article
+                query = query.where(Feedback.article == str(product_data))
+            else:
+                print(f"[DEBUG] Товар с vendor_code '{product_id}' не найден")
+        except Exception as e:
+            print(f"[DEBUG] Ошибка при поиске товара по vendor_code '{product_id}': {e}")
     if date_from:
         query = query.where(Feedback.date >= date_from)
     if date_to:
@@ -209,12 +216,13 @@ async def get_reviews_tops_crud(db: AsyncSession, user_id: int, shop: str, brand
         # Получаем vendor_code для всех артикулов
         vendor_codes = {}
         if products_data:
-            # Преобразуем строковые артикулы в целые числа
+            # Преобразуем артикулы в строки для поиска в таблице products
             nm_ids = []
             for article_key in products_data.keys():
                 try:
-                    nm_id = int(article_key)
-                    nm_ids.append(nm_id)
+                    # Преобразуем в строку для поиска в Product.nm_id
+                    nm_id_str = str(article_key)
+                    nm_ids.append(nm_id_str)
                 except (ValueError, TypeError):
                     continue
             
@@ -223,12 +231,12 @@ async def get_reviews_tops_crud(db: AsyncSession, user_id: int, shop: str, brand
                 product_result = await db.execute(product_query)
                 products_data_db = product_result.fetchall()
                 for nm_id, vendor_code in products_data_db:
-                    vendor_codes[nm_id] = vendor_code or str(nm_id)
+                    vendor_codes[nm_id] = vendor_code or nm_id
 
         top_products = []
         for article, ratings_list in products_data.items():
             avg_product_rating = sum(ratings_list) / len(ratings_list)
-            vendor_code = vendor_codes.get(article, str(article))
+            vendor_code = vendor_codes.get(str(article), str(article))
             top_products.append({
                 "name": f"товар {vendor_code}",
                 "rating": round(avg_product_rating, 2)

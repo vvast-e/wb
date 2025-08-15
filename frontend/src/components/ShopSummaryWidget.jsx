@@ -1,11 +1,29 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DateRangePicker from './DateRangePicker';
+import { Line } from 'react-chartjs-2';
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList
-} from 'recharts';
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    PointElement,
+    LineElement,
+    Title,
+    Tooltip,
+    Legend
+} from 'chart.js';
 import api from '../api';
 import { eachDayOfInterval, format } from 'date-fns';
+
+ChartJS.register(
+    CategoryScale,
+    LinearScale,
+    PointElement,
+    LineElement,
+    Title,
+    Tooltip,
+    Legend
+);
 
 const filterOptions = [
     {
@@ -13,6 +31,7 @@ const filterOptions = [
             { label: 'Негативные', value: 'negative', color: '#0dcaf0' },
             { label: 'Доля негативных', value: 'negative_share', color: '#82ca9d' },
             { label: 'Удалённые', value: 'deleted', color: '#ff7300' },
+            { label: 'Доля удаленных', value: 'deleted_share', color: '#ffc107' },
         ]
     },
     {
@@ -22,23 +41,6 @@ const filterOptions = [
             { label: '3★', value: '3' },
             { label: '2★', value: '2' },
             { label: '1★', value: '1' },
-        ]
-    },
-    {
-        group: 'Удаленные', options: [
-            { label: 'Удаленные', value: 'deleted' },
-            { label: 'Доля удаленных от', value: 'deleted_share' },
-        ]
-    },
-    {
-        group: 'Итоговый рейтинг', options: [
-            { label: '5.0', value: '5.0' },
-            { label: '4.9', value: '4.9' },
-            { label: '4.8', value: '4.8' },
-            { label: '4.7', value: '4.7' },
-            { label: '4.6', value: '4.6' },
-            { label: '4.5', value: '4.5' },
-            { label: '< 4.5', value: '<4.5' },
         ]
     },
 ];
@@ -58,17 +60,13 @@ const ShopSummaryWidget = ({ shopType }) => {
     const [loadingBrands, setLoadingBrands] = useState(false);
     const [loadingProducts, setLoadingProducts] = useState(false);
     const [loadingChart, setLoadingChart] = useState(false);
-    const [loadingTops, setLoadingTops] = useState(false);
 
     const [errorBrands, setErrorBrands] = useState(null);
     const [errorProducts, setErrorProducts] = useState(null);
     const [errorChart, setErrorChart] = useState(null);
-    const [errorTops, setErrorTops] = useState(null);
 
     const [chartData, setChartData] = useState([]);
     const [totalReviews, setTotalReviews] = useState(0);
-    const [topsProducts, setTopsProducts] = useState([]);
-    const [topsReasons, setTopsReasons] = useState([]);
 
     // --- Получение брендов ---
     useEffect(() => {
@@ -105,12 +103,22 @@ const ShopSummaryWidget = ({ shopType }) => {
         setLoadingProducts(true);
         setErrorProducts(null);
         const token = localStorage.getItem('token');
+
+        console.log('[DEBUG] Запрос товаров для бренда:', selectedBrand);
+
         api.get(`${API_URL}/products`, {
-            params: { shop: shopType, brand_id: selectedBrand },
+            params: {
+                shop: shopType,
+                brand_id: selectedBrand
+            },
             headers: token ? { 'Authorization': `Bearer ${token}` } : {},
         })
-            .then(res => setProducts(res.data))
+            .then(res => {
+                console.log('[DEBUG] Полученные товары:', res.data);
+                setProducts(res.data);
+            })
             .catch(e => {
+                console.error('[DEBUG] Ошибка получения товаров:', e);
                 if (e.response?.status === 404) {
                     setErrorProducts('Товары не найдены');
                 } else if (e.response?.status === 500) {
@@ -126,29 +134,54 @@ const ShopSummaryWidget = ({ shopType }) => {
     const chartKeys = useMemo(() => {
         if (!selectedFilter) return [];
         // Создаем ключи для каждого товара
-        return selectedProducts.map(productId => {
+        const keys = selectedProducts.map(productId => {
             const product = products.find(p => p.id === productId);
             return product ? `${selectedFilter}_${productId}` : null;
         }).filter(Boolean);
-    }, [selectedFilter, selectedProducts, products]);
 
-    const barColors = useMemo(() => {
-        const colors = ['#0dcaf0', '#82ca9d', '#ff7300', '#ffc107', '#dc3545', '#6f42c1', '#fd7e14', '#20c997'];
-        return chartKeys.map((key, index) => ({
-            key,
-            color: colors[index % colors.length]
-        }));
-    }, [chartKeys]);
+        console.log('[DEBUG] chartKeys обновлены:', {
+            selectedFilter,
+            selectedProducts,
+            products: products.length,
+            keys
+        });
+
+        return keys;
+    }, [selectedFilter, selectedProducts, products]);
 
     // --- Получение данных для графика ---
     useEffect(() => {
+        console.log('[DEBUG] useEffect для графика сработал:', {
+            dateRange: !!dateRange.startDate && !!dateRange.endDate,
+            chartKeysLength: chartKeys.length,
+            selectedFilter,
+            selectedProducts,
+            productsLength: products.length
+        });
+
         if (!dateRange.startDate || !dateRange.endDate || chartKeys.length === 0) {
+            console.log('[DEBUG] Условия не выполнены для отправки запроса:', {
+                hasStartDate: !!dateRange.startDate,
+                hasEndDate: !!dateRange.endDate,
+                chartKeysLength: chartKeys.length
+            });
             setChartData([]);
             setTotalReviews(0);
             return;
         }
+
+        console.log('[DEBUG] Все условия выполнены, отправляем запрос');
         setLoadingChart(true);
         setErrorChart(null);
+
+        console.log('[DEBUG] Запрос данных для графика:', {
+            shopType,
+            selectedBrand,
+            selectedProducts,
+            dateRange,
+            selectedFilter,
+            chartKeys
+        });
 
         // Создаем запросы для каждого товара
         const requests = selectedProducts.map(productId => {
@@ -161,6 +194,7 @@ const ShopSummaryWidget = ({ shopType }) => {
                 metrics: selectedFilter,
             };
             const token = localStorage.getItem('token');
+            console.log('[DEBUG] Параметры запроса:', params);
             return api.get(`${API_URL}/reviews/summary`, {
                 params,
                 headers: token ? { 'Authorization': `Bearer ${token}` } : {},
@@ -169,6 +203,7 @@ const ShopSummaryWidget = ({ shopType }) => {
 
         Promise.all(requests)
             .then(responses => {
+                console.log('[DEBUG] Ответы от сервера:', responses.map(r => r.data));
                 // Объединяем данные по датам
                 const allData = {};
                 let totalReviewsSum = 0;
@@ -190,10 +225,12 @@ const ShopSummaryWidget = ({ shopType }) => {
                     totalReviewsSum += res.data.total_reviews || 0;
                 });
 
+                console.log('[DEBUG] Обработанные данные:', { allData, totalReviewsSum });
                 setChartData(Object.values(allData));
                 setTotalReviews(totalReviewsSum);
             })
             .catch(e => {
+                console.error('[DEBUG] Ошибка при получении данных:', e);
                 if (e.response?.status === 404) {
                     setErrorChart('Данные не найдены');
                 } else if (e.response?.status === 500) {
@@ -204,49 +241,6 @@ const ShopSummaryWidget = ({ shopType }) => {
             })
             .finally(() => setLoadingChart(false));
     }, [shopType, selectedBrand, selectedProducts, dateRange, selectedFilter, products]);
-
-    // --- Получение топов ---
-    useEffect(() => {
-        if (!dateRange.startDate || !dateRange.endDate) {
-            setTopsProducts([]);
-            setTopsReasons([]);
-            return;
-        }
-        setLoadingTops(true);
-        setErrorTops(null);
-        const paramsBase = {
-            shop: shopType,
-            brand_id: selectedBrand || undefined,
-            product_ids: selectedProducts.length > 0 ? selectedProducts.join(',') : undefined,
-            date_from: dateRange.startDate,
-            date_to: dateRange.endDate,
-        };
-        const token = localStorage.getItem('token');
-        Promise.all([
-            api.get(`${API_URL}/reviews/tops`, {
-                params: { ...paramsBase, type: 'products_negative' },
-                headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-            }),
-            api.get(`${API_URL}/reviews/tops`, {
-                params: { ...paramsBase, type: 'reasons_negative' },
-                headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-            })
-        ])
-            .then(([productsRes, reasonsRes]) => {
-                setTopsProducts(productsRes.data || []);
-                setTopsReasons(reasonsRes.data || []);
-            })
-            .catch(e => {
-                if (e.response?.status === 404) {
-                    setErrorTops('Топы не найдены');
-                } else if (e.response?.status === 500) {
-                    setErrorTops('Ошибка сервера');
-                } else {
-                    setErrorTops('Ошибка загрузки топов');
-                }
-            })
-            .finally(() => setLoadingTops(false));
-    }, [shopType, selectedBrand, selectedProducts, dateRange]);
 
     // --- Фильтрация фильтров по поиску ---
     const filteredFilterOptions = filterOptions.map(group => ({
@@ -280,13 +274,21 @@ const ShopSummaryWidget = ({ shopType }) => {
 
     // --- Функции для управления товарами ---
     const addProduct = (productId) => {
+        console.log('[DEBUG] Добавление товара:', productId);
         if (!selectedProducts.includes(productId)) {
-            setSelectedProducts([...selectedProducts, productId]);
+            const newSelectedProducts = [...selectedProducts, productId];
+            console.log('[DEBUG] Новый список товаров:', newSelectedProducts);
+            setSelectedProducts(newSelectedProducts);
+        } else {
+            console.log('[DEBUG] Товар уже выбран:', productId);
         }
     };
 
     const removeProduct = (productId) => {
-        setSelectedProducts(selectedProducts.filter(id => id !== productId));
+        console.log('[DEBUG] Удаление товара:', productId);
+        const newSelectedProducts = selectedProducts.filter(id => id !== productId);
+        console.log('[DEBUG] Новый список товаров после удаления:', newSelectedProducts);
+        setSelectedProducts(newSelectedProducts);
     };
 
     const getSelectedProductNames = () => {
@@ -309,11 +311,83 @@ const ShopSummaryWidget = ({ shopType }) => {
         navigate(`/analytics/brand-shops?shop=${shopType}`);
     };
 
+    // --- Функция для сброса всех параметров ---
+    const handleResetParameters = () => {
+        console.log('[DEBUG] Сброс параметров');
+        setSelectedBrand('');
+        setSelectedProducts([]);
+        setDateRange({ startDate: '', endDate: '' });
+        setSelectedFilter('');
+        setSearch('');
+        console.log('[DEBUG] Параметры сброшены');
+    };
+
+    const prepareChartData = () => {
+        if (!mergedChartData || mergedChartData.length === 0 || chartKeys.length === 0) {
+            return null;
+        }
+
+        const datasets = chartKeys.map((key, index) => {
+            const colors = ['#ff6384', '#36a2eb', '#cc65fe', '#ffce56', '#4bc0c0', '#9966ff'];
+            const color = colors[index % colors.length];
+
+            return {
+                label: getLegendNames()[index] || key,
+                data: mergedChartData.map(item => item[key] || 0),
+                borderColor: color,
+                backgroundColor: color + '20',
+                tension: 0.1,
+                fill: false
+            };
+        });
+
+        return {
+            labels: mergedChartData.map(item => item.date),
+            datasets
+        };
+    };
+
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'top',
+                labels: {
+                    color: '#ffffff'
+                }
+            },
+            title: {
+                display: true,
+                text: 'Динамика показателей',
+                color: '#ffffff'
+            }
+        },
+        scales: {
+            x: {
+                ticks: {
+                    color: '#ffffff'
+                },
+                grid: {
+                    color: '#333333'
+                }
+            },
+            y: {
+                ticks: {
+                    color: '#ffffff'
+                },
+                grid: {
+                    color: '#333333'
+                }
+            }
+        }
+    };
+
     // --- UI ---
     return (
-        <div className="bg-dark text-light rounded p-4 mb-4" style={{ border: '1.5px solid #21c55d' }}>
-            <div className="d-flex justify-content-between align-items-center mb-3">
-                <h4 className="mb-0">{shopType === 'wb' ? 'Wildberries' : 'Ozon'} — краткая сводка</h4>
+        <div className="bg-dark text-light rounded p-3 mb-3" style={{ border: '1.5px solid #21c55d' }}>
+            <div className="d-flex justify-content-between align-items-center mb-2">
+                <h5 className="mb-0">{shopType === 'wb' ? 'Wildberries' : 'Ozon'} — краткая сводка</h5>
                 <button
                     className="btn btn-outline-success btn-sm"
                     onClick={handleOpenShop}
@@ -324,17 +398,27 @@ const ShopSummaryWidget = ({ shopType }) => {
                 </button>
             </div>
 
-            {/* Верхний блок с фильтрами */}
-            <div className="d-flex gap-3 mb-3 align-items-end">
+            {/* Виджет даты сверху слева */}
+            <div className="mb-3">
+                <label className="small mb-1">Период:</label><br />
+                <DateRangePicker
+                    onDateChange={(start, end) => setDateRange({ startDate: start, endDate: end })}
+                    initialStartDate={dateRange.startDate}
+                    initialEndDate={dateRange.endDate}
+                />
+            </div>
+
+            {/* Фильтры ниже даты */}
+            <div className="d-flex gap-2 mb-2 align-items-end">
                 <div>
-                    <label>Бренд:</label><br />
+                    <label className="small mb-1">Бренд:</label><br />
                     {loadingBrands ? (
-                        <div className="text-muted">Загрузка...</div>
+                        <div className="text-muted small">Загрузка...</div>
                     ) : errorBrands ? (
                         <div className="text-danger small">{errorBrands}</div>
                     ) : (
                         <select
-                            className="form-select bg-secondary text-light"
+                            className="form-select form-select-sm bg-secondary text-light"
                             value={selectedBrand}
                             onChange={e => {
                                 setSelectedBrand(e.target.value);
@@ -347,16 +431,17 @@ const ShopSummaryWidget = ({ shopType }) => {
                     )}
                 </div>
                 <div>
-                    <label>Товары:</label><br />
+                    <label className="small mb-1">Товары:</label><br />
                     {loadingProducts ? (
-                        <div className="text-muted">Загрузка...</div>
+                        <div className="text-muted small">Загрузка...</div>
                     ) : errorProducts ? (
                         <div className="text-danger small">{errorProducts}</div>
                     ) : (
                         <select
-                            className="form-select bg-secondary text-light"
+                            className="form-select form-select-sm bg-secondary text-light"
                             value=""
                             onChange={e => {
+                                console.log('[DEBUG] Выбор товара в селекте:', e.target.value);
                                 if (e.target.value) {
                                     addProduct(e.target.value);
                                     e.target.value = "";
@@ -365,38 +450,33 @@ const ShopSummaryWidget = ({ shopType }) => {
                             disabled={!selectedBrand}
                         >
                             <option value="">Добавить товар</option>
-                            {products.filter(p => !selectedProducts.includes(p.id)).map(p =>
-                                <option key={p.id} value={p.id}>{p.name}</option>
-                            )}
+                            {products.filter(p => !selectedProducts.includes(p.id)).map(p => {
+                                console.log('[DEBUG] Товар в селекте:', p);
+                                return (
+                                    <option key={p.id} value={p.id}>{p.id}</option>
+                                );
+                            })}
                         </select>
                     )}
                 </div>
                 <div>
-                    <label>Период:</label><br />
-                    <DateRangePicker
-                        onDateChange={(start, end) => setDateRange({ startDate: start, endDate: end })}
-                        initialStartDate={dateRange.startDate}
-                        initialEndDate={dateRange.endDate}
-                    />
-                </div>
-                <div>
-                    <label>Всего отзывов:</label>
-                    <div className="fs-5 fw-bold">{loadingChart ? '...' : totalReviews}</div>
+                    <label className="small mb-1">Всего отзывов:</label>
+                    <div className="fs-6 fw-bold text-light">{loadingChart ? '...' : totalReviews}</div>
                 </div>
             </div>
 
             {/* Выбранные товары */}
             {selectedProducts.length > 0 && (
-                <div className="mb-3">
-                    <label className="fw-bold">Выбранные товары:</label>
-                    <div className="d-flex flex-wrap gap-2 mt-2">
+                <div className="mb-2">
+                    <label className="fw-bold small">Выбранные товары:</label>
+                    <div className="d-flex flex-wrap gap-1 mt-1">
                         {getSelectedProductNames().map((name, index) => (
                             <div key={selectedProducts[index]} className="badge bg-success d-flex align-items-center">
-                                <span className="me-2">{name}</span>
+                                <span className="me-1 small">{name}</span>
                                 <button
                                     type="button"
                                     className="btn-close btn-close-white"
-                                    style={{ fontSize: '0.5em' }}
+                                    style={{ fontSize: '0.4em' }}
                                     onClick={() => removeProduct(selectedProducts[index])}
                                     aria-label="Удалить товар"
                                 ></button>
@@ -407,38 +487,16 @@ const ShopSummaryWidget = ({ shopType }) => {
             )}
 
             {/* Основной контент - график и параметры */}
-            <div className="d-flex gap-4">
+            <div className="d-flex gap-3">
                 {/* График - увеличенный */}
-                <div className="flex-grow-1 bg-secondary rounded p-3" style={{ minWidth: 0 }}>
+                <div className="flex-grow-1 bg-secondary rounded p-2" style={{ minWidth: 0 }}>
                     {errorChart ? (
                         <div className="text-danger text-center">{errorChart}</div>
                     ) : loadingChart ? (
                         <div className="text-center text-muted">Загрузка...</div>
                     ) : (dateRange.startDate && dateRange.endDate && chartKeys.length > 0 && mergedChartData.length > 0) ? (
-                        <div style={{ width: '100%', overflowX: 'auto' }}>
-                            <div style={{ width: Math.max(mergedChartData.length * 70, 500) }}>
-                                <ResponsiveContainer width="100%" height={400}>
-                                    <BarChart
-                                        data={mergedChartData}
-                                        margin={{ top: 20, right: 30, left: 10, bottom: 30 }}
-                                        barGap={8}
-                                    >
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                                        <XAxis dataKey="date" stroke="#fff" />
-                                        <YAxis stroke="#fff" />
-                                        <Tooltip formatter={(value) => value} />
-                                        <Legend />
-                                        {barColors.map(({ key, color }, index) => {
-                                            const productName = getLegendNames()[index];
-                                            return (
-                                                <Bar key={key} dataKey={key} fill={color} radius={[4, 4, 0, 0]} name={productName}>
-                                                    <LabelList dataKey={key} position="top" fill="#fff" fontSize={13} />
-                                                </Bar>
-                                            );
-                                        })}
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
+                        <div style={{ height: '400px' }}>
+                            <Line data={prepareChartData()} options={chartOptions} />
                         </div>
                     ) : (
                         <div className="text-center text-muted">Выберите период и параметр для отображения</div>
@@ -446,17 +504,34 @@ const ShopSummaryWidget = ({ shopType }) => {
                 </div>
 
                 {/* Параметр отображения - справа на весь виджет */}
-                <div style={{ width: 300 }}>
-                    <div className="bg-secondary rounded p-3 h-100">
-                        <h6 className="mb-3 fw-bold">Параметр для отображения:</h6>
+                <div style={{ width: 280 }}>
+                    <div className="bg-secondary rounded p-2 h-100">
+                        <div className="d-flex justify-content-between align-items-center mb-2">
+                            <h6 className="mb-0 fw-bold">Параметр для отображения:</h6>
+                            <button
+                                type="button"
+                                className="btn btn-outline-warning btn-sm"
+                                onClick={handleResetParameters}
+                                title="Сбросить параметры"
+                                style={{
+                                    minWidth: '32px',
+                                    height: '32px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}
+                            >
+                                <i className="fas fa-undo" style={{ fontSize: '12px' }}></i>
+                            </button>
+                        </div>
                         <input
                             type="text"
-                            className="form-control mb-3 bg-dark text-light"
+                            className="form-control form-control-sm mb-2 bg-dark text-light"
                             placeholder="Поиск параметра..."
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                         />
-                        <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                        <div style={{ maxHeight: 180, overflowY: 'auto' }}>
                             {filteredFilterOptions.map(group => (
                                 <div key={group.group} className="mb-2">
                                     <div className="fw-bold small mb-1">{group.group}</div>
@@ -477,40 +552,6 @@ const ShopSummaryWidget = ({ shopType }) => {
                                     ))}
                                 </div>
                             ))}
-                        </div>
-
-                        {/* Топы под параметрами */}
-                        <div className="mt-4">
-                            {errorTops ? (
-                                <div className="text-danger">{errorTops}</div>
-                            ) : loadingTops ? (
-                                <div className="text-muted">Загрузка...</div>
-                            ) : (
-                                <>
-                                    <div className="mb-3">
-                                        <div className="fw-bold mb-2 text-light">Топ товаров по количеству негатива</div>
-                                        <ol className="ps-3 mb-0">
-                                            {topsProducts.map((item, idx) => (
-                                                <li key={item.name} className="small d-flex justify-content-between align-items-center mb-1">
-                                                    <span>{item.name}</span>
-                                                    <span className="badge bg-success ms-2">{item.value}</span>
-                                                </li>
-                                            ))}
-                                        </ol>
-                                    </div>
-                                    <div className="mb-3">
-                                        <div className="fw-bold mb-2 text-light">Топ причин негатива</div>
-                                        <ol className="ps-3 mb-0">
-                                            {topsReasons.map((item, idx) => (
-                                                <li key={item.name} className="small d-flex justify-content-between align-items-center mb-1">
-                                                    <span>{item.name}</span>
-                                                    <span className="badge bg-success ms-2">{item.value}</span>
-                                                </li>
-                                            ))}
-                                        </ol>
-                                    </div>
-                                </>
-                            )}
                         </div>
                     </div>
                 </div>

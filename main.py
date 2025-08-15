@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from sqlalchemy import select
 
 from database import engine, Base, AsyncSessionLocal
-from routers import items, auth, tasks, admin, history, feedbacks, analytics, product_reviews, shops
+from routers import items, auth, tasks, admin, history, feedbacks, analytics, product_reviews, shops, aspect_analysis
 from utils.password import get_password_hash
 from utils.scheduler import start_scheduler
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +20,7 @@ app.include_router(analytics.router)
 app.include_router(product_reviews.router)
 app.include_router(shops.router)
 app.include_router(shops_summary_router)
+app.include_router(aspect_analysis.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,6 +38,7 @@ async def startup_event():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    # Запускаем планировщик
     start_scheduler()
 
 
