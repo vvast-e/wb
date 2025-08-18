@@ -47,10 +47,10 @@ class AIAspectAnalyzer:
         self.MINUTE_WINDOW = 60             # Окно в секундах для минутного лимита
         self.DAY_WINDOW = 86400             # Окно в секундах для дневного лимита
         
-        # Ограничения для стабильной работы
-        self.MAX_REVIEWS_PER_PROMPT = 50  # Уменьшаем для стабильности
-        self.MAX_TOKENS_PER_REVIEW = 100  # Уменьшаем для экономии
-        self.MAX_TOTAL_TOKENS = 6000      # Оптимизируем для стабильности
+        # Константы для контроля размера промптов
+        self.MAX_REVIEWS_PER_PROMPT = 50  # Максимум отзывов в одном промпте (оптимизировано под лимиты API)
+        self.MAX_TOKENS_PER_REVIEW = 100   # Максимум токенов на отзыв
+        self.MAX_TOTAL_TOKENS = 6000       # Максимум токенов в промпте (увеличено под 50 отзывов)
         
         # Доступные модели
         self.available_models = {
@@ -61,32 +61,57 @@ class AIAspectAnalyzer:
         
         # Упрощенные промпты для стабильной работы
         self.prompts = {
-            "creative_batch_analysis": """Проанализируй {batch_size} отзывов и создай аспекты.
+            "creative_batch_analysis": """Проанализируй до 30 отзывов и создай аспекты.
 
 ПРАВИЛА:
 - Используй базовые аспекты: Цена, Качество, Эффективность, Упаковка, Запах
 - Создавай новые для уникальных случаев
 - Каждый аспект: название, тональность (positive/negative), уверенность (0.1-1.0), категория
+- ВАЖНО: Всегда завершай JSON полностью, не обрезай ответ
 
 ФОРМАТ:
 ```json
 [
-  {{
+  {
     "review_index": 0,
-    "aspects": {{
-      "Эффективность": {{
+    "aspects": {
+      "Эффективность": {
         "sentiment": "positive",
         "confidence": 0.9,
         "evidence": ["волосы растут"],
         "category": "Эффективность",
         "is_new_aspect": false
-      }}
-    }}
-  }}
+      }
+    }
+  }
 ]```
 
 ОТЗЫВЫ:
-{reviews_batch}"""
+{reviews_batch}""",
+
+            "single_review_enhanced": """Проанализируй один отзыв и определи аспекты.
+
+ОТЗЫВ: {review_text}
+РЕЙТИНГ: {rating}
+
+ПРАВИЛА:
+- Определи основные аспекты товара
+- Укажи тональность каждого аспекта (positive/negative)
+- Используй базовые аспекты: Цена, Качество, Эффективность, Упаковка, Запах
+- Создавай новые для уникальных случаев
+
+ФОРМАТ:
+```json
+{
+  "aspects": {
+    "Эффективность": {
+      "sentiment": "positive",
+      "confidence": 0.9,
+      "evidence": ["конкретные фразы из отзыва"],
+      "category": "Эффективность"
+    }
+  }
+}```"""
         }
         
         self._init_client()
@@ -112,73 +137,56 @@ class AIAspectAnalyzer:
         return True
     
     def _wait_for_rate_limit(self) -> float:
-        """Ждет до следующего доступного слота для запроса, возвращает время ожидания"""
+        """Вычисляет время ожидания для соблюдения лимитов"""
         current_time = time.time()
         
-        # Если превышен минутный лимит, ждем до освобождения слота
+        # Ждем освобождения минутного слота
         if len(self.request_timestamps) >= self.MAX_REQUESTS_PER_MINUTE:
-            oldest_timestamp = min(self.request_timestamps)
-            wait_time = self.MINUTE_WINDOW - (current_time - oldest_timestamp) + 1
-            logger.info(f"Ждем {wait_time:.1f} секунд до освобождения минутного слота")
-            return wait_time
+            oldest_request = min(self.request_timestamps)
+            wait_time = self.MINUTE_WINDOW - (current_time - oldest_request)
+            if wait_time > 0:
+                return wait_time
         
-        # Если превышен дневной лимит для текущего ключа, ищем следующий доступный
-        if self.daily_request_counts[self.current_key_index] >= self.MAX_REQUESTS_PER_DAY:
-            # Ищем ключ с доступными запросами
-            for i in range(len(self.api_keys)):
-                if self.daily_request_counts[i] < self.MAX_REQUESTS_PER_DAY:
-                    logger.info(f"Переключаемся на ключ {i + 1} (запросов: {self.daily_request_counts[i]})")
-                    self.current_key_index = i
-                    self._init_client()
-                    return 0
-            
-            # Если все ключи исчерпаны, ждем до следующего дня
-            wait_time = self.DAY_WINDOW - (current_time % self.DAY_WINDOW)
-            logger.warning(f"Все ключи исчерпаны, ждем {wait_time/3600:.1f} часов до следующего дня")
-            return wait_time
+        # Ждем освобождения дневного слота
+        for i, daily_count in enumerate(self.daily_request_counts.items()):
+            if daily_count[1] >= self.MAX_REQUESTS_PER_DAY:
+                # Ждем до следующего дня
+                if self.last_request_dates[i]:
+                    next_day = self.last_request_dates[i] + timedelta(days=1)
+                    wait_time = (next_day - datetime.now()).total_seconds()
+                    if wait_time > 0:
+                        return wait_time
         
-        return 0
-    
+        return 0.0
+
     def _update_request_counters(self):
         """Обновляет счетчики запросов"""
         current_time = time.time()
-        
-        # Добавляем текущую временную метку
         self.request_timestamps.append(current_time)
-        
-        # Увеличиваем счетчик дневных запросов для текущего ключа
         self.daily_request_counts[self.current_key_index] += 1
-        
-        # Обновляем дату последнего запроса
-        self.last_request_dates[self.current_key_index] = current_time
-        
-        logger.debug(f"Ключ {self.current_key_index + 1}: запросов сегодня {self.daily_request_counts[self.current_key_index]}")
-    
+        self.last_request_dates[self.current_key_index] = datetime.now()
+
     def _reset_daily_counters_if_needed(self):
-        """Сбрасывает дневные счетчики если прошел день"""
-        current_time = time.time()
+        """Сбрасывает дневные счетчики если нужно"""
+        current_date = datetime.now().date()
         
-        for key_index in range(len(self.api_keys)):
-            last_date = self.last_request_dates[key_index]
-            if last_date and (current_time - last_date) >= self.DAY_WINDOW:
+        for key_index, last_date in self.last_request_dates.items():
+            if last_date and last_date.date() < current_date:
                 self.daily_request_counts[key_index] = 0
-                logger.info(f"Сброшен дневной счетчик для ключа {key_index + 1}")
-    
+                self.last_request_dates[key_index] = None
+
     def get_rate_limit_status(self) -> Dict:
         """Возвращает текущий статус лимитов API"""
         current_time = time.time()
-        
-        # Очищаем старые временные метки
-        self.request_timestamps = [ts for ts in self.request_timestamps 
-                                 if current_time - ts < self.MINUTE_WINDOW]
+        requests_last_minute = len([ts for ts in self.request_timestamps 
+                                  if current_time - ts < self.MINUTE_WINDOW])
         
         return {
             "current_key": self.current_key_index + 1,
-            "requests_last_minute": len(self.request_timestamps),
+            "requests_last_minute": requests_last_minute,
             "max_requests_per_minute": self.MAX_REQUESTS_PER_MINUTE,
-            "daily_counts": {f"key_{i+1}": count for i, count in self.daily_request_counts.items()},
-            "max_requests_per_day": self.MAX_REQUESTS_PER_DAY,
-            "can_make_request": self._check_rate_limits()
+            "daily_counts": {f"key_{i+1}": count for i, count in enumerate(self.daily_request_counts)},
+            "max_requests_per_day": self.MAX_REQUESTS_PER_DAY
         }
 
     async def analyze_reviews(self, reviews: List[str], product_name: str = "") -> Dict[str, List[str]]:
@@ -209,91 +217,43 @@ class AIAspectAnalyzer:
             logger.error(f"Ошибка при анализе отзывов с ИИ: {e}")
             raise
 
-    async def analyze_reviews_with_dynamic_aspects(self, reviews: List[str], product_name: str = "") -> List[Dict]:
-        """Анализ отзывов с созданием динамических аспектов"""
-        try:
-            # Разбиваем отзывы на оптимальные батчи
-            review_batches = self._split_reviews_into_batches(reviews)
-            
-            all_results = []
-            for batch in review_batches:
-                # Анализируем батч с созданием новых аспектов
-                batch_results = await self._analyze_batch_with_dynamic_aspects(batch, product_name, len(batch))
-                all_results.extend(batch_results)
-            
-            return all_results
-        except Exception as e:
-            logger.error(f"Ошибка при анализе отзывов с динамическими аспектами: {e}")
-            raise
-
     async def analyze_reviews_safely_with_scheduler(self, reviews: List[str], product_name: str = "", 
                                                   max_batches_per_hour: int = 20) -> List[Dict]:
-        """Безопасный анализ больших объемов отзывов с планировщиком и контролем лимитов"""
+        """Безопасный анализ отзывов с планировщиком и контролем лимитов"""
         try:
-            logger.info(f"🚀 Запуск безопасного анализа {len(reviews)} отзывов")
+            if not reviews:
+                return []
             
-            # Разбиваем отзывы на оптимальные батчи
-            review_batches = self._split_reviews_into_batches(reviews)
-            total_batches = len(review_batches)
-            
-            logger.info(f"📊 Разбито на {total_batches} батчей по {self.MAX_REVIEWS_PER_PROMPT} отзывов")
+            # Разбиваем на батчи
+            total_batches = (len(reviews) + self.MAX_REVIEWS_PER_PROMPT - 1) // self.MAX_REVIEWS_PER_PROMPT
             
             all_results = []
-            processed_batches = 0
+            batch_count = 0
             start_time = time.time()
             
-            for batch_index, batch in enumerate(review_batches, 1):
-                try:
-                    # Показываем статус лимитов
-                    status = self.get_rate_limit_status()
-                    current_key = status['current_key']
-                    daily_count = status['daily_counts'][f'key_{current_key}']
-                    logger.info(f"📈 Статус лимитов: ключ {current_key}, "
-                              f"запросов за минуту: {status['requests_last_minute']}/{status['max_requests_per_minute']}, "
-                              f"запросов за день: {daily_count}/{status['max_requests_per_day']}")
-                    
-                    # Проверяем лимиты перед обработкой батча
-                    if not self._check_rate_limits():
-                        wait_time = self._wait_for_rate_limit()
-                        if wait_time > 0:
-                            logger.info(f"⏳ Ожидание {wait_time:.1f} секунд для соблюдения лимитов...")
-                            await asyncio.sleep(wait_time)
-                    
-                    # Анализируем батч
-                    logger.info(f"🔄 Обработка батча {batch_index}/{total_batches} ({len(batch)} отзывов)")
-                    batch_start_time = time.time()
-                    
-                    batch_results = await self._analyze_batch_with_dynamic_aspects(batch, product_name, len(batch))
-                    all_results.extend(batch_results)
-                    
-                    batch_time = time.time() - batch_start_time
-                    processed_batches += 1
-                    
-                    logger.info(f"✅ Батч {batch_index} обработан за {batch_time:.1f} секунд")
-                    
-                    # Планировщик: ограничиваем количество батчей в час
-                    if processed_batches >= max_batches_per_hour:
-                        elapsed_hours = (time.time() - start_time) / 3600
-                        if elapsed_hours < 1.0:
-                            wait_time = 3600 - (time.time() - start_time)
-                            logger.info(f"⏰ Достигнут лимит {max_batches_per_hour} батчей в час, "
-                                      f"ожидание {wait_time/60:.1f} минут...")
-                            await asyncio.sleep(wait_time)
-                            # Сбрасываем счетчики для нового часа
-                            processed_batches = 0
-                            start_time = time.time()
-                    
-                    # Небольшая пауза между батчами для стабильности
-                    if batch_index < total_batches:
-                        await asyncio.sleep(2)
-                    
-                except Exception as e:
-                    logger.error(f"❌ Ошибка при обработке батча {batch_index}: {e}")
-                    # Продолжаем с следующим батчем
-                    continue
+            for i in range(0, len(reviews), self.MAX_REVIEWS_PER_PROMPT):
+                batch = reviews[i:i + self.MAX_REVIEWS_PER_PROMPT]
+                batch_index = i // self.MAX_REVIEWS_PER_PROMPT + 1
+                
+                # Проверяем лимиты
+                if batch_count >= max_batches_per_hour:
+                    wait_time = 3600  # Ждем час
+                    await asyncio.sleep(wait_time)
+                    batch_count = 0
+                
+                # Анализируем батч
+                batch_start = time.time()
+                batch_results = await self._analyze_batch_with_dynamic_aspects(batch, product_name, len(batch))
+                batch_time = time.time() - batch_start
+                
+                all_results.extend(batch_results)
+                batch_count += 1
+                
+                # Небольшая пауза между батчами
+                if batch_index < total_batches:
+                    await asyncio.sleep(1)
             
             total_time = time.time() - start_time
-            logger.info(f"🎉 Безопасный анализ завершен: {len(all_results)} результатов за {total_time/60:.1f} минут")
             
             return all_results
             
@@ -331,8 +291,32 @@ class AIAspectAnalyzer:
                     else:
                         json_str = cleaned_response
                 
+                # Пытаемся исправить неполный JSON
+                if not json_str.endswith('}'):
+                    # Ищем последнюю закрывающую скобку
+                    last_brace = json_str.rfind('}')
+                    if last_brace > 0:
+                        json_str = json_str[:last_brace + 1]
+                    else:
+                        # Если нет закрывающей скобки, добавляем базовую структуру
+                        json_str = json_str.rstrip(', \n\r\t') + '}'
+                
                 # Парсим JSON
-                result = json.loads(json_str)
+                try:
+                    result = json.loads(json_str)
+                except json.JSONDecodeError:
+                    # Если не удалось, пробуем исправить более агрессивно
+                    logger.warning(f"Пытаемся исправить неполный JSON: {json_str[:100]}...")
+                    
+                    # Ищем поле "aspects" и создаем базовую структуру
+                    if '"aspects"' in json_str:
+                        # Создаем минимальный валидный JSON
+                        fixed_json = '{"aspects": {}}'
+                        result = json.loads(fixed_json)
+                    else:
+                        # Создаем пустой результат
+                        result = {"aspects": {}}
+                
                 aspects = result.get("aspects", {})
                 
                 # Преобразуем в старый формат для совместимости
@@ -351,7 +335,7 @@ class AIAspectAnalyzer:
                     "negative": negative_aspects[:3]
                 }
             except json.JSONDecodeError as e:
-                logger.error(f"Не удалось распарсить JSON ответ: {response}")
+                logger.error(f"Не удалось распарсить JSON ответ: {response[:200]}...")
                 logger.error(f"Ошибка JSON: {e}")
                 return {"positive": [], "negative": []}
                 
@@ -441,43 +425,35 @@ class AIAspectAnalyzer:
                 if not self._check_rate_limits():
                     wait_time = self._wait_for_rate_limit()
                     if wait_time > 0:
-                        logger.info(f"⏳ Ожидание {wait_time:.1f} секунд для соблюдения лимитов...")
                         await asyncio.sleep(wait_time)
                         continue
                 
                 # Проверяем лимиты еще раз после ожидания
                 if not self._check_rate_limits():
-                    logger.error("Не удалось соблюсти лимиты API после ожидания")
                     continue
                 
                 model = self.available_models.get(model_name, self.available_models["deepseek"])
                 
-                logger.info(f"🚀 API запрос через ключ {self.current_key_index + 1} (попытка {attempt + 1})")
-                
                 response = self.client.chat.completions.create(
                     model=model,
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=4000,  # Увеличиваем для анализа батчей
+                    max_tokens=6000,  # Увеличиваем для предотвращения обрезания JSON
                     temperature=0.7
                 )
                 
                 # Обновляем счетчики после успешного запроса
                 self._update_request_counters()
                 
-                logger.info(f"✅ API запрос успешен через ключ {self.current_key_index + 1}")
                 return response.choices[0].message.content.strip()
                 
             except Exception as e:
                 error_msg = str(e).lower()
-                logger.warning(f"❌ Ошибка API ключа {self.current_key_index + 1}: {e}")
                 
                 # Проверяем тип ошибки для ротации ключа
                 if any(keyword in error_msg for keyword in ['rate limit', '429', 'quota', 'limit', 'token']):
-                    logger.info(f"🔄 Превышен лимит для ключа {self.current_key_index + 1}, переключаемся на следующий")
                     self._init_client()  # Ротация ключа
                 else:
                     # Для других ошибок тоже пробуем следующий ключ
-                    logger.info(f"🔄 Ошибка API, пробуем следующий ключ")
                     self._init_client()
                 
                 if attempt == max_retries - 1:
@@ -608,54 +584,32 @@ class AIAspectAnalyzer:
             return None
 
     def _split_reviews_into_batches(self, reviews: List[str]) -> List[List[str]]:
-        """Разбивает отзывы на оптимальные батчи с учетом ограничений токенов"""
-        if len(reviews) <= self.MAX_REVIEWS_PER_PROMPT:
-            return [reviews]
+        """Разбивает отзывы на батчи оптимального размера"""
+        if not reviews:
+            return []
         
         batches = []
-        current_batch = []
-        current_tokens = 0
+        for i in range(0, len(reviews), self.MAX_REVIEWS_PER_PROMPT):
+            batch = reviews[i:i + self.MAX_REVIEWS_PER_PROMPT]
+            batches.append(batch)
         
-        for review in reviews:
-            # Примерная оценка токенов (1 слово ≈ 1.3 токена)
-            review_tokens = len(review.split()) * 1.3
-            
-            if (current_tokens + review_tokens > self.MAX_TOTAL_TOKENS or 
-                len(current_batch) >= self.MAX_REVIEWS_PER_PROMPT):
-                if current_batch:
-                    batches.append(current_batch)
-                current_batch = [review]
-                current_tokens = review_tokens
-            else:
-                current_batch.append(review)
-                current_tokens += review_tokens
-        
-        if current_batch:
-            batches.append(current_batch)
-        
-        logger.info(f"Разбито {len(reviews)} отзывов на {len(batches)} батчей")
         return batches
 
     def _init_client(self):
-        """Инициализация клиента OpenAI с ротацией API ключей"""
-        # Не увеличиваем индекс при инициализации, только при ротации
-        if not hasattr(self, '_initialized'):
-            self._initialized = True
-            self.current_key_index = 0
-        else:
-            # Ротация на следующий ключ
-            self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
+        """Инициализирует клиент OpenRouter с ротацией ключей"""
+        # Переключаемся на следующий ключ
+        self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
         
+        # Создаем новый клиент с текущим ключом
+        api_key = self.api_keys[self.current_key_index]
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
-            api_key=self.api_keys[self.current_key_index]
+            api_key=api_key
         )
-        logger.info(f"🔑 Используется API ключ: {self.current_key_index + 1} ({self.api_keys[self.current_key_index][:8]}...)")
 
 # Создаем глобальный экземпляр ИИ-анализатора
 try:
     ai_aspect_analyzer = AIAspectAnalyzer()
-    logger.info("ИИ-анализатор с динамическими аспектами успешно инициализирован")
 except Exception as e:
-    logger.warning(f"Не удалось инициализировать ИИ-анализатор: {e}")
+    logger.error(f"Ошибка инициализации ИИ-анализатора: {e}")
     ai_aspect_analyzer = None

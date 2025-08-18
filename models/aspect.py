@@ -43,3 +43,5 @@ class FeedbackAspect(Base):
         Index('idx_feedback_aspects_sentiment', 'sentiment'),
         Index('idx_feedback_aspects_feedback_sentiment', 'feedback_id', 'sentiment'),
     )
+
+

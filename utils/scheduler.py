@@ -1,9 +1,15 @@
 from datetime import datetime, timedelta
 import os
+import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import AsyncSession
 from apscheduler.executors.asyncio import AsyncIOExecutor
+
+# Отключаем логи APScheduler
+logging.getLogger('apscheduler').setLevel(logging.WARNING)
+logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING)
+logging.getLogger('apscheduler.schedulers').setLevel(logging.WARNING)
 
 from crud import task as task_crud
 from crud.history import update_history_status
@@ -49,12 +55,8 @@ async def process_scheduled_tasks():
 
                 if task.action == 'update_content':
                     result = await wb_client.update_card_content(task.nm_id, task.payload)
-                    print()
-                    print(result)
                 elif task.action == 'update_media':
                     result = await wb_client.upload_meda(task.nm_id, task.payload.get("media"))
-                    print()
-                    print(result)
                 elif task.action == 'upload_media_file':
                     if task.payload.get("immediate"):
                         # Ничего не делаем, задача уже была выполнена сразу
@@ -75,18 +77,16 @@ async def process_scheduled_tasks():
                             if result.success:
                                 try:
                                     os.remove(file_path)
-                                except Exception as e:
-                                    print(f"[Scheduler] Не удалось удалить временный файл: {e}")
+                                except Exception:
+                                    pass  # Игнорируем ошибки удаления файла
                                 # Удаляем задачу из базы после успешной отправки и удаления файла
                                 await db.delete(task)
                                 await db.commit()
-                print(result.success)
+                
                 if result.success:
                     task.status = 'completed'
                     await update_history_status(db, status='completed', user_id=task.user_id, created_at=task.created_at)
                 else:
-                    print(f"❌ Ошибка при откате изменений: {result.error}")
-                    print(f"🧾 Ответ WB: {result.wb_response}")
                     task.status = 'pending'
                     task.scheduled_at = datetime.now() + timedelta(minutes=5)
                     if hasattr(result, 'error'):
@@ -109,70 +109,50 @@ async def process_scheduled_tasks():
 
 
 async def parse_all_shops_feedbacks():
-    print(f"[SCHEDULER] >>> Запуск парсера отзывов: {datetime.now().isoformat()}")
     db = await get_db_session()
     try:
         users = await get_all_users(db)
-        print(f"[SCHEDULER] Найдено пользователей: {len(users)}")
         for user in users:
             if not user.wb_api_key:
-                print(f"[SCHEDULER] Пропущен user_id={user.id} (нет wb_api_key)")
                 continue
             for brand in (user.wb_api_key or {}).keys():
                 try:
-                    print(f"[SCHEDULER] Парсим отзывы для user_id={user.id}, brand={brand}, время: {datetime.now().isoformat()}")
                     await parse_shop_feedbacks_crud(db, user.id, brand, max_count_per_product=1000, save_to_db=True)
-                    print(f"[SCHEDULER] Успешно: user_id={user.id}, brand={brand}")
-                except Exception as e:
-                    print(f"[SCHEDULER] Ошибка: user_id={user.id}, brand={brand}, error={e}")
+                except Exception:
+                    pass  # Игнорируем ошибки парсинга
     finally:
         await db.close()
-    print(f"[SCHEDULER] <<< Завершение парсера отзывов: {datetime.now().isoformat()}")
 
 
 async def analyze_all_new_feedbacks():
     """Автоматический анализ всех новых отзывов без аспектов"""
-    print(f"[SCHEDULER] >>> Запуск анализатора аспектов: {datetime.now().isoformat()}")
-    
     db = await get_db_session()
     try:
         # Создаем процессор аспектов
         aspect_processor = AspectProcessor(db)
         
-        print(f"[SCHEDULER] 🔍 Поиск новых отзывов для анализа...")
-        
-        # Получаем статистику по аспектам
-        stats = await aspect_processor.get_aspect_statistics()
-        print(f"[SCHEDULER] 📊 Текущая статистика: {stats.get('total_aspects', 0)} аспектов в БД")
-        
-        # Обрабатываем все существующие отзывы без аспектов
-        result = await aspect_processor.process_existing_feedbacks(limit=1000)
+        # Обрабатываем все существующие отзывы без аспектов (большими батчами)
+        result = await aspect_processor.process_existing_feedbacks(limit=2000)  # Увеличиваем лимит
         
         processed = result.get('processed', 0)
-        new_aspects = result.get('new_aspects', 0)
         skipped = result.get('skipped_already_analyzed', 0)
         
-        print(f"[SCHEDULER] ✅ Анализ завершен:")
-        print(f"[SCHEDULER]    Обработано отзывов: {processed}")
-        print(f"[SCHEDULER]    Создано новых аспектов: {new_aspects}")
-        print(f"[SCHEDULER]    Пропущено уже проанализированных: {skipped}")
-        
-        if processed > 0:
-            print(f"[SCHEDULER] 🎯 Успешно проанализировано {processed} новых отзывов")
-        else:
-            print(f"[SCHEDULER] ℹ️  Новых отзывов для анализа не найдено")
+        if processed > 0 or skipped > 0:
+            print(f"[AI] Анализ аспектов: обработано {processed}, пропущено {skipped}")
             
     except Exception as e:
-        print(f"[SCHEDULER] ❌ Ошибка при анализе аспектов: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"[AI] Ошибка при анализе аспектов: {e}")
     finally:
         await db.close()
-    
-    print(f"[SCHEDULER] <<< Завершение анализатора аспектов: {datetime.now().isoformat()}")
 
 
 def start_scheduler():
+    # Отключаем все логи APScheduler
+    logging.getLogger('apscheduler').setLevel(logging.ERROR)
+    logging.getLogger('apscheduler.executors.default').setLevel(logging.ERROR)
+    logging.getLogger('apscheduler.schedulers').setLevel(logging.ERROR)
+    logging.getLogger('apscheduler.triggers').setLevel(logging.ERROR)
+    
     # Задача обработки запланированных задач (каждые 5 секунд)
     scheduler.add_job(
         process_scheduled_tasks,
@@ -191,18 +171,13 @@ def start_scheduler():
         timezone='Europe/Moscow'
     )
     
-    # Задача анализа аспектов (каждые 32 минуты - через 2 минуты после парсера)
+    # Задача анализа аспектов (каждые 15 минут)
     scheduler.add_job(
         analyze_all_new_feedbacks,
         'interval',
-        minutes=32,
+        minutes=15,
         max_instances=1,
         timezone='Europe/Moscow'
     )
-    
-    print("[SCHEDULER] 🚀 Планировщик запущен:")
-    print("[SCHEDULER]    📝 Парсер отзывов: каждые 30 минут")
-    print("[SCHEDULER]    🤖 Анализатор аспектов: каждые 32 минуты (через 2 мин после парсера)")
-    print("[SCHEDULER]    ⚙️  Обработка задач: каждые 5 секунд")
     
     scheduler.start()

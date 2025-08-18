@@ -28,7 +28,13 @@ async def get_products_by_brand(db: AsyncSession, user_id: int, shop: str, brand
         }
         response = await wb.get_cards_list(payload)
 
-        cards = response.data.get("cards", [])
+        # Безопасная обработка ответа WB API
+        if not response or not getattr(response, 'success', False):
+            return []
+        data = response.data or {}
+        if not isinstance(data, dict):
+            return []
+        cards = data.get("cards", [])
         # Получаем vendor_code для всех nmID
         nm_ids = [str(card["nmID"]) for card in cards]  # Преобразуем в строки
         vendor_codes = {}
@@ -86,18 +92,26 @@ async def get_reviews_summary_crud(
         query = query.where(Feedback.brand == brand_id)
     if product_id:
         try:
-            # Если product_id - это vendor_code, ищем соответствующий nm_id
+            # 1) Пытаемся найти nm_id по vendor_code
             product_query = select(Product.nm_id).where(Product.vendor_code == product_id)
             product_result = await db.execute(product_query)
             product_data = product_result.scalars().first()
-            
+
+            if not product_data:
+                # 2) Если не нашли, проверяем, не является ли product_id уже nm_id
+                product_query_nm = select(Product.nm_id).where(Product.nm_id == str(product_id))
+                product_result_nm = await db.execute(product_query_nm)
+                product_data = product_result_nm.scalars().first()
+
             if product_data:
                 # Приводим nm_id к строке для сравнения с Feedback.article
                 query = query.where(Feedback.article == str(product_data))
             else:
-                print(f"[DEBUG] Товар с vendor_code '{product_id}' не найден")
+                # 3) В крайнем случае фильтруем напрямую по article
+                print(f"[DEBUG] Товар не найден ни по vendor_code, ни по nm_id: '{product_id}', фильтруем по article")
+                query = query.where(Feedback.article == str(product_id))
         except Exception as e:
-            print(f"[DEBUG] Ошибка при поиске товара по vendor_code '{product_id}': {e}")
+            print(f"[DEBUG] Ошибка при поиске товара '{product_id}': {e}")
     if date_from:
         query = query.where(Feedback.date >= date_from)
     if date_to:
@@ -124,40 +138,65 @@ async def get_reviews_summary_crud(
     result = await db.execute(query)
     feedbacks = result.scalars().all()
     total_reviews = len(feedbacks)
-    by_day = {}
     
     # Если нет отзывов, возвращаем пустой результат
     if total_reviews == 0:
         return {"total_reviews": 0, "by_day": []}
-    
+
+    # Внутренние агрегаты, не зависящие от запрошенных метрик
+    day_aggregates: Dict[str, Dict[str, Any]] = {}
     for f in feedbacks:
         d = f.date.date().isoformat() if f.date else None
         if not d:
             continue
-        if d not in by_day:
-            by_day[d] = {m: 0 for m in metrics}
-        
-        # Подсчет метрик
-        if 'negative' in metrics and f.is_negative:
-            by_day[d]['negative'] += 1
-        if 'deleted' in metrics and getattr(f, 'is_deleted', False):
-            by_day[d]['deleted'] += 1
-        
-        # Подсчет отзывов по рейтингам (1, 2, 3, 4, 5)
-        if str(f.rating) in metrics:
-            by_day[d][str(f.rating)] += 1
+        if d not in day_aggregates:
+            day_aggregates[d] = {
+                'total': 0,
+                'negative': 0,
+                'deleted': 0,
+                'ratings': {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+            }
+        day_aggregates[d]['total'] += 1
+        if getattr(f, 'is_negative', False):
+            day_aggregates[d]['negative'] += 1
+        if getattr(f, 'is_deleted', False):
+            day_aggregates[d]['deleted'] += 1
+        try:
+            r = int(f.rating) if f.rating is not None else None
+            if r in (1, 2, 3, 4, 5):
+                day_aggregates[d]['ratings'][r] += 1
+        except Exception:
+            pass
+
+    # Формируем ответ только с запрошенными метриками
+    by_day_list: List[Dict[str, Any]] = []
+    sorted_dates = sorted(day_aggregates.keys())
     
-    # Вычисление долей
-    for d in by_day:
-        neg = by_day[d].get('negative', 0)
-        deleted = by_day[d].get('deleted', 0)
-        total = sum(by_day[d].values())
-        if 'negative_share' in metrics:
-            by_day[d]['negative_share'] = round((neg / total) * 100, 1) if total > 0 else 0.0
-        if 'deleted_share' in metrics:
-            by_day[d]['deleted_share'] = round((deleted / total) * 100, 1) if total > 0 else 0.0
+    # Для накопительных расчётов (доли)
+    cumulative_total = 0
+    cumulative_negative = 0
+    cumulative_deleted = 0
     
-    by_day_list = [{"date": d, **by_day[d]} for d in sorted(by_day.keys())]
+    for d in sorted_dates:
+        counts = day_aggregates[d]
+        cumulative_total += counts['total']
+        cumulative_negative += counts['negative']
+        cumulative_deleted += counts['deleted']
+        
+        entry: Dict[str, Any] = {"date": d}
+        for m in metrics:
+            if m == 'negative':
+                entry['negative'] = counts['negative']
+            elif m == 'deleted':
+                entry['deleted'] = counts['deleted']
+            elif m == 'negative_share':
+                entry['negative_share'] = round((cumulative_negative / cumulative_total) * 100, 1) if cumulative_total > 0 else 0.0
+            elif m == 'deleted_share':
+                entry['deleted_share'] = round((cumulative_deleted / cumulative_total) * 100, 1) if cumulative_total > 0 else 0.0
+            elif m in ('1', '2', '3', '4', '5'):
+                entry[m] = counts['ratings'].get(int(m), 0)
+        by_day_list.append(entry)
+
     return {"total_reviews": total_reviews, "by_day": by_day_list}
 
 async def get_reviews_tops_crud(db: AsyncSession, user_id: int, shop: str, brand_id: Optional[str], product_id: Optional[str], date_from, date_to, type: str, limit: int, offset: int) -> List[Dict[str, Any]]:
@@ -166,18 +205,24 @@ async def get_reviews_tops_crud(db: AsyncSession, user_id: int, shop: str, brand
         query = query.where(Feedback.brand == brand_id)
     if product_id:
         try:
-            # Если product_id - это vendor_code, ищем соответствующий nm_id
+            # 1) Пытаемся найти nm_id по vendor_code
             product_query = select(Product.nm_id).where(Product.vendor_code == product_id)
             product_result = await db.execute(product_query)
             product_data = product_result.scalars().first()
-            
+
+            if not product_data:
+                # 2) Если не нашли, проверяем nm_id
+                product_query_nm = select(Product.nm_id).where(Product.nm_id == str(product_id))
+                product_result_nm = await db.execute(product_query_nm)
+                product_data = product_result_nm.scalars().first()
+
             if product_data:
-                # Приводим nm_id к строке для сравнения с Feedback.article
                 query = query.where(Feedback.article == str(product_data))
             else:
-                print(f"[DEBUG] Товар с vendor_code '{product_id}' не найден")
+                print(f"[DEBUG] Товар не найден ни по vendor_code, ни по nm_id: '{product_id}', фильтруем по article")
+                query = query.where(Feedback.article == str(product_id))
         except Exception as e:
-            print(f"[DEBUG] Ошибка при поиске товара по vendor_code '{product_id}': {e}")
+            print(f"[DEBUG] Ошибка при поиске товара '{product_id}': {e}")
     if date_from:
         query = query.where(Feedback.date >= date_from)
     if date_to:

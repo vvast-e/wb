@@ -437,26 +437,28 @@ const ShopSummaryWidget = ({ shopType }) => {
                     ) : errorProducts ? (
                         <div className="text-danger small">{errorProducts}</div>
                     ) : (
-                        <select
-                            className="form-select form-select-sm bg-secondary text-light"
-                            value=""
-                            onChange={e => {
-                                console.log('[DEBUG] Выбор товара в селекте:', e.target.value);
-                                if (e.target.value) {
-                                    addProduct(e.target.value);
-                                    e.target.value = "";
-                                }
-                            }}
-                            disabled={!selectedBrand}
-                        >
-                            <option value="">Добавить товар</option>
-                            {products.filter(p => !selectedProducts.includes(p.id)).map(p => {
-                                console.log('[DEBUG] Товар в селекте:', p);
-                                return (
-                                    <option key={p.id} value={p.id}>{p.id}</option>
-                                );
-                            })}
-                        </select>
+                        <div>
+                            <select
+                                className="form-select form-select-sm bg-secondary text-light"
+                                value=""
+                                onChange={e => {
+                                    console.log('[DEBUG] Выбор товара в селекте:', e.target.value);
+                                    if (e.target.value) {
+                                        addProduct(e.target.value);
+                                        e.target.value = "";
+                                    }
+                                }}
+                                disabled={!selectedBrand}
+                            >
+                                <option value="">Добавить товар</option>
+                                {products.filter(p => !selectedProducts.includes(p.id)).map(p => {
+                                    console.log('[DEBUG] Товар в селекте:', p);
+                                    return (
+                                        <option key={p.id} value={p.id}>{p.id}</option>
+                                    );
+                                })}
+                            </select>
+                        </div>
                     )}
                 </div>
                 <div>
@@ -508,21 +510,6 @@ const ShopSummaryWidget = ({ shopType }) => {
                     <div className="bg-secondary rounded p-2 h-100">
                         <div className="d-flex justify-content-between align-items-center mb-2">
                             <h6 className="mb-0 fw-bold">Параметр для отображения:</h6>
-                            <button
-                                type="button"
-                                className="btn btn-outline-warning btn-sm"
-                                onClick={handleResetParameters}
-                                title="Сбросить параметры"
-                                style={{
-                                    minWidth: '32px',
-                                    height: '32px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                }}
-                            >
-                                <i className="fas fa-undo" style={{ fontSize: '12px' }}></i>
-                            </button>
                         </div>
                         <input
                             type="text"

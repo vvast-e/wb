@@ -37,7 +37,7 @@ async def create_feedback(
     is_negative = 1 if rating <= 2 else 0
     
     feedback = Feedback(
-        article=article,
+        article=str(article),  # Конвертируем артикул в строку
         brand=brand,
         author=author,
         rating=rating,
@@ -216,15 +216,11 @@ def parse_wb_date(date_str: str) -> datetime:
     from zoneinfo import ZoneInfo
     
     if not date_str or not isinstance(date_str, str):
-        print(f"[DEBUG] parse_wb_date: пустая или неверная дата: {date_str}")
         return None
     
     date_str = date_str.strip()
     if not date_str:
-        print(f"[DEBUG] parse_wb_date: пустая строка даты")
         return None
-    
-    print(f"[DEBUG] parse_wb_date: парсим дату '{date_str}'")
     
     # 1. ISO-формат с Z (UTC): "2025-07-22T22:30:23Z"
     try:
@@ -235,12 +231,10 @@ def parse_wb_date(date_str: str) -> datetime:
             msk = ZoneInfo("Europe/Moscow")
             dt = dt.replace(tzinfo=timezone.utc).astimezone(msk)
             result = dt.replace(tzinfo=None)
-            print(f"[DEBUG] parse_wb_date: успешно распарсена ISO дата с Z: {result}")
             return result
         # 2. ISO-формат без Z
         elif 'T' in date_str:
             dt = datetime.fromisoformat(date_str)
-            print(f"[DEBUG] parse_wb_date: успешно распарсена ISO дата: {dt}")
             return dt
     except Exception as e:
         print(f"[ERROR] parse_wb_date: не удалось распарсить ISO формат '{date_str}': {e}")
@@ -271,7 +265,6 @@ def parse_wb_date(date_str: str) -> datetime:
             if parsed > now:
                 print(f"[WARN] Будущая дата обнаружена: {parsed}, отзыв будет пропущен")
                 return None
-            print(f"[DEBUG] parse_wb_date: успешно распарсена русская дата: {parsed}")
             return parsed
         except Exception as e:
             print(f"[ERROR] strptime fail for '{parsed_date_str}': {e}")
@@ -347,7 +340,7 @@ async def save_feedbacks_batch(
         is_negative = 1 if rating <= 3 else 0
         
         # Анализируем аспекты отзыва используя новую систему аспектов
-        aspects = None
+        aspects = None  # Убираем анализ аспектов из парсинга - будет анализироваться отдельно
         
         # Проверяем, есть ли текст для анализа
         has_text_for_analysis = False
@@ -361,73 +354,17 @@ async def save_feedbacks_batch(
             has_text_for_analysis = True
         
         if has_text_for_analysis:
-            try:
-                from utils.aspect_processor import AspectProcessor
-                aspect_processor = AspectProcessor(db)
-                
-                # Создаем временный объект Feedback для анализа
-                temp_feedback = Feedback(
-                    text=text,
-                    main_text=main_text,
-                    pros_text=pros_text,
-                    cons_text=cons_text,
-                    rating=rating
-                )
-                
-                # Анализируем аспекты
-                aspects_result = await aspect_processor.process_feedbacks_batch(
-                    [temp_feedback], 
-                    f"Товар {data.get('article', 'unknown')}"
-                )
-                
-                if aspects_result["processed"] > 0 and temp_feedback.aspects:
-                    aspects = temp_feedback.aspects
-                    logger.info(f"Новые аспекты для отзыва {data.get('article', 'unknown')}: {aspects}")
-                else:
-                    logger.warning(f"Не удалось проанализировать аспекты для отзыва {data.get('article', 'unknown')}")
-                    
-            except Exception as aspect_error:
-                logger.warning(f"Ошибка анализатора аспектов: {aspect_error}")
-                # Fallback на старую систему
-                try:
-                    from utils.ai_aspect_analyzer import ai_aspect_analyzer
-                    if ai_aspect_analyzer:
-                        aspects_result = await ai_aspect_analyzer.analyze_single_review(
-                            text, 
-                            rating
-                        )
-                        aspects = {
-                            "positive": aspects_result["positive"],
-                            "negative": aspects_result["negative"]
-                        }
-                        logger.info(f"ИИ-аспекты (fallback) для отзыва {data.get('article', 'unknown')}: {aspects}")
-                    else:
-                        raise Exception("ИИ-анализатор недоступен")
-                except Exception as ai_error:
-                    logger.warning(f"Ошибка ИИ-анализатора (fallback): {ai_error}")
-                    # Последний fallback на локальный анализатор
-                    from utils.aspect_analyzer import aspect_analyzer
-                    aspects_result = await aspect_analyzer.analyze_single_review(
-                        text, 
-                        rating
-                    )
-                    aspects = {
-                        "positive": aspects_result["positive"],
-                        "negative": aspects_result["negative"]
-                    }
-                    logger.info(f"Локальные аспекты (fallback) для отзыва {data.get('article', 'unknown')}: {aspects}")
-            except Exception as e:
-                logger.warning(f"Не удалось проанализировать аспекты для отзыва {data.get('article', 'unknown')}: {e}")
-                aspects = None
+            # Просто помечаем, что отзыв готов к анализу аспектов
+            pass  # Анализ будет происходить отдельно через планировщик
         else:
             logger.info(f"Отзыв {data.get('article', 'unknown')} пропущен - нет текста для анализа аспектов")
         
         feedback = Feedback(
-            article=data.get('article'),
+            article=str(data.get('article', '')),  # Конвертируем артикул в строку
             brand=brand,
             author=data.get('author', 'Аноним'),
             rating=rating,
-            date=date_obj,  # Используем обработанную дату
+            date=date_obj,
             status=data.get('status', 'Без подтверждения'),
             text=text,
             main_text=main_text,
@@ -436,7 +373,8 @@ async def save_feedbacks_batch(
             user_id=user_id,
             history_id=history_id,
             is_negative=is_negative,
-            aspects=aspects  # Добавляем проанализированные аспекты
+            aspects=aspects,  # Добавляем проанализированные аспекты
+            wb_id=str(data.get('wb_id', ''))  # Конвертируем в строку
         )
         feedbacks.append(feedback)
     
@@ -599,44 +537,12 @@ async def sync_feedbacks_with_soft_delete_optimized(
             # Детальное логирование для отладки
             logger.info(f"Обрабатываем отзыв {fb_data['id']}: rating={rating}, is_negative={is_negative}, author='{author_name}', date='{date_str}' -> {date_obj}")
             
-            # Анализируем аспекты отзыва используя ИИ, если доступен
-            aspects = None
-            try:
-                # Сначала пробуем ИИ-анализатор
-                try:
-                    from utils.ai_aspect_analyzer import ai_aspect_analyzer
-                    if ai_aspect_analyzer:
-                        aspects_result = await ai_aspect_analyzer.analyze_single_review(
-                            fb_data.get('text', ''), 
-                            rating
-                        )
-                        aspects = {
-                            "positive": aspects_result["positive"],
-                            "negative": aspects_result["negative"]
-                        }
-                        logger.info(f"ИИ-аспекты для отзыва {fb_data['id']}: {aspects}")
-                    else:
-                        raise Exception("ИИ-анализатор недоступен")
-                except Exception as ai_error:
-                    logger.warning(f"Ошибка ИИ-анализатора, используем локальный: {ai_error}")
-                    # Fallback на локальный анализатор
-                    from utils.aspect_analyzer import aspect_analyzer
-                    aspects_result = await aspect_analyzer.analyze_single_review(
-                        fb_data.get('text', ''), 
-                        rating
-                    )
-                    aspects = {
-                        "positive": aspects_result["positive"],
-                        "negative": aspects_result["negative"]
-                    }
-                    logger.info(f"Локальные аспекты для отзыва {fb_data['id']}: {aspects}")
-            except Exception as e:
-                logger.warning(f"Не удалось проанализировать аспекты для отзыва {fb_data['id']}: {e}")
-                aspects = None
+            # Аспекты будут анализироваться отдельно через планировщик
+            aspects = None  # Убираем анализ аспектов из синхронизации
 
             new_feedback = Feedback(
-                wb_id=fb_data['id'],
-                article=fb_data.get('article'),  # Используем поле 'article' из парсера
+                wb_id=str(fb_data['id']),  # Конвертируем в строку
+                article=str(fb_data.get('article', '')),  # Конвертируем артикул в строку
                 brand=brand,
                 author=author_name,
                 rating=rating,

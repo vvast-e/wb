@@ -19,12 +19,9 @@ class AspectProcessor:
         """Обрабатывает батч отзывов и создает аспекты"""
         
         if not feedbacks:
-            logger.warning("Пустой список отзывов для обработки")
             return {"processed": 0, "new_aspects": 0, "errors": []}
         
         try:
-            logger.info(f"🚀 Начинаем обработку {len(feedbacks)} отзывов...")
-            
             # Фильтруем отзывы - оставляем только те, где есть текст для анализа
             # И НЕ анализируем уже проанализированные отзывы
             feedbacks_with_text = []
@@ -59,7 +56,6 @@ class AspectProcessor:
                                 has_real_aspects = bool(feedback.aspects.strip())
                         
                         if has_real_aspects:
-                            logger.debug(f"Отзыв {feedback.id} пропущен - уже имеет аспекты: {feedback.aspects}")
                             skipped_already_analyzed += 1
                             continue
                 
@@ -75,21 +71,14 @@ class AspectProcessor:
                 
                 if has_text:
                     feedbacks_with_text.append(feedback)
-                else:
-                    logger.debug(f"Отзыв {feedback.id} пропущен - нет текста для анализа")
             
             if not feedbacks_with_text:
-                logger.warning("Нет отзывов для анализа")
                 return {
                     "processed": 0, 
                     "new_aspects": 0, 
                     "errors": ["Нет отзывов для анализа"],
                     "skipped_already_analyzed": skipped_already_analyzed
                 }
-            
-            logger.info(f"📝 Отобрано {len(feedbacks_with_text)} отзывов для анализа из {len(feedbacks)}")
-            if skipped_already_analyzed > 0:
-                logger.info(f"⏭️  Пропущено уже проанализированных: {skipped_already_analyzed}")
             
             # 1. Подготавливаем тексты отзывов для ИИ
             reviews_texts = []
@@ -113,12 +102,11 @@ class AspectProcessor:
             
             # 2. Анализируем через ИИ
             if ai_aspect_analyzer:
-                logger.info("🤖 Используем ИИ-анализатор...")
-                ai_results = await ai_aspect_analyzer.analyze_reviews_with_dynamic_aspects(
-                    reviews_texts, product_name
+                # Используем безопасный батчевый анализатор с планировщиком
+                ai_results = await ai_aspect_analyzer.analyze_reviews_safely_with_scheduler(
+                    reviews_texts, product_name, max_batches_per_hour=20
                 )
             else:
-                logger.warning("⚠️  ИИ-анализатор недоступен, используем базовый анализ")
                 ai_results = await self._basic_aspect_analysis(reviews_texts, feedbacks_with_text)
             
             # 3. Сохраняем результаты в БД
@@ -126,10 +114,6 @@ class AspectProcessor:
             
             # Добавляем информацию о пропущенных отзывах
             save_results["skipped_already_analyzed"] = skipped_already_analyzed
-            
-            logger.info(f"✅ Обработка завершена: {save_results['processed']} отзывов, {save_results['new_aspects']} новых аспектов")
-            if skipped_already_analyzed > 0:
-                logger.info(f"⏭️  Пропущено уже проанализированных: {skipped_already_analyzed}")
             
             return save_results
             
@@ -142,12 +126,9 @@ class AspectProcessor:
         """Безопасная обработка больших объемов отзывов с планировщиком и контролем лимитов"""
         
         if not feedbacks:
-            logger.warning("Пустой список отзывов для обработки")
             return {"processed": 0, "new_aspects": 0, "errors": []}
         
         try:
-            logger.info(f"🚀 Начинаем безопасную обработку {len(feedbacks)} отзывов...")
-            
             # Фильтруем отзывы - оставляем только те, где есть текст для анализа
             # И НЕ анализируем уже проанализированные отзывы
             feedbacks_with_text = []
@@ -156,7 +137,6 @@ class AspectProcessor:
             for feedback in feedbacks:
                 # Проверяем, не анализировался ли уже этот отзыв
                 if feedback.aspects and feedback.aspects != [] and feedback.aspects != '[]' and feedback.aspects != '{}':
-                    logger.debug(f"Отзыв {feedback.id} пропущен - уже имеет аспекты: {feedback.aspects}")
                     skipped_already_analyzed += 1
                     continue
                 
@@ -172,21 +152,14 @@ class AspectProcessor:
                 
                 if has_text:
                     feedbacks_with_text.append(feedback)
-                else:
-                    logger.debug(f"Отзыв {feedback.id} пропущен - нет текста для анализа")
             
             if not feedbacks_with_text:
-                logger.warning("Нет отзывов для анализа")
                 return {
                     "processed": 0, 
                     "new_aspects": 0, 
                     "errors": ["Нет отзывов для анализа"],
                     "skipped_already_analyzed": skipped_already_analyzed
                 }
-            
-            logger.info(f"📝 Отобрано {len(feedbacks_with_text)} отзывов для анализа из {len(feedbacks)}")
-            if skipped_already_analyzed > 0:
-                logger.info(f"⏭️  Пропущено уже проанализированных: {skipped_already_analyzed}")
             
             # 1. Подготавливаем тексты отзывов для ИИ
             reviews_texts = []
@@ -210,20 +183,10 @@ class AspectProcessor:
             
             # 2. Анализируем через ИИ с безопасным планировщиком
             if ai_aspect_analyzer:
-                logger.info("🤖 Используем ИИ-анализатор с безопасным планировщиком...")
-                
-                # Показываем текущий статус лимитов
-                status = ai_aspect_analyzer.get_rate_limit_status()
-                logger.info(f"📊 Статус API лимитов:")
-                logger.info(f"   Текущий ключ: {status['current_key']}")
-                logger.info(f"   Запросов за минуту: {status['requests_last_minute']}/{status['max_requests_per_minute']}")
-                logger.info(f"   Запросов за день по ключам: {status['daily_counts']}")
-                
                 ai_results = await ai_aspect_analyzer.analyze_reviews_safely_with_scheduler(
                     reviews_texts, product_name, max_batches_per_hour
                 )
             else:
-                logger.warning("⚠️  ИИ-анализатор недоступен, используем базовый анализ")
                 ai_results = await self._basic_aspect_analysis(reviews_texts, feedbacks_with_text)
             
             # 3. Сохраняем результаты в БД
@@ -231,10 +194,6 @@ class AspectProcessor:
             
             # Добавляем информацию о пропущенных отзывах
             save_results["skipped_already_analyzed"] = skipped_already_analyzed
-            
-            logger.info(f"✅ Безопасная обработка завершена: {save_results['processed']} отзывов, {save_results['new_aspects']} новых аспектов")
-            if skipped_already_analyzed > 0:
-                logger.info(f"⏭️  Пропущено уже проанализированных: {skipped_already_analyzed}")
             
             return save_results
             
@@ -482,14 +441,11 @@ class AspectProcessor:
             feedbacks = result.scalars().all()
             
             if not feedbacks:
-                logger.info("Нет отзывов для обработки")
-                return {"processed": 0, "new_aspects": 0, "skipped_already_analyzed": 0}
+                return {"processed": 0, "new_aspects": 0, "errors": ["Нет отзывов для анализа"]}
             
-            logger.info(f"Найдено {len(feedbacks)} отзывов для обработки")
-            
-            # Обрабатываем батч
+            # Обрабатываем отзывы батчем
             return await self.process_feedbacks_batch(feedbacks)
             
         except Exception as e:
-            logger.error(f"Ошибка при обработке существующих отзывов: {e}")
+            logger.error(f"❌ Ошибка при обработке существующих отзывов: {e}")
             raise

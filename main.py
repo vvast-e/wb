@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from sqlalchemy import select
+import asyncio
 
 from database import engine, Base, AsyncSessionLocal
 from routers import items, auth, tasks, admin, history, feedbacks, analytics, product_reviews, shops, aspect_analysis
@@ -38,8 +39,17 @@ async def startup_event():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Запускаем планировщик
-    start_scheduler()
+    # Запускаем планировщик в фоновой задаче
+    asyncio.create_task(start_scheduler_async())
+    print("🚀 Планировщик запущен в фоновой задаче")
+
+
+async def start_scheduler_async():
+    """Асинхронный запуск планировщика"""
+    try:
+        start_scheduler()
+    except Exception as e:
+        print(f"❌ Ошибка запуска планировщика: {e}")
 
 
 @app.get("/")
