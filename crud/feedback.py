@@ -376,6 +376,7 @@ async def save_feedbacks_batch(
             aspects=aspects,  # Добавляем проанализированные аспекты
             wb_id=str(data.get('wb_id', ''))  # Конвертируем в строку
         )
+        
         feedbacks.append(feedback)
     
     if feedbacks:
@@ -384,6 +385,21 @@ async def save_feedbacks_batch(
         
         for feedback in feedbacks:
             await db.refresh(feedback)
+            
+            # Обновляем отслеживание времени в топах после сохранения
+            try:
+                from crud.analytics import update_feedback_top_tracking
+                await update_feedback_top_tracking(
+                    db=db,
+                    feedback_id=feedback.id,
+                    article=feedback.article,
+                    brand=feedback.brand,
+                    user_id=user_id,
+                    feedback_date=feedback.date,
+                    is_negative=bool(feedback.is_negative)
+                )
+            except Exception as e:
+                print(f"[WARN] Не удалось обновить топ-трекинг для отзыва {feedback.id}: {e}")
     
     return feedbacks
 

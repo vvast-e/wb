@@ -159,11 +159,13 @@ const ReputationEfficiencyPage = () => {
                     label = 'Доля удаленных (%)';
                 } else if (metric.key.includes('top_') || metric.key === 'deletion_time') {
                     // Для времени используем среднее значение за период
-                    const timeStr = efficiencyData[metric.key] || '0ч 00мин';
-                    const hours = parseFloat(timeStr.replace('ч', '').replace('мин', '').split(' ')[0]);
-                    const minutes = parseFloat(timeStr.replace('ч', '').replace('мин', '').split(' ')[1] || 0);
-                    const avgHours = hours + minutes / 60;
-                    data = efficiencyData.trends.map(() => avgHours);
+                    const timeStr = efficiencyData[metric.key] || '00:00:00';
+                    const timeParts = timeStr.split(':');
+                    const hours = parseFloat(timeParts[0] || 0);
+                    const minutes = parseFloat(timeParts[1] || 0);
+                    const seconds = parseFloat(timeParts[2] || 0);
+                    const totalHours = hours + minutes / 60 + seconds / 3600;
+                    data = efficiencyData.trends.map(() => totalHours);
                     label = `${metric.name} (часы)`;
                 }
 
@@ -197,10 +199,13 @@ const ReputationEfficiencyPage = () => {
                     data = [efficiencyData.deleted_count / efficiencyData.total_reviews * 100];
                     label = 'Доля удаленных (%)';
                 } else if (metric.key.includes('top_') || metric.key === 'deletion_time') {
-                    const timeStr = efficiencyData[metric.key] || '0ч 00мин';
-                    const hours = parseFloat(timeStr.replace('ч', '').replace('мин', '').split(' ')[0]);
-                    const minutes = parseFloat(timeStr.replace('ч', '').replace('мин', '').split(' ')[1] || 0);
-                    data = [hours + minutes / 60];
+                    const timeStr = efficiencyData[metric.key] || '00:00:00';
+                    const timeParts = timeStr.split(':');
+                    const hours = parseFloat(timeParts[0] || 0);
+                    const minutes = parseFloat(timeParts[1] || 0);
+                    const seconds = parseFloat(timeParts[2] || 0);
+                    const totalHours = hours + minutes / 60 + seconds / 3600;
+                    data = [totalHours];
                     label = `${metric.name} (часы)`;
                 }
 
@@ -383,7 +388,7 @@ const ReputationEfficiencyPage = () => {
                                             style={{ cursor: 'pointer' }}
                                         >
                                             <span className="text-light small">Время в ТОП 1:</span>
-                                            <span className="text-light fw-bold">{efficiencyData.top_1_time || '0ч 00мин'}</span>
+                                            <span className="text-light fw-bold">{efficiencyData.top_1_time || '00:00:00'}</span>
                                         </div>
                                     </div>
                                     <div className="mb-2">
@@ -393,7 +398,7 @@ const ReputationEfficiencyPage = () => {
                                             style={{ cursor: 'pointer' }}
                                         >
                                             <span className="text-light small">Время в ТОП 3:</span>
-                                            <span className="text-light fw-bold">{efficiencyData.top_3_time || '0ч 00мин'}</span>
+                                            <span className="text-light fw-bold">{efficiencyData.top_3_time || '00:00:00'}</span>
                                         </div>
                                     </div>
                                     <div className="mb-2">
@@ -403,7 +408,7 @@ const ReputationEfficiencyPage = () => {
                                             style={{ cursor: 'pointer' }}
                                         >
                                             <span className="text-light small">Время в ТОП 5:</span>
-                                            <span className="text-light fw-bold">{efficiencyData.top_5_time || '0ч 00мин'}</span>
+                                            <span className="text-light fw-bold">{efficiencyData.top_5_time || '00:00:00'}</span>
                                         </div>
                                     </div>
                                     <div className="mb-2">
@@ -413,7 +418,7 @@ const ReputationEfficiencyPage = () => {
                                             style={{ cursor: 'pointer' }}
                                         >
                                             <span className="text-light small">Время в ТОП 10:</span>
-                                            <span className="text-light fw-bold">{efficiencyData.top_10_time || '0ч 00мин'}</span>
+                                            <span className="text-light fw-bold">{efficiencyData.top_10_time || '00:00:00'}</span>
                                         </div>
                                     </div>
                                     <div className="mb-2">
@@ -423,7 +428,7 @@ const ReputationEfficiencyPage = () => {
                                             style={{ cursor: 'pointer' }}
                                         >
                                             <span className="text-light small">Время удаления:</span>
-                                            <span className="text-light fw-bold">{efficiencyData.deletion_time || '0ч 00мин'}</span>
+                                            <span className="text-light fw-bold">{efficiencyData.deletion_time || '00:00:00'}</span>
                                         </div>
                                     </div>
                                 </Card.Body>

@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from models.feedback import Feedback
 from models.user import User
 from models.product import Product
+from models.feedback import FeedbackTopTracking
 
 import logging
 logger = logging.getLogger(__name__)
@@ -561,223 +562,607 @@ async def get_shop_products_crud(
 
 
 async def get_efficiency_data_crud(
-        db: AsyncSession,
-        user_id: int,
-        shop_id: str,
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
-        product_id: Optional[str] = None
+    db: AsyncSession,
+    user_id: int,
+    shop_id: str,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    product_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """Получение данных эффективности отдела репутации"""
-    from datetime import datetime, timedelta
+    from models.feedback import Feedback, FeedbackTopTracking
+    from sqlalchemy import func, and_, or_
     
-    # Базовый запрос
+    # Базовый запрос для отзывов
     query = select(Feedback).where(
         and_(
-            Feedback.brand == shop_id,
-            Feedback.user_id == user_id
+            Feedback.user_id == user_id,
+            Feedback.brand == shop_id
         )
     )
 
+    # Диапазон дат: учитываем и date, и created_at
     if start_date:
-        query = query.where(Feedback.date >= start_date)
+        query = query.where(func.coalesce(Feedback.date, Feedback.created_at) >= start_date)
     if end_date:
-        query = query.where(Feedback.date <= end_date)
-    if product_id:
-        # Нормализация бренда для сравнения
-        normalized_shop = shop_id.lower() if shop_id else ""
-        if normalized_shop == "mona biolab":
-            normalized_shop = "mona premium"
-        logger.debug(f"[DEBUG] Нормализованный shop: '{normalized_shop}'")
-        
-        # Ищем товар по vendor_code и brand в таблице products
-        logger.debug(f"[DEBUG] Ищем товар по vendor_code: '{product_id}' и brand: '{normalized_shop}'")
-        product_query = select(Product.nm_id).where(
-            and_(Product.vendor_code == product_id, func.lower(Product.brand) == normalized_shop)
-        )
-        product_result = await db.execute(product_query)
-        product_data = product_result.scalars().first()
-        logger.debug(f"[DEBUG] Найден nm_id: {product_data}")
-        
-        if product_data:
-            # Преобразуем nm_id в int для сравнения с Feedback.article
-            try:
-                nm_id_int = int(product_data)
-                query = query.where(Feedback.article == str(nm_id_int))
-                logger.debug(f"[DEBUG] Применяем фильтр по найденному nm_id: {nm_id_int}")
-            except (ValueError, TypeError):
-                logger.debug(f"[DEBUG] Не удалось преобразовать nm_id '{product_data}' в int")
-                logger.debug(f"[DEBUG] Пропускаем фильтр по товару для '{product_id}'")
-        else:
-            # Если товар не найден, не возвращаем пустой результат, просто не применяем фильтр
-            logger.debug(f"[DEBUG] Товар с vendor_code '{product_id}' и brand '{normalized_shop}' не найден, пропускаем фильтр")
+        query = query.where(func.coalesce(Feedback.date, Feedback.created_at) <= end_date)
 
+    # Фильтр по товару: product_id приходит как vendor_code, а в Feedback.article хранится nm_id
+    nm_id_for_filter = None
+    if product_id:
+        try:
+            normalized_shop = shop_id.lower() if isinstance(shop_id, str) else ""
+            if normalized_shop == "mona biolab":
+                normalized_shop = "Mona Premium"
+
+            # 1) vendor_code + brand
+            nm_q = select(Product.nm_id).where(
+                and_(Product.vendor_code == product_id, func.lower(Product.brand) == normalized_shop)
+            )
+            nm_res = await db.execute(nm_q)
+            nm_id_value = nm_res.scalars().first()
+
+            # 2) только vendor_code
+            if nm_id_value is None:
+                nm_q2 = select(Product.nm_id).where(Product.vendor_code == product_id)
+                nm_res2 = await db.execute(nm_q2)
+                nm_id_value = nm_res2.scalars().first()
+
+            # 3) product_id уже nm_id
+            if nm_id_value is None:
+                nm_q3 = select(Product.nm_id).where(Product.nm_id == str(product_id))
+                nm_res3 = await db.execute(nm_q3)
+                nm_id_value = nm_res3.scalars().first()
+
+            if nm_id_value is not None:
+                nm_id_for_filter = str(nm_id_value)
+                query = query.where(Feedback.article == nm_id_for_filter)
+        except Exception:
+            nm_id_for_filter = None
+    
+    # Получаем отзывы
     result = await db.execute(query)
     feedbacks = result.scalars().all()
-
+    
     if not feedbacks:
-        return None
-
-    # 1. Базовая статистика
+        return {
+            "total_reviews": 0,
+            "negative_count": 0,
+            "deleted_count": 0,
+            "ratings_distribution": {},
+            "top_1_time": "00:00:00",
+            "top_3_time": "00:00:00", 
+            "top_5_time": "00:00:00",
+            "top_10_time": "00:00:00",
+            "deletion_time": "00:00:00"
+        }
+    
+    # Базовая статистика
     total_reviews = len(feedbacks)
-    negative_count = sum(1 for f in feedbacks if f.is_negative)
+    negative_count = sum(1 for f in feedbacks if getattr(f, 'is_negative', 0))
     deleted_count = sum(1 for f in feedbacks if getattr(f, 'is_deleted', False))
-
-    # 2. Расчет времени пребывания негатива в ТОПе
-    def calculate_top_time(feedbacks_list):
-        """Рассчитывает среднее время пребывания негатива в ТОПе"""
-        if not feedbacks_list:
-            return {
-                "top_1": 0, "top_3": 0, "top_5": 0, "top_10": 0
-            }
-        
-        # Сортируем отзывы по дате (новые сверху)
-        sorted_feedbacks = sorted(feedbacks_list, key=lambda x: x.date or x.created_at, reverse=True)
-        
-        top_times = {"top_1": [], "top_3": [], "top_5": [], "top_10": []}
-        now = datetime.now()
-        
-        for i, negative_feedback in enumerate(sorted_feedbacks):
-            if not negative_feedback.is_negative:
-                continue
-                
-            negative_date = negative_feedback.date or negative_feedback.created_at
-            if not negative_date:
-                continue
-            
-            # Ищем следующий положительный отзыв (рейтинг 4-5) после негативного
-            next_positive_date = None
-            for j in range(i + 1, len(sorted_feedbacks)):
-                if sorted_feedbacks[j].rating >= 4:
-                    next_positive_date = sorted_feedbacks[j].date or sorted_feedbacks[j].created_at
-                    break
-            
-            # Если нет следующего положительного, считаем до текущего момента
-            if not next_positive_date:
-                next_positive_date = now
-            
-            # Рассчитываем время пребывания в каждом ТОПе
-            time_diff = next_positive_date - negative_date
-            hours = time_diff.total_seconds() / 3600
-            
-            # Определяем позицию в ТОПе на момент негативного отзыва
-            position = i + 1  # Позиция в отсортированном списке
-            
-            if position <= 1:
-                top_times["top_1"].append(hours)
-            if position <= 3:
-                top_times["top_3"].append(hours)
-            if position <= 5:
-                top_times["top_5"].append(hours)
-            if position <= 10:
-                top_times["top_10"].append(hours)
-        
-        # Вычисляем средние значения
-        result = {}
-        for top_key in top_times:
-            values = top_times[top_key]
-            if values:
-                avg_hours = sum(values) / len(values)
-                hours_int = int(avg_hours)
-                minutes = int((avg_hours - hours_int) * 60)
-                result[top_key] = f"{hours_int}ч {minutes:02d}мин"
-            else:
-                result[top_key] = "0ч 00мин"
-        
-        return result
     
-    # 3. Расчет среднего времени удаления негатива
-    def calculate_deletion_time(feedbacks_list):
-        """Рассчитывает среднее время удаления негатива"""
-        negative_feedbacks = [f for f in feedbacks_list if f.is_negative and f.is_deleted]
-        
-        if not negative_feedbacks:
-            return "0ч 00мин"
-        
-        total_hours = 0
-        count = 0
-        
-        for feedback in negative_feedbacks:
-            if feedback.date and feedback.deleted_at:
-                time_diff = feedback.deleted_at - feedback.date
-                total_hours += time_diff.total_seconds() / 3600
-                count += 1
-        
-        if count == 0:
-            return "0ч 00мин"
-        
-        avg_hours = total_hours / count
-        hours_int = int(avg_hours)
-        minutes = int((avg_hours - hours_int) * 60)
-        return f"{hours_int}ч {minutes:02d}мин"
-    
-    # Выполняем расчеты
-    top_times = calculate_top_time(feedbacks)
-    deletion_time = calculate_deletion_time(feedbacks)
-    
-    # Дополнительная статистика
-    processed_count = sum(1 for f in feedbacks if f.is_processed)
-    pending_count = total_reviews - processed_count
-    
-    # Распределение рейтингов
+    # Распределение по рейтингам
     ratings_distribution = {}
     for rating in range(1, 6):
-        ratings_distribution[f"rating_{rating}"] = sum(1 for f in feedbacks if f.rating == rating)
+        count = sum(1 for f in feedbacks if f.rating == rating)
+        ratings_distribution[f"rating_{rating}"] = count
     
-    # 4. Формируем данные для графика (тренды по дням)
-    def generate_trends_data(feedbacks_list, start_date, end_date):
-        """Генерирует данные для графиков по дням"""
-        if not start_date or not end_date:
-            return []
-        
-        trends = []
-        current_date = start_date
-        
-        while current_date <= end_date:
-            day_feedbacks = [f for f in feedbacks_list 
-                           if f.date and f.date.date() == current_date]
-            
-            day_negative = sum(1 for f in day_feedbacks if f.is_negative)
-            day_deleted = sum(1 for f in day_feedbacks if f.is_deleted)
-            
-            trends.append({
-                "date": current_date.strftime("%d.%m"),
-                "total": len(day_feedbacks),
-                "negative": day_negative,
-                "deleted": day_deleted,
-                "negative_percent": round((day_negative / len(day_feedbacks) * 100) if day_feedbacks else 0, 1),
-                "deleted_percent": round((day_deleted / len(day_feedbacks) * 100) if day_feedbacks else 0, 1)
-            })
-            
-            current_date += timedelta(days=1)
-        
-        return trends
-    
-    trends_data = generate_trends_data(feedbacks, start_date, end_date) if start_date and end_date else []
+    # Тренды по дням с накопительной долей (как в shops_summary)
+    day_aggregates: Dict[str, Dict[str, Any]] = {}
+    for f in feedbacks:
+        dt_val = getattr(f, 'date', None) or getattr(f, 'created_at', None)
+        if not dt_val:
+            continue
+        d = dt_val.date().isoformat()
+        if d not in day_aggregates:
+            day_aggregates[d] = {
+                'total': 0,
+                'negative': 0,
+                'deleted': 0
+            }
+        day_aggregates[d]['total'] += 1
+        if getattr(f, 'is_negative', 0):
+            day_aggregates[d]['negative'] += 1
+        if getattr(f, 'is_deleted', False):
+            day_aggregates[d]['deleted'] += 1
 
+    trends: List[Dict[str, Any]] = []
+    cumulative_total = 0
+    cumulative_negative = 0
+    cumulative_deleted = 0
+    for d in sorted(day_aggregates.keys()):
+        counts = day_aggregates[d]
+        cumulative_total += counts['total']
+        cumulative_negative += counts['negative']
+        cumulative_deleted += counts['deleted']
+        trends.append({
+            "date": d,
+            "negative_percent": round((cumulative_negative / cumulative_total) * 100, 1) if cumulative_total > 0 else 0.0,
+            "deleted_percent": round((cumulative_deleted / cumulative_total) * 100, 1) if cumulative_total > 0 else 0.0
+        })
+
+    # Получаем данные о времени в топах
+    top_tracking_query = select(FeedbackTopTracking).where(
+        and_(
+            FeedbackTopTracking.user_id == user_id,
+            FeedbackTopTracking.brand == shop_id
+        )
+    )
+    if nm_id_for_filter:
+        top_tracking_query = top_tracking_query.where(FeedbackTopTracking.article == nm_id_for_filter)
+    
+    top_tracking_result = await db.execute(top_tracking_query)
+    top_tracking_records = top_tracking_result.scalars().all()
+    
+    # Вычисляем среднее время в топах
+    def format_time_from_seconds(seconds):
+        if seconds == 0:
+            return "00:00:00"
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        remaining_seconds = seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{remaining_seconds:02d}"
+    
+    # С учетом текущего нахождения в топе и дат диапазона
+    def calculate_avg_time_in_top(level: int) -> str:
+        time_attr = f"time_in_top_{level}"
+        entered_attr = f"entered_top_{level}_at"
+        is_in_attr = f"is_in_top_{level}"
+
+        range_start = datetime.combine(start_date, datetime.min.time()) if start_date else None
+        range_end = datetime.combine(end_date, datetime.max.time()) if end_date else None
+        now_dt = datetime.utcnow()
+
+        seconds_values: List[int] = []
+        for record in top_tracking_records:
+            base_seconds = int(getattr(record, time_attr, 0) or 0)
+            extra = 0
+            if getattr(record, is_in_attr, False):
+                entered_at = getattr(record, entered_attr, None)
+                if entered_at is not None:
+                    start_point = entered_at
+                    if range_start and start_point < range_start:
+                        start_point = range_start
+                    end_point = now_dt
+                    if range_end and end_point > range_end:
+                        end_point = range_end
+                    if end_point and start_point and end_point > start_point:
+                        extra = int((end_point - start_point).total_seconds())
+            total = base_seconds + extra
+            if total > 0:
+                seconds_values.append(total)
+
+        if not seconds_values:
+            return "00:00:00"
+        avg = sum(seconds_values) // len(seconds_values)
+        return format_time_from_seconds(avg)
+    
+    top_1_time = calculate_avg_time_in_top(1)
+    top_3_time = calculate_avg_time_in_top(3)
+    top_5_time = calculate_avg_time_in_top(5)
+    top_10_time = calculate_avg_time_in_top(10)
+
+    # Fallback: если трекинг не дал значений, оцениваем по хронологии отзывов товара
+    async def compute_avg_top_time_via_chronology(k: int) -> str:
+        if not nm_id_for_filter:
+            return "00:00:00"
+        # Берем все отзывы товара (любой тональности), сортируем по времени
+        fb_query = select(Feedback).where(
+            and_(
+                Feedback.user_id == user_id,
+                Feedback.brand == shop_id,
+                Feedback.article == nm_id_for_filter
+            )
+        ).order_by(func.coalesce(Feedback.date, Feedback.created_at).asc())
+        if start_date:
+            fb_query = fb_query.where(func.coalesce(Feedback.date, Feedback.created_at) >= start_date)
+        if end_date:
+            fb_query = fb_query.where(func.coalesce(Feedback.date, Feedback.created_at) <= end_date)
+        fb_result = await db.execute(fb_query)
+        fb_list = fb_result.scalars().all()
+        if not fb_list:
+            return "00:00:00"
+
+        # Считаем длительность нахождения негативов в топ-K: от момента появления до появления K-го следующего отзыва
+        durations: List[int] = []
+        times = []
+        for f in fb_list:
+            dt_val = getattr(f, 'date', None) or getattr(f, 'created_at', None)
+            if dt_val is None:
+                continue
+            times.append(dt_val)
+        n = len(times)
+        for i, f in enumerate(fb_list):
+            if not getattr(f, 'is_negative', 0):
+                continue
+            # индекс K-го следующего отзыва
+            j = i + k
+            start_t = getattr(f, 'date', None) or getattr(f, 'created_at', None)
+            if start_t is None:
+                continue
+            if j < n:
+                end_t = times[j]
+            else:
+                # если меньше K последующих отзывов — до конца периода/текущего времени
+                end_t = datetime.utcnow()
+                if end_date:
+                    end_t = min(end_t, datetime.combine(end_date, datetime.max.time()))
+            # обрезаем начальную границу
+            if start_date:
+                start_t = max(start_t, datetime.combine(start_date, datetime.min.time()))
+            if end_t > start_t:
+                durations.append(int((end_t - start_t).total_seconds()))
+        if not durations:
+            return "00:00:00"
+        avg_sec = sum(durations) // len(durations)
+        return format_time_from_seconds(avg_sec)
+
+    if top_1_time == top_3_time == top_5_time == top_10_time == "00:00:00":
+        # Пробуем оценить по хронологии для выбранного товара
+        top_1_time = await compute_avg_top_time_via_chronology(1)
+        top_3_time = await compute_avg_top_time_via_chronology(3)
+        top_5_time = await compute_avg_top_time_via_chronology(5)
+        top_10_time = await compute_avg_top_time_via_chronology(10)
+    
+    # Время удаления (пока заглушка)
+    deletion_time = "00:00:00"
+    
     return {
-        # Базовая статистика
         "total_reviews": total_reviews,
         "negative_count": negative_count,
         "deleted_count": deleted_count,
-        "processed_count": processed_count,
-        "pending_count": pending_count,
-        
-        # Время пребывания в ТОПе
-        "top_1_time": top_times["top_1"],
-        "top_3_time": top_times["top_3"],
-        "top_5_time": top_times["top_5"],
-        "top_10_time": top_times["top_10"],
-        
-        # Время удаления
-        "deletion_time": deletion_time,
-        
-        # Распределение рейтингов
         "ratings_distribution": ratings_distribution,
-        
-        # Данные для графиков
-        "trends": trends_data
+        "negative_percentage": round((negative_count / total_reviews) * 100, 1) if total_reviews > 0 else 0.0,
+        "deleted_percentage": round((deleted_count / total_reviews) * 100, 1) if total_reviews > 0 else 0.0,
+        "top_1_time": top_1_time,
+        "top_3_time": top_3_time,
+        "top_5_time": top_5_time,
+        "top_10_time": top_10_time,
+        "deletion_time": deletion_time,
+        "trends": trends
     }
+
+
+async def update_feedback_top_tracking(
+    db: AsyncSession,
+    feedback_id: int,
+    article: str,
+    brand: str,
+    user_id: int,
+    feedback_date: datetime,
+    is_negative: bool
+) -> None:
+    """Обновление отслеживания времени в топах для негативного отзыва"""
+    from sqlalchemy import select, and_
+    
+    # Создаем записи отслеживания только для негативных отзывов
+    tracking = None
+    if is_negative:
+        # Получаем или создаем запись отслеживания
+        tracking_query = select(FeedbackTopTracking).where(
+            and_(
+                FeedbackTopTracking.feedback_id == feedback_id,
+                FeedbackTopTracking.article == article,
+                FeedbackTopTracking.brand == brand,
+                FeedbackTopTracking.user_id == user_id
+            )
+        )
+        
+        tracking_result = await db.execute(tracking_query)
+        tracking = tracking_result.scalars().first()
+        
+        if not tracking:
+            tracking = FeedbackTopTracking(
+                feedback_id=feedback_id,
+                article=article,
+                brand=brand,
+                user_id=user_id
+            )
+            db.add(tracking)
+    
+    # Обновляем время в топах для всех отзывов (негативные могут выталкиваться позитивными)
+    # Получаем последние отзывы для определения позиции в топах
+    recent_feedbacks_query = select(Feedback).where(
+        and_(
+            Feedback.user_id == user_id,
+            Feedback.article == article,
+            Feedback.brand == brand,
+            Feedback.date <= feedback_date
+        )
+    ).order_by(Feedback.date.desc())
+    
+    recent_result = await db.execute(recent_feedbacks_query)
+    recent_feedbacks = recent_result.scalars().all()
+    
+    # Определяем позицию в топах
+    position = 1
+    for i, recent_feedback in enumerate(recent_feedbacks):
+        if recent_feedback.id == feedback_id:
+            position = i + 1
+            break
+    
+    # Если это негативный отзыв, обновляем его статус в топах
+    if is_negative:
+        # Обновляем статус в топах
+        if position == 1 and not tracking.is_in_top_1:
+            tracking.entered_top_1_at = feedback_date
+            tracking.is_in_top_1 = True
+        elif position > 1 and tracking.is_in_top_1:
+            # Выпал из топ-1
+            tracking.exited_top_1_at = feedback_date
+            tracking.is_in_top_1 = False
+            if tracking.entered_top_1_at:
+                tracking.time_in_top_1 += int((feedback_date - tracking.entered_top_1_at).total_seconds())
+        
+        if 1 <= position <= 3 and not tracking.is_in_top_3:
+            tracking.entered_top_3_at = feedback_date
+            tracking.is_in_top_3 = True
+        elif position > 3 and tracking.is_in_top_3:
+            # Выпал из топ-3
+            tracking.exited_top_3_at = feedback_date
+            tracking.is_in_top_3 = False
+            if tracking.entered_top_3_at:
+                tracking.time_in_top_3 += int((feedback_date - tracking.entered_top_3_at).total_seconds())
+        
+        if 1 <= position <= 5 and not tracking.is_in_top_5:
+            tracking.entered_top_5_at = feedback_date
+            tracking.is_in_top_5 = True
+        elif position > 5 and tracking.is_in_top_5:
+            # Выпал из топ-5
+            tracking.exited_top_5_at = feedback_date
+            tracking.is_in_top_5 = False
+            if tracking.entered_top_5_at:
+                tracking.time_in_top_5 += int((feedback_date - tracking.entered_top_5_at).total_seconds())
+        
+        if 1 <= position <= 10 and not tracking.is_in_top_10:
+            tracking.entered_top_10_at = feedback_date
+            tracking.is_in_top_10 = True
+        elif position > 10 and tracking.is_in_top_10:
+            # Выпал из топ-10
+            tracking.exited_top_10_at = feedback_date
+            tracking.is_in_top_10 = False
+            if tracking.entered_top_10_at:
+                tracking.time_in_top_10 += int((feedback_date - tracking.entered_top_10_at).total_seconds())
+    
+    # Если это позитивный отзыв, проверяем, не выталкивает ли он негативные из топов
+    else:
+        # Получаем все записи отслеживания для этого товара
+        all_tracking_query = select(FeedbackTopTracking).where(
+            and_(
+                FeedbackTopTracking.article == article,
+                FeedbackTopTracking.brand == brand,
+                FeedbackTopTracking.user_id == user_id
+            )
+        )
+        
+        all_tracking_result = await db.execute(all_tracking_query)
+        all_tracking_records = all_tracking_result.scalars().all()
+        
+        # Пересчитываем позиции всех негативных отзывов
+        for tracking_record in all_tracking_records:
+            # Получаем позицию этого негативного отзыва из уже полученного списка
+            negative_position = None
+            for i, feedback in enumerate(recent_feedbacks):
+                if feedback.id == tracking_record.feedback_id:
+                    negative_position = i + 1
+                    break
+            
+            if negative_position is None:
+                continue
+            
+            # Проверяем топ-1
+            if tracking_record.is_in_top_1 and negative_position > 1:
+                # Негативный отзыв выпал из топ-1
+                tracking_record.exited_top_1_at = feedback_date
+                tracking_record.is_in_top_1 = False
+                if tracking_record.entered_top_1_at:
+                    tracking_record.time_in_top_1 += int((feedback_date - tracking_record.entered_top_1_at).total_seconds())
+            
+            # Проверяем топ-3
+            if tracking_record.is_in_top_3 and negative_position > 3:
+                # Негативный отзыв выпал из топ-3
+                tracking_record.exited_top_3_at = feedback_date
+                tracking_record.is_in_top_3 = False
+                if tracking_record.entered_top_3_at:
+                    tracking_record.time_in_top_3 += int((feedback_date - tracking_record.entered_top_3_at).total_seconds())
+            
+            # Проверяем топ-5
+            if tracking_record.is_in_top_5 and negative_position > 5:
+                # Негативный отзыв выпал из топ-5
+                tracking_record.exited_top_5_at = feedback_date
+                tracking_record.is_in_top_5 = False
+                if tracking_record.entered_top_5_at:
+                    tracking_record.time_in_top_5 += int((feedback_date - tracking_record.entered_top_5_at).total_seconds())
+            
+            # Проверяем топ-10
+            if tracking_record.is_in_top_10 and negative_position > 10:
+                # Негативный отзыв выпал из топ-10
+                tracking_record.exited_top_10_at = feedback_date
+                tracking_record.is_in_top_10 = False
+                if tracking_record.entered_top_10_at:
+                    tracking_record.time_in_top_10 += int((feedback_date - tracking_record.entered_top_10_at).total_seconds())
+    
+    await db.commit()
+
+
+async def get_top_tracking_times_crud(
+    db: AsyncSession,
+    brand: str,
+    product_id: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None
+) -> Dict[str, str]:
+    """Получение среднего времени нахождения негативных отзывов в топах"""
+    
+    # Базовый запрос для топ-трекинга
+    query = select(FeedbackTopTracking).where(
+        and_(
+            FeedbackTopTracking.brand == brand,
+            FeedbackTopTracking.feedback_id.isnot(None)
+        )
+    )
+    
+    if product_id:
+        query = query.where(FeedbackTopTracking.article == product_id)
+    
+    if start_date:
+        query = query.where(FeedbackTopTracking.created_at >= start_date)
+    if end_date:
+        query = query.where(FeedbackTopTracking.created_at <= end_date)
+    
+    result = await db.execute(query)
+    tracking_records = result.scalars().all()
+    
+    if not tracking_records:
+        return {
+            "top_1": "0ч 00мин",
+            "top_3": "0ч 00мин", 
+            "top_5": "0ч 00мин",
+            "top_10": "0ч 00мин"
+        }
+    
+    # Вычисляем среднее время для каждого топа
+    top_times = {}
+    for top_size in [1, 3, 5, 10]:
+        top_key = f"top_{top_size}"
+        time_field = f"time_in_{top_key}"
+        
+        # Фильтруем записи с ненулевым временем
+        valid_times = [
+            getattr(record, time_field) 
+            for record in tracking_records 
+            if getattr(record, time_field) is not None and getattr(record, time_field) > 0
+        ]
+        
+        if valid_times:
+            avg_seconds = sum(valid_times) / len(valid_times)
+            top_times[top_key] = format_time_duration(avg_seconds)
+        else:
+            top_times[top_key] = "0ч 00мин"
+    
+    return top_times
+
+
+def format_time_duration(seconds: int) -> str:
+    """Форматирование времени в формат чч:мм:сс"""
+    if not seconds or seconds <= 0:
+        return "0ч 00мин"
+    
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    
+    if hours > 0:
+        return f"{hours}ч {minutes:02d}мин"
+    elif minutes > 0:
+        return f"{minutes}мин {secs:02d}сек"
+    else:
+        return f"{secs}сек"
+
+
+async def update_top_tracking_for_feedback(
+    db: AsyncSession,
+    feedback_id: int,
+    article: str,
+    brand: str,
+    feedback_date: datetime
+) -> None:
+    """Обновление топ-трекинга при добавлении нового отзыва"""
+    
+    # Получаем или создаем запись трекинга
+    tracking_query = select(FeedbackTopTracking).where(
+        FeedbackTopTracking.feedback_id == feedback_id
+    )
+    result = await db.execute(tracking_query)
+    tracking = result.scalars().first()
+    
+    if not tracking:
+        tracking = FeedbackTopTracking(
+            feedback_id=feedback_id,
+            article=article,
+            brand=brand,
+            created_at=datetime.now()
+        )
+        db.add(tracking)
+    
+    # Получаем последние отзывы для товара (по времени)
+    recent_feedbacks_query = select(Feedback).where(
+        and_(
+            Feedback.article == article,
+            Feedback.brand == brand,
+            Feedback.is_deleted == False
+        )
+    ).order_by(Feedback.date.desc())
+    
+    result = await db.execute(recent_feedbacks_query)
+    recent_feedbacks = result.scalars().all()
+    
+    # Определяем, в каких топах находится текущий отзыв
+    feedback_index = None
+    for i, fb in enumerate(recent_feedbacks):
+        if fb.id == feedback_id:
+            feedback_index = i
+            break
+    
+    if feedback_index is None:
+        return
+    
+    # Обновляем статусы топов
+    top_sizes = [1, 3, 5, 10]
+    
+    for top_size in top_sizes:
+        is_in_top = feedback_index < top_size
+        entered_field = f"entered_top_{top_size}_at"
+        is_in_field = f"is_in_top_{top_size}"
+        
+        if is_in_top:
+            # Отзыв вошел в топ
+            if not getattr(tracking, entered_field):
+                setattr(tracking, entered_field, feedback_date)
+            setattr(tracking, is_in_field, True)
+        else:
+            # Отзыв вышел из топа
+            if getattr(tracking, is_in_field):
+                # Вычисляем время нахождения
+                entered_time = getattr(tracking, entered_field)
+                if entered_time:
+                    time_in_seconds = int((feedback_date - entered_time).total_seconds())
+                    time_field = f"time_in_top_{top_size}"
+                    setattr(tracking, time_field, time_in_seconds)
+                
+                # Сбрасываем статус
+                setattr(tracking, is_in_field, False)
+                setattr(tracking, entered_field, None)
+    
+    tracking.updated_at = datetime.now()
+    await db.commit()
+
+
+async def process_top_tracking_for_product(
+    db: AsyncSession,
+    article: str,
+    brand: str
+) -> None:
+    """Обработка топ-трекинга для всех отзывов товара"""
+    
+    # Получаем все отзывы товара, отсортированные по времени
+    feedbacks_query = select(Feedback).where(
+        and_(
+            Feedback.article == article,
+            Feedback.brand == brand,
+            Feedback.is_deleted == False
+        )
+    ).order_by(Feedback.date.asc())  # От старых к новым
+    
+    result = await db.execute(feedbacks_query)
+    feedbacks = result.scalars().all()
+    
+    # Обрабатываем каждый отзыв
+    for i, feedback in enumerate(feedbacks):
+        await update_top_tracking_for_feedback(
+            db, feedback.id, article, brand, feedback.date
+        )
 
 
 async def get_shops_summary_crud(

@@ -18,4 +18,5 @@ class User(Base):
     # связи с другими таблицами
     tasks = relationship("ScheduledTask", back_populates="owner")
     history = relationship("History", back_populates="user")
-    feedbacks = relationship("Feedback", back_populates="user") 
+    feedbacks = relationship("Feedback", back_populates="user")
+    feedback_top_tracking = relationship("FeedbackTopTracking", back_populates="user") 
