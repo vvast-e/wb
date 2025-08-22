@@ -7,7 +7,7 @@ const AddBrandForm = ({ onSuccess }) => {
     const [mode, setMode] = useState('add');
     const [brands, setBrands] = useState({});
     const [formData, setFormData] = useState({
-        name: '',
+        platform: 'wb',  // По умолчанию WB
         api_key: '',
     });
     const [loading, setLoading] = useState(false);
@@ -92,28 +92,38 @@ const AddBrandForm = ({ onSuccess }) => {
             const method = mode === 'add' ? 'post' : 'put';
 
             const requestData = {
-                name: mode === 'add' ? formData.name : selectedBrand,
-                api_key: formData.api_key,
+                platform: formData.platform,
+                wb_name: formData.api_key,  // API ключ передаем в поле wb_name
             };
 
-            await api[method](url, requestData, {
+            const response = await api[method](url, requestData, {
                 headers: { Authorization: `Bearer ${token}` }
             });
+
+            // Получаем название магазина из ответа API
+            let shopName = formData.platform; // fallback
+            if (mode === 'add' && response.data) {
+                // Ищем название магазина в ответе
+                const brandNames = Object.keys(response.data);
+                if (brandNames.length > 0) {
+                    shopName = brandNames[0]; // Берем первое название
+                }
+            }
 
             setSuccess(mode === 'add'
                 ? 'Магазин успешно добавлен. Не забудьте добавить ImageBB ключ во вкладке "ImageBB Key" для работы с изображениями.'
                 : 'API ключ успешно обновлен');
-            setFormData({ name: '', api_key: '', imagebb_key: '' });
+            setFormData({ platform: 'wb', api_key: '' });
             setSelectedBrand('');
             if (onSuccess) onSuccess();
 
             // Если добавлен новый магазин, запускаем парсер отзывов
             if (mode === 'add') {
                 try {
-                    setToast({ show: true, message: `Запуск парсера отзывов для магазина "${requestData.name}"...`, variant: 'info' });
+                    setToast({ show: true, message: `Запуск парсера отзывов для магазина "${shopName}"...`, variant: 'info' });
 
                     const parseResponse = await api.post(
-                        `${import.meta.env.VITE_API_URL}/analytics/shop/${requestData.name}/parse-feedbacks`,
+                        `${import.meta.env.VITE_API_URL}/analytics/shop/${shopName}/parse-feedbacks`,
                         {},
                         {
                             headers: { Authorization: `Bearer ${token}` }
@@ -122,12 +132,12 @@ const AddBrandForm = ({ onSuccess }) => {
 
                     // Проверяем статус парсинга
                     if (parseResponse.data && parseResponse.data.success) {
-                        setToast({ show: true, message: `Парсер отзывов для магазина "${requestData.name}" успешно завершен! Обработано отзывов: ${parseResponse.data.processed_count || 0}`, variant: 'success' });
+                        setToast({ show: true, message: `Парсер отзывов для магазина "${shopName}" успешно завершен! Обработано отзывов: ${parseResponse.data.processed_count || 0}`, variant: 'success' });
                     } else {
-                        setToast({ show: true, message: `Парсер отзывов для магазина "${requestData.name}" запущен, но завершился с предупреждениями`, variant: 'warning' });
+                        setToast({ show: true, message: `Парсер отзывов для магазина "${shopName}" запущен, но завершился с предупреждениями`, variant: 'warning' });
                     }
                 } catch (err) {
-                    setToast({ show: true, message: `Ошибка запуска парсера для "${requestData.name}": ${err.response?.data?.detail || err.message}`, variant: 'danger' });
+                    setToast({ show: true, message: `Ошибка запуска парсера для "${shopName}": ${err.response?.data?.detail || err.message}`, variant: 'danger' });
                 }
             }
         } catch (err) {
@@ -142,9 +152,8 @@ const AddBrandForm = ({ onSuccess }) => {
         setSelectedBrand(brandName);
         if (brandName && brands[brandName]) {
             setFormData({
-                name: brandName,
+                platform: brands[brandName].platform || 'wb',
                 api_key: brands[brandName].api_key || '',
-                imagebb_key: brands[brandName].imagebb_key || ''
             });
         }
     };
@@ -178,7 +187,7 @@ const AddBrandForm = ({ onSuccess }) => {
                 activeKey={mode}
                 onSelect={(k) => {
                     setMode(k);
-                    setFormData({ name: '', api_key: '', imagebb_key: '' });
+                    setFormData({ platform: 'wb', api_key: '' });
                     setSelectedBrand('');
                     setError(null);
                     setSuccess(null);
@@ -443,25 +452,35 @@ const BrandForm = ({
         <Form onSubmit={onSubmit}>
             {showNameField && (
                 <Form.Group className="mb-3">
-                    <Form.Label>Название магазина</Form.Label>
-                    <Form.Control
-                        name="name"
-                        value={formData.name}
+                    <Form.Label>Платформа</Form.Label>
+                    <Form.Select
+                        name="platform"
+                        value={formData.platform}
                         onChange={handleChange}
                         required
                         className="bg-dark border-success text-light"
-                    />
+                    >
+                        <option value="wb">WB (Wildberries)</option>
+                        <option value="ozon">Ozon</option>
+                    </Form.Select>
+                    <Form.Text className="text-muted">
+                        {formData.platform === 'wb'
+                            ? 'Название магазина будет получено автоматически через API WB'
+                            : 'Для Ozon название магазина будет получено автоматически (пока заглушка)'
+                        }
+                    </Form.Text>
                 </Form.Group>
             )}
 
             <Form.Group className="mb-3">
-                <Form.Label>WB API Key</Form.Label>
+                <Form.Label>API Key</Form.Label>
                 <Form.Control
                     name="api_key"
                     value={formData.api_key}
                     onChange={handleChange}
                     required
                     className="bg-dark border-success text-light"
+                    placeholder={formData.platform === 'wb' ? 'WB API Key' : 'Ozon API Key'}
                 />
             </Form.Group>
 

@@ -6,7 +6,7 @@ from typing import Dict, List
 
 from crud.user import get_user_by_email
 from database import get_db
-from schemas import BrandCreate, BrandUpdate, IsAdminResponse, UserResponse, UserCreate, ImageBBUpdateRequest
+from schemas import BrandCreate, BrandUpdate, BrandCreateRequest, BrandUpdateRequest, IsAdminResponse, UserResponse, UserCreate, ImageBBUpdateRequest
 from crud.admin import (
     get_brands,
     create_brand,
@@ -36,21 +36,84 @@ async def read_brands(
 
 @router.post("/brands/", response_model=Dict[str, str])
 async def add_new_brand(
-    brand_data: BrandCreate,
+    brand_data: BrandCreateRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    return await create_brand(db, current_user.id, brand_data)
+    # Если платформа WB, получаем название бренда через API
+    if brand_data.platform == "wb":
+        try:
+            from utils.wb_api import WBAPIClient
+            wb_client = WBAPIClient(api_key=brand_data.wb_name)
+            seller_info = await wb_client.get_seller_info()
+            
+            if seller_info.success and seller_info.data:
+                # Используем название из API WB
+                brand_name = seller_info.data.get('name') or seller_info.data.get('tradeMark')
+                if not brand_name:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Не удалось получить название бренда из API WB"
+                    )
+            else:
+                error_msg = seller_info.error or "Неизвестная ошибка API WB"
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Ошибка API WB: {error_msg}"
+                )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Не удалось получить информацию о бренде через API WB: {str(e)}"
+            )
+    else:
+        # Для Ozon пока заглушка
+        brand_name = f"Ozon_Shop_{current_user.id}"
+    
+    # Создаем объект BrandCreate с полученным названием
+    brand_create = BrandCreate(name=brand_name, api_key=brand_data.wb_name)
+    
+    return await create_brand(db, current_user.id, brand_create)
 
 
 @router.put("/brands/{brand_name}", response_model=Dict[str, str])
 async def update_brand_api_key(
     brand_name: str,
-    brand_data: BrandUpdate,
+    brand_data: BrandUpdateRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    return await update_brand(db, current_user.id, brand_name, brand_data)
+    # Если обновляется API ключ для WB, валидируем его
+    if brand_data.wb_name:
+        try:
+            from utils.wb_api import WBAPIClient
+            wb_client = WBAPIClient(api_key=brand_data.wb_name)
+            seller_info = await wb_client.get_seller_info()
+            
+            if seller_info.success and seller_info.data:
+                # Получаем новое название бренда из API WB
+                new_brand_name = seller_info.data.get('name') or seller_info.data.get('tradeMark')
+                if not new_brand_name:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Не удалось получить название бренда из API WB"
+                    )
+            else:
+                error_msg = seller_info.error or "Неизвестная ошибка API WB"
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Ошибка API WB: {error_msg}"
+                )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Не удалось получить информацию о бренде через API WB: {str(e)}"
+            )
+    
+    # Создаем объект BrandUpdate с полученным названием
+    brand_update = BrandUpdate(name=brand_name, api_key=brand_data.wb_name)
+    
+    return await update_brand(db, current_user.id, brand_name, brand_update)
 
 @router.delete("/brands/{brand_name}", response_model=Dict[str, str])
 async def remove_brand(

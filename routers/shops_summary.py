@@ -5,7 +5,7 @@ from datetime import date
 
 from dependencies import get_db, get_current_user_with_wb_key
 from models.user import User
-from crud.shops_summary import get_products_by_brand, get_reviews_summary_crud, get_brands_by_shop, get_reviews_tops_crud
+from crud.shops_summary import get_products_by_brand, get_shop_feedbacks_crud, get_brands_by_shop, get_reviews_tops_crud
 
 router = APIRouter(tags=["ShopsSummary"], prefix="/api")
 
@@ -35,7 +35,7 @@ async def get_reviews_summary(
     """Получение краткой статистики по отзывам (для графика)"""
     # Преобразуем строку в список для совместимости с CRUD
     metrics_list = [metrics]
-    summary = await get_reviews_summary_crud(db, current_user.id, shop, brand_id, product_id, date_from, date_to, metrics_list, filters)
+    summary = await get_shop_feedbacks_crud(db, current_user.id, brand_id, product_id, date_from, date_to, filters, metrics_list)
     return summary
 
 @router.get("/reviews/tops")
@@ -51,7 +51,7 @@ async def get_reviews_tops(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user_with_wb_key)
 ):
-    tops = await get_reviews_tops_crud(db, current_user.id, shop, brand_id, product_id, date_from, date_to, type, limit, offset)
+    tops = await get_reviews_tops_crud(db, current_user.id, brand_id, product_id, date_from, date_to, type, limit, offset)
     return tops
 
 @router.get("/brands")

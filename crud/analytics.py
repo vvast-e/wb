@@ -1,16 +1,43 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date, timedelta
 from sqlalchemy import select, func, and_, or_, desc, asc, case, literal_column, text
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
-from models.feedback import Feedback
-from models.user import User
-from models.product import Product
-from models.feedback import FeedbackTopTracking
+from models.feedback import Feedback, FeedbackTopTracking
 
 import logging
 logger = logging.getLogger(__name__)
+
+# Маппинг брендов для решения проблемы с похожими названиями
+BRAND_MAPPING = {
+    "11i Professional OZON": "11i Professional",
+    "11i professional": "11i Professional", 
+    "11 i Professional": "11i Professional",
+    "Mona Premium": "ООО \"МОНА БИОЛАБ\""
+}
+
+def get_mapped_brand(brand_name: str) -> str:
+    """
+    Получает правильное название бренда из маппинга.
+    Если маппинг не найден, возвращает исходное название.
+    """
+    return BRAND_MAPPING.get(brand_name, brand_name)
+
+def get_all_mapped_brands(brand_name: str) -> List[str]:
+    """
+    Получает все возможные названия бренда (включая исходное и маппинг).
+    """
+    mapped_brand = get_mapped_brand(brand_name)
+    all_brands = [brand_name]  # Исходный бренд
+    
+    if mapped_brand != brand_name:
+        all_brands.append(mapped_brand)
+    
+    # Добавляем обратные маппинги
+    for key, value in BRAND_MAPPING.items():
+        if value == brand_name and key not in all_brands:
+            all_brands.append(key)
+    
+    return all_brands
 
 
 async def get_user_shopsList_crud(
@@ -94,30 +121,12 @@ async def get_reviews_with_filters_crud(
             normalized_shop = "Mona Premium"
         logger.debug(f"[DEBUG] Нормализованный shop: '{normalized_shop}'")
         
-        # Ищем товар по vendor_code и brand в таблице products
+        # Ищем товар по vendor_code в feedbacks
         logger.debug(f"[DEBUG] Ищем товар по vendor_code: '{product}' и brand: '{normalized_shop}'")
-        product_query = select(Product.nm_id).where(
-            and_(Product.vendor_code == product, func.lower(Product.brand) == normalized_shop)
-        )
-        logger.debug(f"[DEBUG] SQL запрос: {product_query}")
-        product_result = await db.execute(product_query)
-        product_data = product_result.scalars().first()
-        logger.debug(f"[DEBUG] Найден nm_id: {product_data} (тип: {type(product_data)})")
-        
-        if product_data:
-            # Преобразуем nm_id в int для сравнения с Feedback.article
-            try:
-                nm_id_int = int(product_data)
-                logger.debug(f"[DEBUG] Преобразовали nm_id в int: {nm_id_int}")
-                query = query.where(Feedback.article == str(nm_id_int))
-                logger.debug(f"[DEBUG] Применяем фильтр по найденному nm_id: {nm_id_int}")
-                logger.debug(f"[DEBUG] Итоговый запрос после фильтра: {query}")
-            except (ValueError, TypeError) as e:
-                logger.debug(f"[DEBUG] Ошибка преобразования nm_id '{product_data}' в int: {e}")
-                logger.debug(f"[DEBUG] Пропускаем фильтр по товару для '{product}'")
-        else:
-            # Если товар не найден, не возвращаем пустой результат, просто не применяем фильтр
-            logger.debug(f"[DEBUG] Товар с vendor_code '{product}' и brand '{normalized_shop}' не найден, пропускаем фильтр")
+        # Просто фильтруем по vendor_code в feedbacks
+        query = query.where(Feedback.vendor_code == product)
+        logger.debug(f"[DEBUG] Применяем фильтр по vendor_code: {product}")
+        logger.debug(f"[DEBUG] Итоговый запрос после фильтра: {query}")
     else:
         logger.debug(f"[DEBUG] Фильтр по товару не применяется (product = {product})")
 
@@ -155,23 +164,19 @@ async def get_reviews_with_filters_crud(
     article_ids = [f.article for f in feedbacks if f.article]
     vendor_codes = {}
     if article_ids:
-        # Преобразуем артикулы в строки для поиска в таблице products
-        nm_ids = []
+        # Получаем vendor_code из feedbacks по nm_id (article)
         for article_id in article_ids:
-            try:
-                # Преобразуем в строку для поиска в Product.nm_id
-                nm_id_str = str(article_id)
-                nm_ids.append(nm_id_str)
-            except (ValueError, TypeError):
-                continue
-        
-        if nm_ids:
-            product_query = select(Product.nm_id, Product.vendor_code).where(Product.nm_id.in_(nm_ids))
-            product_result = await db.execute(product_query)
-            products_data_db = product_result.fetchall()
-            for nm_id, vendor_code in products_data_db:
-                # Используем nm_id как ключ для поиска
-                vendor_codes[nm_id] = vendor_code or nm_id
+            article_str = str(article_id)
+            # Ищем vendor_code в feedbacks
+            vendor_code_query = select(Feedback.vendor_code).where(
+                and_(
+                    Feedback.user_id == user_id,
+                    Feedback.article == article_str
+                )
+            ).limit(1)
+            vendor_code_result = await db.execute(vendor_code_query)
+            vendor_code = vendor_code_result.scalar()
+            vendor_codes[article_str] = vendor_code or article_str
     
 
     
@@ -347,21 +352,23 @@ async def get_shop_data_crud(
     # Получаем vendor_code для всех товаров
     vendor_codes = {}
     if all_keys:
-        # Преобразуем строковые артикулы в целые числа
-        nm_ids = []
+        # Получаем vendor_code из feedbacks по nm_id (article)
         for article_key in all_keys:
             try:
                 nm_id = int(article_key)
-                nm_ids.append(str(nm_id))
+                nm_id_str = str(nm_id)
+                # Ищем vendor_code в feedbacks
+                vendor_code_query = select(Feedback.vendor_code).where(
+                    and_(
+                        Feedback.user_id == user_id,
+                        Feedback.article == nm_id_str
+                    )
+                ).limit(1)
+                vendor_code_result = await db.execute(vendor_code_query)
+                vendor_code = vendor_code_result.scalar()
+                vendor_codes[article_key] = vendor_code or article_key
             except (ValueError, TypeError):
-                continue
-        
-        if nm_ids:
-            product_query = select(Product.nm_id, Product.vendor_code).where(Product.nm_id.in_(nm_ids))
-            product_result = await db.execute(product_query)
-            products_data_db = product_result.fetchall()
-            for nm_id, vendor_code in products_data_db:
-                vendor_codes[str(nm_id)] = vendor_code or str(nm_id)
+                vendor_codes[article_key] = article_key
     
     for article_key in all_keys:
         # Получаем vendor_code для товара
@@ -488,6 +495,12 @@ async def get_shop_products_crud(
         shop_id: str
 ) -> List[Dict[str, Any]]:
     """Получение товаров магазина с расчетом рейтингов за весь период"""
+    from models.product import Product  # Добавляем импорт
+    import logging
+    
+    logger = logging.getLogger("shop_products")
+    logger.info(f"[SHOP_PRODUCTS] Запрос товаров для shop_id={shop_id}, user_id={user_id}")
+    
     query = select(Feedback.article).distinct().where(
         and_(
             Feedback.brand == shop_id,
@@ -497,9 +510,12 @@ async def get_shop_products_crud(
 
     result = await db.execute(query)
     articles = result.scalars().all()
+    logger.info(f"[SHOP_PRODUCTS] Найдено уникальных артикулов: {len(articles)}")
 
     products = []
     for article in articles:
+        logger.info(f"[SHOP_PRODUCTS] Обрабатываем артикул: {article}")
+        
         # Получаем все отзывы по товару за весь период
         feedbacks_query = select(Feedback).where(
             and_(
@@ -510,6 +526,8 @@ async def get_shop_products_crud(
         )
         feedbacks_result = await db.execute(feedbacks_query)
         feedbacks = feedbacks_result.scalars().all()
+        logger.info(f"[SHOP_PRODUCTS] Для артикула {article} найдено отзывов: {len(feedbacks)}")
+        
         # average_rating
         ratings = [f.rating for f in feedbacks if hasattr(f, 'rating') and isinstance(f.rating, (int, float))]
         avg_rating = sum(ratings) / len(ratings) if ratings else 0
@@ -538,26 +556,41 @@ async def get_shop_products_crud(
             weighted_sum += rating_val * decay
             decay_sum += decay
         market_rating = (weighted_sum / decay_sum) if decay_sum > 0 else 0
+        
         # Корректно формируем id и name
         article_id = str(article) if not hasattr(article, 'key') else str(getattr(article, 'key', ''))
         
         # Получаем vendor_code для товара
         try:
             nm_id = int(article)
-            product_query = select(Product.vendor_code).where(Product.nm_id == str(nm_id))
-            product_result = await db.execute(product_query)
-            product_data = product_result.scalars().first()  # Исправлено: используем scalars().first()
-            vendor_code = product_data or article_id
+            # Ищем vendor_code в feedbacks по nm_id (article)
+            vendor_code_query = select(Feedback.vendor_code).where(
+                and_(
+                    Feedback.user_id == user_id,
+                    Feedback.brand == shop_id,
+                    Feedback.article == str(nm_id)
+                )
+            ).limit(1)
+            vendor_code_result = await db.execute(vendor_code_query)
+            vendor_code = vendor_code_result.scalar() or article_id
+            logger.info(f"[SHOP_PRODUCTS] Для nm_id {nm_id} найден vendor_code: {vendor_code}")
         except (ValueError, TypeError):
             vendor_code = article_id
+            logger.info(f"[SHOP_PRODUCTS] Не удалось преобразовать {article} в int, используем как есть: {vendor_code}")
         
-        products.append({
-            "id": vendor_code,
+        product_info = {
+            "id": vendor_code,  # Возвращаем vendor_code как id для фронтенда
+            "nm_id": article_id,  # Добавляем nm_id для внутреннего использования
             "name": f"товар {vendor_code}",
             "rating": round(float(avg_rating), 2),
             "market_rating": round(float(market_rating), 2)
-        })
+        }
+        
+        logger.info(f"[SHOP_PRODUCTS] Добавляем товар: {product_info}")
+        products.append(product_info)
+    
     products.sort(key=lambda x: x["market_rating"], reverse=True)
+    logger.info(f"[SHOP_PRODUCTS] Итого товаров: {len(products)}")
     return products
 
 
@@ -572,6 +605,10 @@ async def get_efficiency_data_crud(
     """Получение данных эффективности отдела репутации"""
     from models.feedback import Feedback, FeedbackTopTracking
     from sqlalchemy import func, and_, or_
+    import logging
+    
+    logger = logging.getLogger("efficiency_data")
+    logger.info(f"[EFFICIENCY] Запрос данных для shop_id={shop_id}, product_id={product_id}, user_id={user_id}")
     
     # Базовый запрос для отзывов
     query = select(Feedback).where(
@@ -580,51 +617,29 @@ async def get_efficiency_data_crud(
             Feedback.brand == shop_id
         )
     )
-
-    # Диапазон дат: учитываем и date, и created_at
+    
     if start_date:
-        query = query.where(func.coalesce(Feedback.date, Feedback.created_at) >= start_date)
+        query = query.where(Feedback.date >= start_date)
+        logger.info(f"[EFFICIENCY] Добавлен фильтр по start_date: {start_date}")
     if end_date:
-        query = query.where(func.coalesce(Feedback.date, Feedback.created_at) <= end_date)
-
-    # Фильтр по товару: product_id приходит как vendor_code, а в Feedback.article хранится nm_id
-    nm_id_for_filter = None
+        query = query.where(Feedback.date <= end_date)
+        logger.info(f"[EFFICIENCY] Добавлен фильтр по end_date: {end_date}")
+    
+    # Фильтр по товару - простое сравнение по vendor_code
     if product_id:
-        try:
-            normalized_shop = shop_id.lower() if isinstance(shop_id, str) else ""
-            if normalized_shop == "mona biolab":
-                normalized_shop = "Mona Premium"
-
-            # 1) vendor_code + brand
-            nm_q = select(Product.nm_id).where(
-                and_(Product.vendor_code == product_id, func.lower(Product.brand) == normalized_shop)
-            )
-            nm_res = await db.execute(nm_q)
-            nm_id_value = nm_res.scalars().first()
-
-            # 2) только vendor_code
-            if nm_id_value is None:
-                nm_q2 = select(Product.nm_id).where(Product.vendor_code == product_id)
-                nm_res2 = await db.execute(nm_q2)
-                nm_id_value = nm_res2.scalars().first()
-
-            # 3) product_id уже nm_id
-            if nm_id_value is None:
-                nm_q3 = select(Product.nm_id).where(Product.nm_id == str(product_id))
-                nm_res3 = await db.execute(nm_q3)
-                nm_id_value = nm_res3.scalars().first()
-
-            if nm_id_value is not None:
-                nm_id_for_filter = str(nm_id_value)
-                query = query.where(Feedback.article == nm_id_for_filter)
-        except Exception:
-            nm_id_for_filter = None
+        logger.info(f"[EFFICIENCY] Фильтруем по vendor_code: {product_id}")
+        query = query.where(Feedback.vendor_code == product_id)
+    else:
+        logger.info(f"[EFFICIENCY] Фильтр по товару не применяется")
     
     # Получаем отзывы
+    logger.info(f"[EFFICIENCY] Выполняем запрос: {query}")
     result = await db.execute(query)
     feedbacks = result.scalars().all()
+    logger.info(f"[EFFICIENCY] Найдено отзывов: {len(feedbacks)}")
     
     if not feedbacks:
+        logger.info(f"[EFFICIENCY] Отзывы не найдены, возвращаем пустой результат")
         return {
             "total_reviews": 0,
             "negative_count": 0,
@@ -634,13 +649,16 @@ async def get_efficiency_data_crud(
             "top_3_time": "00:00:00", 
             "top_5_time": "00:00:00",
             "top_10_time": "00:00:00",
-            "deletion_time": "00:00:00"
+            "deletion_time": "00:00:00",
+            "trends": []
         }
     
     # Базовая статистика
     total_reviews = len(feedbacks)
-    negative_count = sum(1 for f in feedbacks if getattr(f, 'is_negative', 0))
+    negative_count = sum(1 for f in feedbacks if f.is_negative)
     deleted_count = sum(1 for f in feedbacks if getattr(f, 'is_deleted', False))
+    
+    logger.info(f"[EFFICIENCY] Статистика: total={total_reviews}, negative={negative_count}, deleted={deleted_count}")
     
     # Распределение по рейтингам
     ratings_distribution = {}
@@ -648,7 +666,7 @@ async def get_efficiency_data_crud(
         count = sum(1 for f in feedbacks if f.rating == rating)
         ratings_distribution[f"rating_{rating}"] = count
     
-    # Тренды по дням с накопительной долей (как в shops_summary)
+    # Тренды по дням с накопительной долей
     day_aggregates: Dict[str, Dict[str, Any]] = {}
     for f in feedbacks:
         dt_val = getattr(f, 'date', None) or getattr(f, 'created_at', None)
@@ -681,7 +699,162 @@ async def get_efficiency_data_crud(
             "negative_percent": round((cumulative_negative / cumulative_total) * 100, 1) if cumulative_total > 0 else 0.0,
             "deleted_percent": round((cumulative_deleted / cumulative_total) * 100, 1) if cumulative_total > 0 else 0.0
         })
-
+    
+    logger.info(f"[EFFICIENCY] Создано трендов: {len(trends)}")
+    
+    # Функция для расчета ежедневного трекинга времени в топах
+    async def calculate_daily_tracking() -> List[Dict[str, Any]]:
+        # Вспомогательная функция для форматирования времени
+        def format_time_from_seconds(seconds):
+            if seconds == 0:
+                return "00:00:00"
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            remaining_seconds = seconds % 60
+            return f"{hours:02d}:{minutes:02d}:{remaining_seconds:02d}"
+        
+        daily_data: Dict[str, Dict[str, Any]] = {}
+        
+        # Генерируем все дни в диапазоне
+        if start_date and end_date:
+            current_date = start_date
+            while current_date <= end_date:
+                date_str = current_date.isoformat()
+                daily_data[date_str] = {
+                    'date': date_str,
+                    'top_1_time': 0,
+                    'top_3_time': 0,
+                    'top_5_time': 0,
+                    'top_10_time': 0,
+                    'total_products_in_top': 0
+                }
+                current_date += timedelta(days=1)
+        
+        if not daily_data:
+            return []
+        
+        # Получаем все записи FeedbackTopTracking для данного магазина и пользователя
+        all_top_tracking_query = select(FeedbackTopTracking).where(
+            and_(
+                FeedbackTopTracking.user_id == user_id,
+                FeedbackTopTracking.brand == shop_id
+            )
+        )
+        
+        # Фильтр по товару
+        if product_id:
+            nm_ids = set(f.article for f in feedbacks)
+            if nm_ids:
+                all_top_tracking_query = all_top_tracking_query.where(FeedbackTopTracking.article.in_(nm_ids))
+        
+        all_top_tracking_result = await db.execute(all_top_tracking_query)
+        all_top_tracking_records = all_top_tracking_result.scalars().all()
+        
+        logger.info(f"[EFFICIENCY] Найдено записей top_tracking для ежедневного трекинга: {len(all_top_tracking_records)}")
+        
+        # Обрабатываем каждую запись
+        for record in all_top_tracking_records:
+            # Проверяем, находится ли товар в топе в указанный день
+            for level in [1, 3, 5, 10]:
+                time_attr = f"time_in_top_{level}"
+                entered_attr = f"entered_top_{level}_at"
+                is_in_attr = f"is_in_top_{level}"
+                
+                # Базовое время из записи
+                base_time = int(getattr(record, time_attr, 0) or 0)
+                
+                # Дополнительное время, если товар в топе
+                extra_time = 0
+                if getattr(record, is_in_attr, False):
+                    entered_at = getattr(record, entered_attr, None)
+                    if entered_at:
+                        # Рассчитываем время в топе для каждого дня
+                        for date_str, day_data in daily_data.items():
+                            day_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                            
+                            # Если товар вошел в топ до этого дня или в этот день
+                            # Делаем datetime объекты timezone-naive для корректного сравнения
+                            if hasattr(entered_at, 'tzinfo') and entered_at.tzinfo:
+                                entered_at_naive = entered_at.replace(tzinfo=None)
+                            else:
+                                entered_at_naive = entered_at
+                            
+                            if entered_at_naive.date() <= day_date:
+                                # Время в топе для этого дня (максимум 24 часа = 86400 секунд)
+                                day_start = datetime.combine(day_date, datetime.min.time())
+                                day_end = datetime.combine(day_date, datetime.max.time())
+                                
+                                # Ограничиваем диапазон
+                                if start_date:
+                                    day_start = max(day_start, datetime.combine(start_date, datetime.min.time()))
+                                if end_date:
+                                    day_end = min(day_end, datetime.combine(end_date, datetime.max.time()))
+                                
+                                # Делаем datetime объекты timezone-naive для корректного сравнения
+                                if hasattr(entered_at, 'tzinfo') and entered_at.tzinfo:
+                                    entered_at_naive = entered_at.replace(tzinfo=None)
+                                else:
+                                    entered_at_naive = entered_at
+                                
+                                if hasattr(day_end, 'tzinfo') and day_end.tzinfo:
+                                    day_end_naive = day_end.replace(tzinfo=None)
+                                else:
+                                    day_end_naive = day_end
+                                
+                                # Рассчитываем время в топе для этого дня
+                                if entered_at_naive < day_end_naive:
+                                    # Делаем datetime объекты timezone-naive для корректного сравнения
+                                    if hasattr(entered_at, 'tzinfo') and entered_at.tzinfo:
+                                        entered_at_naive = entered_at.replace(tzinfo=None)
+                                    else:
+                                        entered_at_naive = entered_at
+                                    
+                                    if hasattr(day_start, 'tzinfo') and day_start.tzinfo:
+                                        day_start_naive = day_start.replace(tzinfo=None)
+                                    else:
+                                        day_start_naive = day_start
+                                    
+                                    start_point = max(entered_at_naive, day_start_naive)
+                                    end_point = min(datetime.utcnow(), day_end)
+                                    
+                                    if end_point > start_point:
+                                        # Делаем datetime объекты timezone-naive для корректного сравнения
+                                        if hasattr(start_point, 'tzinfo') and start_point.tzinfo:
+                                            start_point = start_point.replace(tzinfo=None)
+                                        if hasattr(end_point, 'tzinfo') and end_point.tzinfo:
+                                            end_point = end_point.replace(tzinfo=None)
+                                        
+                                        day_seconds = int((end_point - start_point).total_seconds())
+                                        day_data[f'top_{level}_time'] += day_seconds
+                                        day_data['total_products_in_top'] += 1
+                
+                # Добавляем базовое время равномерно по дням
+                if base_time > 0:
+                    days_count = len(daily_data)
+                    if days_count > 0:
+                        time_per_day = base_time // days_count
+                        for day_data in daily_data.values():
+                            day_data[f'top_{level}_time'] += time_per_day
+        
+        # Форматируем время и считаем средние значения
+        result = []
+        for date_str, day_data in daily_data.items():
+            # Форматируем время в чч:мм:сс
+            formatted_data = {
+                'date': date_str,
+                'top_1_time': format_time_from_seconds(day_data['top_1_time']),
+                'top_3_time': format_time_from_seconds(day_data['top_3_time']),
+                'top_5_time': format_time_from_seconds(day_data['top_5_time']),
+                'top_10_time': format_time_from_seconds(day_data['top_10_time']),
+                'total_products_in_top': day_data['total_products_in_top']
+            }
+            result.append(formatted_data)
+        
+        return result
+    
+    # Получаем ежедневный трекинг
+    daily_tracking = await calculate_daily_tracking()
+    
     # Получаем данные о времени в топах
     top_tracking_query = select(FeedbackTopTracking).where(
         and_(
@@ -689,11 +862,20 @@ async def get_efficiency_data_crud(
             FeedbackTopTracking.brand == shop_id
         )
     )
-    if nm_id_for_filter:
-        top_tracking_query = top_tracking_query.where(FeedbackTopTracking.article == nm_id_for_filter)
+    
+    # Фильтр по товару для top_tracking - используем nm_id из feedbacks
+    if product_id:
+        # Получаем nm_id из найденных отзывов
+        nm_ids = set(f.article for f in feedbacks)
+        if nm_ids:
+            top_tracking_query = top_tracking_query.where(FeedbackTopTracking.article.in_(nm_ids))
+            logger.info(f"[EFFICIENCY] Фильтр top_tracking по nm_ids: {nm_ids}")
+        else:
+            logger.warning(f"[EFFICIENCY] Не найдено nm_ids для top_tracking")
     
     top_tracking_result = await db.execute(top_tracking_query)
     top_tracking_records = top_tracking_result.scalars().all()
+    logger.info(f"[EFFICIENCY] Найдено записей top_tracking: {len(top_tracking_records)}")
     
     # Вычисляем среднее время в топах
     def format_time_from_seconds(seconds):
@@ -714,45 +896,73 @@ async def get_efficiency_data_crud(
         range_end = datetime.combine(end_date, datetime.max.time()) if end_date else None
         now_dt = datetime.utcnow()
 
-        seconds_values: List[int] = []
+        # Собираем время для каждого товара отдельно
+        product_times = {}
         for record in top_tracking_records:
+            article = record.article
+            if article not in product_times:
+                product_times[article] = []
+            
             base_seconds = int(getattr(record, time_attr, 0) or 0)
             extra = 0
             if getattr(record, is_in_attr, False):
                 entered_at = getattr(record, entered_attr, None)
                 if entered_at is not None:
                     start_point = entered_at
-                    if range_start and start_point < range_start:
-                        start_point = range_start
                     end_point = now_dt
-                    if range_end and end_point > range_end:
-                        end_point = range_end
+                    
+                    # Делаем datetime объекты timezone-naive для корректного сравнения
+                    if hasattr(start_point, 'tzinfo') and start_point.tzinfo:
+                        start_point = start_point.replace(tzinfo=None)
+                    if hasattr(end_point, 'tzinfo') and end_point.tzinfo:
+                        end_point = end_point.replace(tzinfo=None)
+                    if hasattr(range_start, 'tzinfo') and range_start and range_start.tzinfo:
+                        range_start_naive = range_start.replace(tzinfo=None)
+                    else:
+                        range_start_naive = range_start
+                    if hasattr(range_end, 'tzinfo') and range_end and range_end.tzinfo:
+                        range_end_naive = range_end.replace(tzinfo=None)
+                    else:
+                        range_end_naive = range_end
+                    
+                    if range_start_naive and start_point < range_start_naive:
+                        start_point = range_start_naive
+                    if range_end_naive and end_point > range_end_naive:
+                        end_point = range_end_naive
                     if end_point and start_point and end_point > start_point:
                         extra = int((end_point - start_point).total_seconds())
+            
             total = base_seconds + extra
             if total > 0:
-                seconds_values.append(total)
-
-        if not seconds_values:
+                product_times[article].append(total)
+        
+        # Усредняем время по товарам
+        if not product_times:
             return "00:00:00"
-        avg = sum(seconds_values) // len(seconds_values)
-        return format_time_from_seconds(avg)
+        
+        # Для каждого товара берем среднее время
+        avg_times = []
+        for article, times in product_times.items():
+            if times:
+                avg_times.append(sum(times) // len(times))
+        
+        if not avg_times:
+            return "00:00:00"
+        
+        # Возвращаем среднее по всем товарам
+        final_avg = sum(avg_times) // len(avg_times)
+        return format_time_from_seconds(final_avg)
     
-    top_1_time = calculate_avg_time_in_top(1)
-    top_3_time = calculate_avg_time_in_top(3)
-    top_5_time = calculate_avg_time_in_top(5)
-    top_10_time = calculate_avg_time_in_top(10)
-
     # Fallback: если трекинг не дал значений, оцениваем по хронологии отзывов товара
     async def compute_avg_top_time_via_chronology(k: int) -> str:
-        if not nm_id_for_filter:
+        if not product_id:
             return "00:00:00"
         # Берем все отзывы товара (любой тональности), сортируем по времени
         fb_query = select(Feedback).where(
             and_(
                 Feedback.user_id == user_id,
                 Feedback.brand == shop_id,
-                Feedback.article == nm_id_for_filter
+                Feedback.vendor_code == product_id
             )
         ).order_by(func.coalesce(Feedback.date, Feedback.created_at).asc())
         if start_date:
@@ -797,18 +1007,136 @@ async def get_efficiency_data_crud(
             return "00:00:00"
         avg_sec = sum(durations) // len(durations)
         return format_time_from_seconds(avg_sec)
+    
+    # Для всего магазина: усредняем время по всем товарам
+    async def compute_avg_top_time_via_chronology_all_products(k: int) -> str:
+        # Получаем все уникальные vendor_code для магазина
+        vendor_codes_query = select(Feedback.vendor_code).where(
+            and_(
+                Feedback.user_id == user_id,
+                Feedback.brand == shop_id,
+                Feedback.vendor_code.isnot(None)
+            )
+        ).distinct()
+        
+        vendor_codes_result = await db.execute(vendor_codes_query)
+        vendor_codes = [row[0] for row in vendor_codes_result.fetchall()]
+        
+        if not vendor_codes:
+            return "00:00:00"
+        
+        # Считаем время для каждого товара
+        product_times = []
+        for vendor_code in vendor_codes:
+            time_for_product = await compute_avg_top_time_via_chronology_single_product(vendor_code, k)
+            if time_for_product != "00:00:00":
+                # Конвертируем время обратно в секунды для усреднения
+                seconds = time_to_seconds(time_for_product)
+                if seconds > 0:
+                    product_times.append(seconds)
+        
+        if not product_times:
+            return "00:00:00"
+        
+        # Усредняем по всем товарам
+        avg_seconds = sum(product_times) // len(product_times)
+        return format_time_from_seconds(avg_seconds)
+    
+    # Вспомогательная функция для конвертации времени в секунды
+    def time_to_seconds(time_str: str) -> int:
+        if not time_str or time_str == "00:00:00":
+            return 0
+        try:
+            parts = time_str.split(':')
+            if len(parts) == 3:
+                hours, minutes, seconds = map(int, parts)
+                return hours * 3600 + minutes * 60 + seconds
+        except:
+            pass
+        return 0
+    
+    # Вспомогательная функция для расчета времени одного товара
+    async def compute_avg_top_time_via_chronology_single_product(vendor_code: str, k: int) -> str:
+        # Берем все отзывы товара (любой тональности), сортируем по времени
+        fb_query = select(Feedback).where(
+            and_(
+                Feedback.user_id == user_id,
+                Feedback.brand == shop_id,
+                Feedback.vendor_code == vendor_code
+            )
+        ).order_by(func.coalesce(Feedback.date, Feedback.created_at).asc())
+        if start_date:
+            fb_query = fb_query.where(func.coalesce(Feedback.date, Feedback.created_at) >= start_date)
+        if end_date:
+            fb_query = fb_query.where(func.coalesce(Feedback.date, Feedback.created_at) <= end_date)
+        fb_result = await db.execute(fb_query)
+        fb_list = fb_result.scalars().all()
+        if not fb_list:
+            return "00:00:00"
 
-    if top_1_time == top_3_time == top_5_time == top_10_time == "00:00:00":
-        # Пробуем оценить по хронологии для выбранного товара
+        # Считаем длительность нахождения негативов в топ-K
+        durations: List[int] = []
+        times = []
+        for f in fb_list:
+            dt_val = getattr(f, 'date', None) or getattr(f, 'created_at', None)
+            if dt_val is None:
+                continue
+            times.append(dt_val)
+        n = len(times)
+        for i, f in enumerate(fb_list):
+            if not getattr(f, 'is_negative', 0):
+                continue
+            # индекс K-го следующего отзыва
+            j = i + k
+            start_t = getattr(f, 'date', None) or getattr(f, 'created_at', None)
+            if start_t is None:
+                continue
+            if j < n:
+                end_t = times[j]
+            else:
+                # если меньше K последующих отзывов — до конца периода/текущего времени
+                end_t = datetime.utcnow()
+                if end_date:
+                    end_t = min(end_t, datetime.combine(end_date, datetime.max.time()))
+            # обрезаем начальную границу
+            if start_date:
+                start_t = max(start_t, datetime.combine(start_date, datetime.min.time()))
+            if end_t > start_t:
+                durations.append(int((end_t - start_t).total_seconds()))
+        if not durations:
+            return "00:00:00"
+        avg_sec = sum(durations) // len(durations)
+        return format_time_from_seconds(avg_sec)
+
+    # Инициализируем переменные времени в топах
+    top_1_time = "00:00:00"
+    top_3_time = "00:00:00"
+    top_5_time = "00:00:00"
+    top_10_time = "00:00:00"
+    
+    # Всегда используем fallback логику, так как основной трекинг работает медленно
+    if product_id:
+        logger.info(f"[EFFICIENCY] Используем fallback логику для товара {product_id}")
         top_1_time = await compute_avg_top_time_via_chronology(1)
         top_3_time = await compute_avg_top_time_via_chronology(3)
         top_5_time = await compute_avg_top_time_via_chronology(5)
         top_10_time = await compute_avg_top_time_via_chronology(10)
+    else:
+        # Для всего магазина используем fallback логику по всем товарам
+        logger.info(f"[EFFICIENCY] Используем fallback логику для всего магазина")
+        top_1_time = await compute_avg_top_time_via_chronology_all_products(1)
+        top_3_time = await compute_avg_top_time_via_chronology_all_products(3)
+        top_5_time = await compute_avg_top_time_via_chronology_all_products(5)
+        top_10_time = await compute_avg_top_time_via_chronology_all_products(10)
     
     # Время удаления (пока заглушка)
     deletion_time = "00:00:00"
     
-    return {
+    # Рассчитываем ежедневный трекинг
+    daily_tracking = await calculate_daily_tracking()
+    logger.info(f"[EFFICIENCY] Создан ежедневный трекинг: {len(daily_tracking)} дней")
+    
+    result_data = {
         "total_reviews": total_reviews,
         "negative_count": negative_count,
         "deleted_count": deleted_count,
@@ -820,8 +1148,12 @@ async def get_efficiency_data_crud(
         "top_5_time": top_5_time,
         "top_10_time": top_10_time,
         "deletion_time": deletion_time,
-        "trends": trends
+        "trends": trends,
+        "daily_tracking": daily_tracking
     }
+    
+    logger.info(f"[EFFICIENCY] Возвращаем результат: {result_data}")
+    return result_data
 
 
 async def update_feedback_top_tracking(
@@ -1066,7 +1398,8 @@ async def update_top_tracking_for_feedback(
     feedback_id: int,
     article: str,
     brand: str,
-    feedback_date: datetime
+    feedback_date: datetime,
+    user_id: int
 ) -> None:
     """Обновление топ-трекинга при добавлении нового отзыва"""
     
@@ -1082,54 +1415,73 @@ async def update_top_tracking_for_feedback(
             feedback_id=feedback_id,
             article=article,
             brand=brand,
+            user_id=user_id,
             created_at=datetime.now()
         )
         db.add(tracking)
     
-    # Получаем последние отзывы для товара (по времени)
-    recent_feedbacks_query = select(Feedback).where(
+    # Получаем все отзывы для товара (по времени) с учетом user_id
+    all_feedbacks_query = select(Feedback).where(
         and_(
             Feedback.article == article,
             Feedback.brand == brand,
+            Feedback.user_id == user_id,
             Feedback.is_deleted == False
         )
-    ).order_by(Feedback.date.desc())
+    ).order_by(Feedback.date.asc())  # От старых к новым
     
-    result = await db.execute(recent_feedbacks_query)
-    recent_feedbacks = result.scalars().all()
+    result = await db.execute(all_feedbacks_query)
+    all_feedbacks = result.scalars().all()
     
-    # Определяем, в каких топах находится текущий отзыв
-    feedback_index = None
-    for i, fb in enumerate(recent_feedbacks):
+    # Находим позицию текущего отзыва в общем списке
+    current_feedback_index = None
+    for i, fb in enumerate(all_feedbacks):
         if fb.id == feedback_id:
-            feedback_index = i
+            current_feedback_index = i
             break
     
-    if feedback_index is None:
+    if current_feedback_index is None:
         return
     
-    # Обновляем статусы топов
+    # Определяем, в каких топах находится текущий отзыв
     top_sizes = [1, 3, 5, 10]
     
     for top_size in top_sizes:
-        is_in_top = feedback_index < top_size
+        is_in_top = current_feedback_index < top_size
         entered_field = f"entered_top_{top_size}_at"
         is_in_field = f"is_in_top_{top_size}"
+        time_field = f"time_in_top_{top_size}"
         
         if is_in_top:
-            # Отзыв вошел в топ
+            # Отзыв в топе
             if not getattr(tracking, entered_field):
+                # Впервые вошел в топ
                 setattr(tracking, entered_field, feedback_date)
             setattr(tracking, is_in_field, True)
         else:
-            # Отзыв вышел из топа
+            # Отзыв не в топе
             if getattr(tracking, is_in_field):
-                # Вычисляем время нахождения
+                # Вышел из топа - вычисляем время нахождения
                 entered_time = getattr(tracking, entered_field)
                 if entered_time:
-                    time_in_seconds = int((feedback_date - entered_time).total_seconds())
-                    time_field = f"time_in_top_{top_size}"
-                    setattr(tracking, time_field, time_in_seconds)
+                    # Приводим к одинаковому типу времени (без часовых поясов)
+                    try:
+                        if hasattr(entered_time, 'replace'):
+                            entered_time_naive = entered_time.replace(tzinfo=None) if entered_time.tzinfo else entered_time
+                        else:
+                            entered_time_naive = entered_time
+                        
+                        if hasattr(feedback_date, 'replace'):
+                            feedback_date_naive = feedback_date.replace(tzinfo=None) if feedback_date.tzinfo else feedback_date
+                        else:
+                            feedback_date_naive = feedback_date
+                        
+                        time_in_seconds = int((feedback_date_naive - entered_time_naive).total_seconds())
+                        current_time = getattr(tracking, time_field, 0)
+                        setattr(tracking, time_field, current_time + time_in_seconds)
+                    except Exception as e:
+                        logger.warning(f"[TOP_TRACKING] Ошибка вычисления времени для feedback_id={feedback_id}: {e}")
+                        # Пропускаем обновление времени при ошибке
                 
                 # Сбрасываем статус
                 setattr(tracking, is_in_field, False)
@@ -1139,10 +1491,66 @@ async def update_top_tracking_for_feedback(
     await db.commit()
 
 
+async def recalculate_all_top_tracking(
+    db: AsyncSession,
+    user_id: int,
+    brand: str
+) -> None:
+    """Пересчитывает все топ-трекинги для бренда"""
+    logger = logging.getLogger(__name__)
+    logger.info(f"[TOP_TRACKING] Пересчитываем топ-трекинги для бренда {brand} user_id={user_id}")
+    
+    try:
+        # Получаем все отзывы бренда, отсортированные по времени
+        feedbacks_query = select(Feedback).where(
+            and_(
+                Feedback.brand == brand,
+                Feedback.user_id == user_id,
+                Feedback.is_deleted == False
+            )
+        ).order_by(Feedback.date.asc())
+        
+        result = await db.execute(feedbacks_query)
+        feedbacks = result.scalars().all()
+        
+        logger.info(f"[TOP_TRACKING] Найдено отзывов: {len(feedbacks)}")
+        
+        # Группируем отзывы по артикулам
+        articles = {}
+        for feedback in feedbacks:
+            article = feedback.article
+            if article not in articles:
+                articles[article] = []
+            articles[article].append(feedback)
+        
+        logger.info(f"[TOP_TRACKING] Найдено артикулов: {len(articles)}")
+        
+        # Обрабатываем каждый артикул
+        for article, article_feedbacks in articles.items():
+            logger.info(f"[TOP_TRACKING] Обрабатываем артикул {article} ({len(article_feedbacks)} отзывов)")
+            
+            # Сортируем отзывы по времени
+            sorted_feedbacks = sorted(article_feedbacks, key=lambda f: f.date or f.created_at or datetime.min)
+            
+            # Обрабатываем каждый отзыв
+            for i, feedback in enumerate(sorted_feedbacks):
+                await update_top_tracking_for_feedback(
+                    db, feedback.id, article, brand, feedback.date or feedback.created_at or datetime.now(), user_id
+                )
+        
+        logger.info(f"[TOP_TRACKING] Топ-трекинги пересчитаны для бренда {brand}")
+        
+    except Exception as e:
+        logger.error(f"[TOP_TRACKING] Ошибка при пересчете топ-трекингов: {e}")
+        import traceback
+        logger.error(f"[TOP_TRACKING] Traceback: {traceback.format_exc()}")
+
+
 async def process_top_tracking_for_product(
     db: AsyncSession,
     article: str,
-    brand: str
+    brand: str,
+    user_id: int
 ) -> None:
     """Обработка топ-трекинга для всех отзывов товара"""
     
@@ -1151,6 +1559,7 @@ async def process_top_tracking_for_product(
         and_(
             Feedback.article == article,
             Feedback.brand == brand,
+            Feedback.user_id == user_id,
             Feedback.is_deleted == False
         )
     ).order_by(Feedback.date.asc())  # От старых к новым
@@ -1161,7 +1570,7 @@ async def process_top_tracking_for_product(
     # Обрабатываем каждый отзыв
     for i, feedback in enumerate(feedbacks):
         await update_top_tracking_for_feedback(
-            db, feedback.id, article, brand, feedback.date
+            db, feedback.id, article, brand, feedback.date, user_id
         )
 
 
@@ -1219,21 +1628,23 @@ async def get_shops_summary_crud(
         # Получаем vendor_code для всех артикулов
         vendor_codes = {}
         if products_data:
-            # Преобразуем строковые артикулы в целые числа
-            nm_ids = []
-            for article_key in products_data.keys():
+            # Получаем vendor_code из feedbacks по nm_id (article)
+            for article in products_data.keys():
                 try:
-                    nm_id = int(article_key)
-                    nm_ids.append(str(nm_id))
+                    nm_id = int(article)
+                    nm_id_str = str(nm_id)
+                    # Ищем vendor_code в feedbacks
+                    vendor_code_query = select(Feedback.vendor_code).where(
+                        and_(
+                            Feedback.user_id == user_id,
+                            Feedback.article == nm_id_str
+                        )
+                    ).limit(1)
+                    vendor_code_result = await db.execute(vendor_code_query)
+                    vendor_code = vendor_code_result.scalar()
+                    vendor_codes[article] = vendor_code or str(article)
                 except (ValueError, TypeError):
-                    continue
-            
-            if nm_ids:
-                product_query = select(Product.nm_id, Product.vendor_code).where(Product.nm_id.in_(nm_ids))
-                product_result = await db.execute(product_query)
-                products_data_db = product_result.fetchall()
-                for nm_id, vendor_code in products_data_db:
-                    vendor_codes[nm_id] = vendor_code or str(nm_id)
+                    vendor_codes[article] = str(article)
 
         top_products = []
         for article, ratings_list in products_data.items():
@@ -1287,22 +1698,38 @@ async def parse_shop_feedbacks_crud(
     logger.info(f"[PARSE] Начинаем парсинг отзывов для магазина: {shop_id}")
     logger.info(f"[PARSE] user_id: {user_id}, max_count_per_product: {max_count_per_product}, save_to_db: {save_to_db}")
 
+    # Получаем правильный бренд из маппинга для поиска API ключа
+    mapped_shop_id = get_mapped_brand(shop_id)
+    all_possible_brands = get_all_mapped_brands(shop_id)
+    
+    logger.info(f"[PARSE] Маппинг брендов: '{shop_id}' → '{mapped_shop_id}'")
+    logger.info(f"[PARSE] Все возможные бренды: {all_possible_brands}")
+
     user_query = select(User).where(User.id == user_id)
     user_result = await db.execute(user_query)
     user = user_result.scalars().first()
 
-    if not user or not user.wb_api_key or shop_id not in user.wb_api_key:
-        error_msg = f"API ключ для бренда '{shop_id}' не найден"
+    # Проверяем API ключ для всех возможных названий бренда
+    found_brand = None
+    for brand in all_possible_brands:
+        if user and user.wb_api_key and brand in user.wb_api_key:
+            found_brand = brand
+            break
+    
+    if not found_brand:
+        error_msg = f"API ключ для брендов {all_possible_brands} не найден"
         logger.error(f"[PARSE] ОШИБКА: {error_msg}")
         return {
             "success": False,
             "error": error_msg
         }
+    
+    logger.info(f"[PARSE] Используем API ключ для бренда: {found_brand}")
 
     try:
-        # Получаем API ключ для бренда
-        logger.info(f"[PARSE] Получаем API ключ для бренда {shop_id}...")
-        wb_api_key = await get_decrypted_wb_key(db, user, shop_id)
+        # Получаем API ключ для найденного бренда
+        logger.info(f"[PARSE] Получаем API ключ для бренда {found_brand}...")
+        wb_api_key = await get_decrypted_wb_key(db, user, found_brand)
         logger.info(f"[PARSE] API ключ получен успешно")
 
         # Получаем список товаров бренда
@@ -1385,9 +1812,10 @@ async def parse_shop_feedbacks_crud(
 
                 logger.info(f"[PARSE] Найдено отзывов для товара nmID={nm_id}: {len(feedbacks_data)}")
 
-                # Добавляем артикул к каждому отзыву
+                # Добавляем артикул и vendor_code к каждому отзыву
                 for feedback in feedbacks_data:
                     feedback['article'] = nm_id
+                    feedback['vendor_code'] = vendor_code  # Добавляем vendor_code
 
                 total_feedbacks += len(feedbacks_data)
                 all_feedbacks_data.extend(feedbacks_data)  # Добавляем к общему списку
@@ -1422,11 +1850,11 @@ async def parse_shop_feedbacks_crud(
             deduplicated_feedbacks = list(unique_feedbacks.values())
             logger.info(f"[PARSE] Дедупликация: было {len(all_feedbacks_data)}, стало {len(deduplicated_feedbacks)}")
             
-            logger.info(f"[PARSE] Синхронизируем все {len(deduplicated_feedbacks)} отзывов для бренда {shop_id}...")
+            logger.info(f"[PARSE] Синхронизируем все {len(deduplicated_feedbacks)} отзывов для бренда {mapped_shop_id}...")
             sync_stats = await sync_feedbacks_with_soft_delete_optimized(
                 db=db,
                 feedbacks_from_wb=deduplicated_feedbacks,
-                brand=shop_id,
+                brand=mapped_shop_id,  # Используем правильный бренд из маппинга
                 user_id=user_id
             )
             
@@ -1440,6 +1868,43 @@ async def parse_shop_feedbacks_crud(
             logger.info(f"  Удаленных: {total_deleted_feedbacks}")
         elif not all_feedbacks_data:
             logger.info(f"[PARSE] Нет отзывов для сохранения в БД")
+        
+        # Обновляем топ-трекинг для всех товаров бренда (ВСЕГДА, если save_to_db=True)
+        if save_to_db:
+            logger.info(f"[PARSE] ===== НАЧИНАЕМ ОБНОВЛЕНИЕ ТОП-ТРЕКИНГА =====")
+            logger.info(f"[PARSE] Обновляем топ-трекинг для всех товаров бренда {mapped_shop_id}...")
+            logger.info(f"[PARSE] user_id: {user_id}")
+            logger.info(f"[PARSE] mapped_shop_id: {mapped_shop_id}")
+            
+            try:
+                # Получаем уникальные артикулы для бренда
+                logger.info(f"[PARSE] Выполняем запрос для получения артикулов...")
+                unique_articles_query = select(Feedback.article).where(
+                    and_(
+                        Feedback.brand == mapped_shop_id,
+                        Feedback.user_id == user_id,
+                        Feedback.is_deleted == False
+                    )
+                ).distinct()
+                articles_result = await db.execute(unique_articles_query)
+                unique_articles = articles_result.scalars().all()
+                
+                logger.info(f"[PARSE] Найдено уникальных артикулов: {len(unique_articles)}")
+                logger.info(f"[PARSE] Артикулы: {unique_articles[:5]}...")  # Показываем первые 5
+                
+                # Обновляем топ-трекинг для каждого артикула
+                logger.info(f"[PARSE] Начинаем обработку артикулов...")
+                for i, article in enumerate(unique_articles):
+                    logger.info(f"[PARSE] Обрабатываем артикул {i+1}/{len(unique_articles)}: {article}")
+                    logger.info(f"[PARSE] Вызываем update_top_tracking_for_all_feedbacks...")
+                    await update_top_tracking_for_all_feedbacks(db, article, mapped_shop_id, user_id)
+                    logger.info(f"[PARSE] Артикул {article} обработан")
+                
+                logger.info(f"[PARSE] Топ-трекинг обновлен для всех артикулов")
+            except Exception as e:
+                logger.error(f"[PARSE] Ошибка при обновлении топ-трекинга: {e}")
+                import traceback
+                logger.error(f"[PARSE] Traceback: {traceback.format_exc()}")
 
         logger.info(f"[PARSE] ИТОГОВАЯ СТАТИСТИКА:")
         logger.info(f"  Всего товаров: {total_products}")
@@ -1469,4 +1934,43 @@ async def parse_shop_feedbacks_crud(
         return {
             "success": False,
             "error": error_msg
-        } 
+        }
+
+
+async def update_top_tracking_for_all_feedbacks(
+    db: AsyncSession,
+    article: str,
+    brand: str,
+    user_id: int
+) -> None:
+    """Обновляет топ-трекинг для всех отзывов товара"""
+    logger = logging.getLogger(__name__)
+    logger.info(f"[TOP_TRACKING] СТАРТ: Обновляем топ-трекинг для товара {article} бренда {brand} user_id={user_id}")
+    
+    try:
+        # Получаем все отзывы товара, отсортированные по времени
+        feedbacks_query = select(Feedback).where(
+            and_(
+                Feedback.article == article,
+                Feedback.brand == brand,
+                Feedback.user_id == user_id,
+                Feedback.is_deleted == False
+            )
+        ).order_by(Feedback.date.asc())  # От старых к новым
+        
+        result = await db.execute(feedbacks_query)
+        feedbacks = result.scalars().all()
+        
+        if not feedbacks:
+            return
+        
+        # Обрабатываем каждый отзыв
+        for feedback in feedbacks:
+            await update_top_tracking_for_feedback(
+                db, feedback.id, article, brand, feedback.date, user_id
+            )
+        
+        logger.info(f"[TOP_TRACKING] Обновлен топ-трекинг для товара {article} бренда {brand}")
+        
+    except Exception as e:
+        logger.error(f"[TOP_TRACKING] Ошибка при обновлении топ-трекинга для товара {article}: {e}") 

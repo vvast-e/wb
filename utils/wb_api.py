@@ -94,6 +94,63 @@ class WBAPIClient:
         )
         return response
 
+    async def get_seller_info(self) -> WBApiResponse:
+        """Получение информации о продавце через API WB"""
+        # Костыль: используем конкретный URL для seller-info, а не базовый из конфига
+        seller_info_url = "https://common-api.wildberries.ru/api/v1/seller-info"
+        
+        headers = {"Authorization": self.api_key}
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.request(
+                    "GET",
+                    seller_info_url,
+                    headers=headers
+                )
+
+                # Попытка распарсить JSON
+                try:
+                    json_data = response.json()
+                except json.JSONDecodeError:
+                    json_data = None
+
+                # Если всё ок — возвращаем данные
+                if response.is_success:
+                    return WBApiResponse(
+                        success=True,
+                        data=json_data,
+                        wb_response=json_data
+                    )
+
+                if json_data:
+                    return WBApiResponse(
+                        success=False,
+                        error=f"HTTP {response.status_code}",
+                        wb_response=json_data
+                    )
+
+                return WBApiResponse(
+                    success=False,
+                    data=None,
+                    error=f"HTTP {response.status_code} — Invalid JSON",
+                    wb_response={"raw_response": response.text}
+                )
+
+            except httpx.RequestError as e:
+                # Обработка сетевых ошибок
+                print("Request Error:", str(e))
+                return WBApiResponse(
+                    success=False,
+                    error=f"Network error: {str(e)}"
+                )
+            except Exception as e:
+                print("Unexpected Error:", str(e))
+                return WBApiResponse(
+                    success=False,
+                    error=str(e)
+                )
+
     async def update_card_content(self, nm_id: int, content: dict) -> WBApiResponse:
         nm_id = str(nm_id)
         current_card = await self.get_card_by_nm(nm_id)

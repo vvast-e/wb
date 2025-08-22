@@ -98,253 +98,78 @@ class AspectProcessor:
                     full_text = " ".join(text_parts)
                     reviews_texts.append(full_text)
                 else:
-                    reviews_texts.append("")  # Пустой текст для отзывов без текста
+                    reviews_texts.append("")
             
-            # 2. Анализируем через ИИ
-            if ai_aspect_analyzer:
-                # Используем безопасный батчевый анализатор с планировщиком
-                ai_results = await ai_aspect_analyzer.analyze_reviews_safely_with_scheduler(
-                    reviews_texts, product_name, max_batches_per_hour=20
-                )
-            else:
-                ai_results = await self._basic_aspect_analysis(reviews_texts, feedbacks_with_text)
+            # 2. Анализируем тексты через ИИ
+            logger.info(f"Анализируем {len(reviews_texts)} отзывов через ИИ...")
+            analysis_results = await ai_aspect_analyzer.analyze_batch(reviews_texts)
             
-            # 3. Сохраняем результаты в БД
-            save_results = await self._save_aspects_to_database(ai_results, feedbacks_with_text)
-            
-            # Добавляем информацию о пропущенных отзывах
-            save_results["skipped_already_analyzed"] = skipped_already_analyzed
-            
-            return save_results
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка при обработке отзывов: {e}")
-            raise
-    
-    async def process_feedbacks_safely_with_scheduler(self, feedbacks: List[Feedback], product_name: str = "", 
-                                                    max_batches_per_hour: int = 20) -> Dict:
-        """Безопасная обработка больших объемов отзывов с планировщиком и контролем лимитов"""
-        
-        if not feedbacks:
-            return {"processed": 0, "new_aspects": 0, "errors": []}
-        
-        try:
-            # Фильтруем отзывы - оставляем только те, где есть текст для анализа
-            # И НЕ анализируем уже проанализированные отзывы
-            feedbacks_with_text = []
-            skipped_already_analyzed = 0
-            
-            for feedback in feedbacks:
-                # Проверяем, не анализировался ли уже этот отзыв
-                if feedback.aspects and feedback.aspects != [] and feedback.aspects != '[]' and feedback.aspects != '{}':
-                    skipped_already_analyzed += 1
-                    continue
-                
-                has_text = False
-                if feedback.text and feedback.text.strip():
-                    has_text = True
-                if feedback.main_text and feedback.main_text.strip():
-                    has_text = True
-                if feedback.pros_text and feedback.pros_text.strip():
-                    has_text = True
-                if feedback.cons_text and feedback.cons_text.strip():
-                    has_text = True
-                
-                if has_text:
-                    feedbacks_with_text.append(feedback)
-            
-            if not feedbacks_with_text:
+            if not analysis_results:
                 return {
                     "processed": 0, 
                     "new_aspects": 0, 
-                    "errors": ["Нет отзывов для анализа"],
-                    "skipped_already_analyzed": skipped_already_analyzed
+                    "errors": ["Ошибка анализа через ИИ"]
                 }
             
-            # 1. Подготавливаем тексты отзывов для ИИ
-            reviews_texts = []
-            for feedback in feedbacks_with_text:
-                # Объединяем все текстовые поля отзыва
-                text_parts = []
-                if feedback.text:
-                    text_parts.append(feedback.text)
-                if feedback.main_text:
-                    text_parts.append(feedback.main_text)
-                if feedback.pros_text:
-                    text_parts.append(f"Достоинства: {feedback.pros_text}")
-                if feedback.cons_text:
-                    text_parts.append(f"Недостатки: {feedback.cons_text}")
-                
-                if text_parts:
-                    full_text = " ".join(text_parts)
-                    reviews_texts.append(full_text)
-                else:
-                    reviews_texts.append("")  # Пустой текст для отзывов без текста
+            # 3. Обрабатываем результаты анализа
+            processed_count = 0
+            new_aspects_count = 0
+            errors = []
             
-            # 2. Анализируем через ИИ с безопасным планировщиком
-            if ai_aspect_analyzer:
-                ai_results = await ai_aspect_analyzer.analyze_reviews_safely_with_scheduler(
-                    reviews_texts, product_name, max_batches_per_hour
-                )
-            else:
-                ai_results = await self._basic_aspect_analysis(reviews_texts, feedbacks_with_text)
-            
-            # 3. Сохраняем результаты в БД
-            save_results = await self._save_aspects_to_database(ai_results, feedbacks_with_text)
-            
-            # Добавляем информацию о пропущенных отзывах
-            save_results["skipped_already_analyzed"] = skipped_already_analyzed
-            
-            return save_results
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка при безопасной обработке отзывов: {e}")
-            raise
-    
-    async def _basic_aspect_analysis(self, reviews_texts: List[str], feedbacks: List[Feedback]) -> List[Dict]:
-        """Базовый анализ аспектов без ИИ (fallback)"""
-        results = []
-        
-        for i, (text, feedback) in enumerate(zip(reviews_texts, feedbacks)):
-            if not text.strip():
-                continue
-                
-            # Простой анализ на основе рейтинга и ключевых слов
-            aspects = {}
-            
-            # Анализируем рейтинг
-            if feedback.rating <= 2:
-                aspects["Качество"] = {
-                    "sentiment": "negative",
-                    "confidence": 0.7,
-                    "evidence": ["низкий рейтинг"],
-                    "category": "Качество",
-                    "is_new_aspect": False
-                }
-            elif feedback.rating >= 4:
-                aspects["Качество"] = {
-                    "sentiment": "positive",
-                    "confidence": 0.7,
-                    "evidence": ["высокий рейтинг"],
-                    "category": "Качество",
-                    "is_new_aspect": False
-                }
-            
-            # Анализируем текст на ключевые слова
-            text_lower = text.lower()
-            
-            if any(word in text_lower for word in ["цена", "стоимость", "дорого", "дешево"]):
-                aspects["Цена"] = {
-                    "sentiment": "negative" if any(word in text_lower for word in ["дорого", "завышена"]) else "positive",
-                    "confidence": 0.6,
-                    "evidence": ["упоминание цены"],
-                    "category": "Цена",
-                    "is_new_aspect": False
-                }
-            
-            if any(word in text_lower for word in ["эффект", "результат", "помогает", "действует"]):
-                aspects["Эффективность"] = {
-                    "sentiment": "positive" if any(word in text_lower for word in ["помогает", "действует"]) else "negative",
-                    "confidence": 0.6,
-                    "evidence": ["упоминание эффективности"],
-                    "category": "Эффективность",
-                    "is_new_aspect": False
-                }
-            
-            results.append({
-                "review_index": i,
-                "aspects": aspects
-            })
-        
-        return results
-    
-    async def _save_aspects_to_database(self, ai_results: List[Dict], feedbacks: List[Feedback]) -> Dict:
-        """Сохраняет аспекты в БД и связывает с отзывами"""
-        
-        processed_count = 0
-        new_aspects_count = 0
-        errors = []
-        
-        for ai_review in ai_results:
-            try:
-                review_index = ai_review["review_index"]
-                if review_index >= len(feedbacks):
-                    logger.warning(f"Индекс отзыва {review_index} превышает количество отзывов")
-                    continue
-                
-                feedback = feedbacks[review_index]
-                aspects_data = []
-                
-                # Обрабатываем каждый аспект
-                for aspect_name, aspect_data in ai_review.get("aspects", {}).items():
-                    try:
-                        # Создаем или получаем аспект
-                        aspect = await self._create_or_get_aspect(aspect_name, aspect_data)
-                        if aspect.is_new_aspect:
-                            new_aspects_count += 1
+            for i, (feedback, analysis_result) in enumerate(zip(feedbacks_with_text, analysis_results)):
+                try:
+                    if analysis_result and "aspects" in analysis_result:
+                        # Сохраняем аспекты в отзыв
+                        feedback.aspects = analysis_result["aspects"]
                         
-                        # Формируем данные для поля aspects в feedbacks
-                        aspect_info = {
-                            "name": aspect_name,
-                            "sentiment": aspect_data["sentiment"],
-                            "confidence": aspect_data["confidence"],
-                            "evidence": aspect_data["evidence"],
-                            "category": aspect_data["category"],
-                            "is_new": aspect_data.get("is_new_aspect", False)
-                        }
-                        aspects_data.append(aspect_info)
+                        # Создаем новые аспекты в базе
+                        for aspect_name, aspect_data in analysis_result["aspects"].items():
+                            await self._create_or_update_aspect(aspect_name, aspect_data)
+                            await self._save_feedback_aspect_relation(feedback.id, aspect_name, aspect_data)
                         
-                        # Сохраняем связь в таблице feedback_aspects только для сохраненных отзывов
-                        if feedback.id is not None:
-                            await self._save_feedback_aspect_relation(
-                                feedback.id, aspect_name, aspect_data
-                            )
+                        processed_count += 1
+                        new_aspects_count += len(analysis_result["aspects"])
                         
-                    except Exception as e:
-                        logger.error(f"Ошибка при обработке аспекта {aspect_name}: {e}")
-                        errors.append(f"Аспект {aspect_name}: {str(e)}")
-                
-                # Обновляем поле aspects в таблице feedbacks
-                if aspects_data:
-                    feedback.aspects = aspects_data
-                    processed_count += 1
-                
-            except Exception as e:
-                logger.error(f"Ошибка при обработке отзыва {review_index}: {e}")
-                errors.append(f"Отзыв {review_index}: {str(e)}")
-        
-        # Сохраняем все изменения
-        try:
+                        logger.info(f"Обработан отзыв {feedback.id}: {len(analysis_result['aspects'])} аспектов")
+                    else:
+                        # Если анализ не удался, помечаем как пустой массив
+                        feedback.aspects = []
+                        processed_count += 1
+                        
+                except Exception as e:
+                    error_msg = f"Ошибка при обработке отзыва {feedback.id}: {str(e)}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+            
+            # 4. Сохраняем изменения в БД
             await self.db.commit()
-            logger.info(f"💾 Сохранено в БД: {processed_count} отзывов")
+            
+            logger.info(f"Обработано отзывов: {processed_count}, новых аспектов: {new_aspects_count}")
+            
+            return {
+                "processed": processed_count,
+                "new_aspects": new_aspects_count,
+                "errors": errors,
+                "skipped_already_analyzed": skipped_already_analyzed
+            }
+            
         except Exception as e:
-            logger.error(f"❌ Ошибка при сохранении в БД: {e}")
+            logger.error(f"Ошибка при обработке батча отзывов: {e}")
             await self.db.rollback()
             raise
-        
-        return {
-            "processed": processed_count,
-            "new_aspects": new_aspects_count,
-            "errors": errors
-        }
     
-    async def _create_or_get_aspect(self, name: str, aspect_data: Dict) -> Aspect:
-        """Создает новый аспект или возвращает существующий"""
+    async def _create_or_update_aspect(self, name: str, aspect_data: Dict) -> Aspect:
+        """Создает новый аспект или обновляет существующий"""
         
-        # Проверяем, существует ли уже такой аспект
-        existing = await self.db.execute(
-            select(Aspect).where(Aspect.name == name)
-        )
-        existing_aspect = existing.scalar_one_or_none()
+        # Проверяем, существует ли уже аспект
+        existing_query = select(Aspect).where(Aspect.name == name)
+        existing_result = await self.db.execute(existing_query)
+        existing_aspect = existing_result.scalars().first()
         
         if existing_aspect:
-            # Обновляем счетчик использования
-            await self.db.execute(
-                update(Aspect)
-                .where(Aspect.id == existing_aspect.id)
-                .values(usage_count=Aspect.usage_count + 1, last_used=func.now())
-            )
-            logger.debug(f"Обновлен счетчик использования для аспекта: {name}")
+            # Обновляем существующий аспект
+            existing_aspect.usage_count += 1
+            existing_aspect.description = aspect_data.get("description", existing_aspect.description)
             return existing_aspect
         
         # Создаем новый аспект
@@ -404,7 +229,7 @@ class AspectProcessor:
                 .order_by(func.count(Aspect.id).desc())
             )
             categories = [{"name": category, "count": count} 
-                         for category, count in category_result]
+                          for category, count in category_result]
             
             return {
                 "total_aspects": total_aspects,
@@ -422,14 +247,12 @@ class AspectProcessor:
         
         try:
             # Получаем отзывы без аспектов (только те, которые еще не анализировались)
-            # Более точный поиск для исключения уже проанализированных отзывов
+            # Используем правильные PostgreSQL JSON функции
             query = select(Feedback).where(
                 (Feedback.aspects.is_(None)) |      # NULL значения
-                (Feedback.aspects == []) |          # Пустые списки
-                (Feedback.aspects == '[]') |        # Пустые JSON массивы
-                (Feedback.aspects == '{}') |        # Пустые JSON объекты
-                (Feedback.aspects == 'null') |      # Строка "null"
-                (Feedback.aspects == '[""]')        # Массив с пустой строкой
+                (func.json_typeof(Feedback.aspects) == 'null') |  # JSON null
+                (func.json_typeof(Feedback.aspects) == 'array' & func.json_array_length(Feedback.aspects) == 0) |  # Пустые массивы
+                (func.json_typeof(Feedback.aspects) == 'object' & func.json_object_keys(Feedback.aspects).is_(None))  # Пустые объекты
             )
             
             if brand:

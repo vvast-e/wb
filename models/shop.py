@@ -7,8 +7,9 @@ class Shop(Base):
     __tablename__ = "shops"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True, nullable=False)
-    wb_name = Column(String, nullable=False)  # Название магазина на WB
+    name = Column(String, unique=True, index=True, nullable=True)  # Название магазина (может быть null для WB)
+    wb_name = Column(String, nullable=True)  # Название магазина на WB (может быть null для Ozon)
+    platform = Column(String(10), nullable=False, default="wb")  # Тип платформы: "wb" или "ozon"
     user_id = Column(Integer, nullable=False)  # ID пользователя, добавившего магазин
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

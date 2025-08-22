@@ -157,10 +157,7 @@ async def _http_fallback_parser(article: int, max_count: int) -> List[Dict[str, 
                             
                             # Обрабатываем дату - используем createdDate или updatedDate
                             date_str = fb.get('createdDate', fb.get('updatedDate', ''))
-                            # Логируем дату в файл для анализа
-                            log_path = os.path.join(os.path.dirname(__file__), 'wb_api_dates.log')
-                            with open(log_path, 'a', encoding='utf-8') as logf:
-                                logf.write(f"{date_str} (nmId: {fb.get('nmId')})\n")
+                            # Убираем логирование дат в файл
                             # НЕ обрабатываем дату здесь - это будет сделано в parse_wb_date
                             
                             # Формируем текст с правильными разделителями

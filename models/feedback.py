@@ -10,6 +10,7 @@ class Feedback(Base):
     id = Column(Integer, primary_key=True, index=True)
     article = Column(String(32), nullable=False, index=True)
     brand = Column(String, nullable=False, index=True)
+    vendor_code = Column(String, nullable=True, index=True)  # Добавляем поле vendor_code
     author = Column(String, nullable=True)
     rating = Column(Integer, nullable=False)
     date = Column(DateTime, nullable=True)
@@ -32,7 +33,7 @@ class Feedback(Base):
     top_tracking = relationship("FeedbackTopTracking", back_populates="feedback", uselist=False)
     is_deleted = Column(Boolean, default=False)  # Новый флаг для удалённых отзывов
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Время удаления отзыва
-    wb_id = Column(String, unique=True, index=True, nullable=False)  # Уникальный id отзыва WB
+    wb_id = Column(String, unique=True, index=True, nullable=False)  # Возвращаем unique=True
     aspects = Column(JSON, nullable=True)
 
     # Составные индексы для оптимизации запросов
@@ -42,6 +43,8 @@ class Feedback(Base):
         Index('idx_user_brand', 'user_id', 'brand'),
         Index('idx_brand_is_deleted', 'brand', 'is_deleted'),
         Index('idx_article_rating', 'article', 'rating'),
+        Index('idx_vendor_code_brand', 'vendor_code', 'brand'),  # Добавляем индекс для vendor_code + brand
+        # Убираем составной уникальный индекс idx_wb_id_brand_user
     )
 
 

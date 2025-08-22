@@ -236,8 +236,9 @@ def parse_wb_date(date_str: str) -> datetime:
         elif 'T' in date_str:
             dt = datetime.fromisoformat(date_str)
             return dt
-    except Exception as e:
-        print(f"[ERROR] parse_wb_date: не удалось распарсить ISO формат '{date_str}': {e}")
+    except Exception:
+        # Убираем логирование ошибок парсинга дат
+        pass
     
     # 3. Старый формат (русский) — если вдруг встретится
     import re
@@ -251,7 +252,7 @@ def parse_wb_date(date_str: str) -> datetime:
         day, month_str, year, hour, minute = match.groups()
         month = MONTHS.get(month_str.lower())
         if not month:
-            print(f"[WARN] Неизвестный месяц: {month_str} в дате: '{date_str}'")
+            # Убираем логирование неизвестного месяца
             return None
         now = datetime.now()
         year_was_missing = not year
@@ -263,15 +264,14 @@ def parse_wb_date(date_str: str) -> datetime:
             if year_was_missing and parsed > now:
                 parsed = parsed.replace(year=parsed.year - 1)
             if parsed > now:
-                print(f"[WARN] Будущая дата обнаружена: {parsed}, отзыв будет пропущен")
+                # Убираем логирование будущей даты
                 return None
             return parsed
-        except Exception as e:
-            print(f"[ERROR] strptime fail for '{parsed_date_str}': {e}")
+        except Exception:
+            # Убираем логирование ошибок strptime
             return None
     
-    # 4. Если ничего не подошло
-    print(f"[WARN] parse_wb_date: не удалось распарсить дату '{date_str}' - неизвестный формат")
+    # 4. Если ничего не подошло - убираем логирование
     return None
 
 
@@ -332,8 +332,7 @@ async def save_feedbacks_batch(
         date_obj = None
         if date_str and isinstance(date_str, str) and date_str.strip():
             date_obj = parse_wb_date(date_str)
-            if date_obj is None:
-                print(f"[WARN] Не удалось распарсить дату: '{date_str}' для отзыва: {data}")
+            # Убираем логирование ошибок парсинга дат
         
         # Определяем негативность по рейтингу (1-2 = негативный, 3 = нейтральный, 4-5 = позитивный)
         rating = data.get('productValuation', 0)
@@ -376,7 +375,6 @@ async def save_feedbacks_batch(
             aspects=aspects,  # Добавляем проанализированные аспекты
             wb_id=str(data.get('wb_id', ''))  # Конвертируем в строку
         )
-        
         feedbacks.append(feedback)
     
     if feedbacks:
@@ -385,21 +383,6 @@ async def save_feedbacks_batch(
         
         for feedback in feedbacks:
             await db.refresh(feedback)
-            
-            # Обновляем отслеживание времени в топах после сохранения
-            try:
-                from crud.analytics import update_feedback_top_tracking
-                await update_feedback_top_tracking(
-                    db=db,
-                    feedback_id=feedback.id,
-                    article=feedback.article,
-                    brand=feedback.brand,
-                    user_id=user_id,
-                    feedback_date=feedback.date,
-                    is_negative=bool(feedback.is_negative)
-                )
-            except Exception as e:
-                print(f"[WARN] Не удалось обновить топ-трекинг для отзыва {feedback.id}: {e}")
     
     return feedbacks
 
@@ -536,8 +519,7 @@ async def sync_feedbacks_with_soft_delete_optimized(
             date_str = fb_data.get('date', '')
             if date_str and isinstance(date_str, str) and date_str.strip():
                 date_obj = parse_wb_date(date_str)
-                if date_obj is None:
-                    logger.warning(f"Не удалось распарсить дату: '{date_str}' для отзыва {fb_data['id']}")
+                # Убираем логирование ошибок парсинга дат
             
             # Извлекаем имя пользователя - используем поле 'author' из парсера
             author_name = fb_data.get('author', 'Аноним')
@@ -550,8 +532,8 @@ async def sync_feedbacks_with_soft_delete_optimized(
             # Определяем негативность по рейтингу (1-2 = негативный, 3 = нейтральный, 4-5 = позитивный)
             is_negative = 1 if rating <= 2 else 0
             
-            # Детальное логирование для отладки
-            logger.info(f"Обрабатываем отзыв {fb_data['id']}: rating={rating}, is_negative={is_negative}, author='{author_name}', date='{date_str}' -> {date_obj}")
+            # Убираем детальное логирование дат
+            logger.info(f"Обрабатываем отзыв {fb_data['id']}: rating={rating}, is_negative={is_negative}, author='{author_name}'")
             
             # Аспекты будут анализироваться отдельно через планировщик
             aspects = None  # Убираем анализ аспектов из синхронизации
@@ -560,6 +542,7 @@ async def sync_feedbacks_with_soft_delete_optimized(
                 wb_id=str(fb_data['id']),  # Конвертируем в строку
                 article=str(fb_data.get('article', '')),  # Конвертируем артикул в строку
                 brand=brand,
+                vendor_code=fb_data.get('vendor_code', ''),  # Добавляем vendor_code
                 author=author_name,
                 rating=rating,
                 date=date_obj,

@@ -11,31 +11,49 @@ from crud.shop import (
 )
 from utils.jwt import get_current_user
 from models.user import User
-from schemas import ShopCreate, ShopResponse, PriceHistoryCreate, PriceHistoryResponse
+from schemas import ShopCreate, ShopResponse, PriceHistoryCreate, PriceHistoryResponse, ShopCreateRequest
 
 router = APIRouter(prefix="/shops", tags=["shops"])
 
 
 @router.post("/", response_model=ShopResponse)
 def create_shop_endpoint(
-    shop: ShopCreate,
+    shop: ShopCreateRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Создать новый магазин"""
     try:
+        # Валидация API ключа для WB
+        if shop.platform == "wb" and shop.wb_name:
+            # Здесь можно добавить дополнительную валидацию API ключа
+            pass
+        
         db_shop = create_shop(
             db=db,
-            name=shop.name,
-            wb_name=shop.wb_name,
-            user_id=current_user.id
+            name=None,  # Название будет получено автоматически для WB
+            wb_name=shop.wb_name,  # API ключ
+            user_id=current_user.id,
+            platform=shop.platform
         )
         return db_shop
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ошибка при создании магазина: {str(e)}"
-        )
+        error_message = str(e)
+        if "API WB" in error_message:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ошибка API Wildberries: {error_message}"
+            )
+        elif "название магазина" in error_message:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ошибка валидации: {error_message}"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ошибка при создании магазина: {error_message}"
+            )
 
 
 @router.get("/", response_model=List[ShopResponse])
@@ -80,27 +98,43 @@ def update_shop_endpoint(
     db: Session = Depends(get_db)
 ):
     """Обновить магазин"""
-    shop = get_shop_by_id(db, shop_id)
-    if not shop:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Магазин не найден"
+    try:
+        shop = get_shop_by_id(db, shop_id)
+        if not shop:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Магазин не найден"
+            )
+        
+        if shop.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Нет доступа к этому магазину"
+            )
+        
+        updated_shop = update_shop(
+            db=db,
+            shop_id=shop_id,
+            name=shop_update.name,
+            wb_name=shop_update.wb_name,
+            platform=shop_update.platform
         )
-    
-    if shop.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Нет доступа к этому магазину"
-        )
-    
-    updated_shop = update_shop(
-        db=db,
-        shop_id=shop_id,
-        name=shop_update.name,
-        wb_name=shop_update.wb_name
-    )
-    
-    return updated_shop
+        
+        return updated_shop
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_message = str(e)
+        if "API WB" in error_message:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ошибка API Wildberries: {error_message}"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ошибка при обновлении магазина: {error_message}"
+            )
 
 
 @router.delete("/{shop_id}")

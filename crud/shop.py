@@ -2,10 +2,56 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from models.shop import Shop, PriceHistory
 from typing import List, Optional
+from utils.wb_api import WBAPIClient
+from datetime import datetime
 
 
-async def create_shop(db: AsyncSession, name: str, wb_name: str, user_id: int) -> Shop:
-    db_shop = Shop(name=name, wb_name=wb_name, user_id=user_id)
+async def validate_wb_api_key(api_key: str) -> dict:
+    """Валидация API ключа WB"""
+    try:
+        wb_client = WBAPIClient(api_key=api_key)
+        seller_info = await wb_client.get_seller_info()
+        
+        if seller_info.success and seller_info.data:
+            return {
+                "valid": True,
+                "shop_name": seller_info.data.get('name') or seller_info.data.get('tradeMark'),
+                "sid": seller_info.data.get('sid'),
+                "data": seller_info.data
+            }
+        else:
+            return {
+                "valid": False,
+                "error": seller_info.error or "Неизвестная ошибка API WB"
+            }
+    except Exception as e:
+        return {
+            "valid": False,
+            "error": f"Ошибка подключения к API WB: {str(e)}"
+        }
+
+
+async def create_shop(db: AsyncSession, name: Optional[str], wb_name: str, user_id: int, platform: str = "wb") -> Shop:
+    # Если платформа WB, валидируем API ключ и получаем название магазина
+    if platform == "wb" and wb_name:
+        validation_result = await validate_wb_api_key(wb_name)
+        
+        if not validation_result["valid"]:
+            raise Exception(f"Недействительный API ключ WB: {validation_result['error']}")
+        
+        # Используем название из API WB
+        shop_name = validation_result["shop_name"]
+        if shop_name:
+            name = shop_name
+            wb_name = validation_result["sid"] or wb_name  # Сохраняем SID как wb_name
+        else:
+            raise Exception("Не удалось получить название магазина из API WB")
+    
+    # Если название не задано, выбрасываем исключение
+    if not name:
+        raise Exception("Название магазина не может быть пустым")
+    
+    db_shop = Shop(name=name, wb_name=wb_name, user_id=user_id, platform=platform)
     db.add(db_shop)
     await db.commit()
     await db.refresh(db_shop)
@@ -37,6 +83,21 @@ async def get_all_active_shops(db: AsyncSession) -> List[Shop]:
 async def update_shop(db: AsyncSession, shop_id: int, **kwargs) -> Optional[Shop]:
     shop = await get_shop_by_id(db, shop_id)
     if shop:
+        # Если обновляется платформа WB и есть новый API ключ, валидируем его
+        if kwargs.get('platform') == 'wb' and kwargs.get('wb_name'):
+            validation_result = await validate_wb_api_key(kwargs['wb_name'])
+            
+            if not validation_result["valid"]:
+                raise Exception(f"Недействительный API ключ WB: {validation_result['error']}")
+            
+            # Используем название из API WB
+            shop_name = validation_result["shop_name"]
+            if shop_name:
+                kwargs['name'] = shop_name
+                kwargs['wb_name'] = validation_result["sid"] or kwargs['wb_name']
+            else:
+                raise Exception("Не удалось получить название магазина из API WB")
+        
         for key, value in kwargs.items():
             setattr(shop, key, value)
         await db.commit()

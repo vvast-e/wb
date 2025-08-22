@@ -146,15 +146,25 @@ class UploadMediaRequest(BaseModel):
 
 # Изменяем BrandBase и BrandUpdate
 class BrandBase(BaseModel):
-    name: str
+    name: str  # Название бренда (будет заполнено автоматически для WB)
     api_key: str
+
+class BrandCreateRequest(BaseModel):
+    """Схема для создания бренда с фронтенда"""
+    platform: str = "wb"  # Тип платформы: "wb" или "ozon"
+    wb_name: str  # API ключ (переименовано для совместимости с фронтендом)
 
 class BrandCreate(BrandBase):
     pass
 
 class BrandUpdate(BaseModel):
-    name: str
+    name: str  # Название бренда
     api_key: str
+
+class BrandUpdateRequest(BaseModel):
+    """Схема для обновления бренда с фронтенда"""
+    platform: str = "wb"  # Тип платформы: "wb" или "ozon"
+    wb_name: str  # API ключ
 
 
 class BrandInDB(BrandBase):
@@ -173,7 +183,6 @@ class FeedbackBase(BaseModel):
     main_text: Optional[str] = None
     pros_text: Optional[str] = None
     cons_text: Optional[str] = None
-    aspects: Optional[Dict[str, List[str]]] = None  # Новое поле для аспектов
 
 
 class FeedbackCreate(FeedbackBase):
@@ -198,7 +207,6 @@ class FeedbackResponse(FeedbackBase):
     history_id: Optional[int] = None
     is_deleted: bool = False
     deleted_at: Optional[datetime] = None
-    aspects: Optional[Dict[str, List[str]]] = None  # Новое поле для аспектов
 
     class Config:
         orm_mode = True
@@ -246,8 +254,15 @@ class FeedbackParseRequest(BaseModel):
 
 # Схемы для магазинов и цен
 class ShopBase(BaseModel):
-    name: str
-    wb_name: str
+    name: Optional[str] = None  # Название магазина (необязательно для WB)
+    wb_name: Optional[str] = None  # Название магазина на WB (необязательно для Ozon)
+    platform: str = "wb"  # Тип платформы: "wb" или "ozon"
+
+
+class ShopCreateRequest(BaseModel):
+    """Схема для создания магазина с фронтенда"""
+    platform: str = "wb"  # Тип платформы: "wb" или "ozon"
+    wb_name: str  # API ключ
 
 
 class ShopCreate(ShopBase):
