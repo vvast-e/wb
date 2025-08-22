@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, date, timedelta
 from sqlalchemy import select, func, and_, or_, desc, asc, case, literal_column, text
 from models.feedback import Feedback, FeedbackTopTracking
+import asyncio
 
 import logging
 logger = logging.getLogger(__name__)
@@ -16,19 +17,19 @@ async def get_user_shopsList_crud(
         db: AsyncSession,
         user_id: int
 ) -> List[Dict[str, Any]]:
-    """Получение списка магазинов (брендов) пользователя с статистикой"""
-    query = select(Feedback.brand).distinct().where(Feedback.user_id == user_id)
+    """Получение списка всех доступных магазинов (брендов) с статистикой"""
+    query = select(Feedback.brand).distinct()  # Убираем фильтр по user_id
     result = await db.execute(query)
     brands = result.scalars().all()
 
     shops = []
     for brand in brands:
-        # Получаем статистику для каждого бренда
+        # Получаем статистику для каждого бренда - убираем фильтр по user_id
         stats_query = select(
             func.count(Feedback.id).label('total_reviews'),
             func.avg(Feedback.rating).label('avg_rating'),
             func.sum(Feedback.is_negative).label('negative_count')
-        ).where(Feedback.brand == brand)
+        ).where(Feedback.brand == brand)  # Оставляем только фильтр по бренду
 
         stats_result = await db.execute(stats_query)
         stats = stats_result.first()
@@ -62,8 +63,8 @@ async def get_reviews_with_filters_crud(
     """Получение отзывов с расширенной фильтрацией"""
     offset = (page - 1) * per_page
 
-    # Базовый запрос
-    query = select(Feedback).where(Feedback.user_id == user_id)
+    # Базовый запрос - убираем фильтр по user_id, чтобы все отзывы были доступны всем
+    query = select(Feedback)
 
     # Применяем фильтры
     if search:
@@ -139,12 +140,9 @@ async def get_reviews_with_filters_crud(
         # Получаем vendor_code из feedbacks по nm_id (article)
         for article_id in article_ids:
             article_str = str(article_id)
-            # Ищем vendor_code в feedbacks
+            # Ищем vendor_code в feedbacks - убираем фильтр по user_id
             vendor_code_query = select(Feedback.vendor_code).where(
-                and_(
-                    Feedback.user_id == user_id,
-                    Feedback.article == article_str
-                )
+                Feedback.article == article_str
             ).limit(1)
             vendor_code_result = await db.execute(vendor_code_query)
             vendor_code = vendor_code_result.scalar()
@@ -203,18 +201,14 @@ async def get_shop_data_crud(
         end_date: Optional[date] = None
 ) -> Dict[str, Any]:
     """Получение данных магазина за период"""
-    # Получаем все отзывы магазина
-    query_all = select(Feedback).where(
-        and_(Feedback.brand == shop_id, Feedback.user_id == user_id)
-    )
+    # Получаем все отзывы магазина - убираем фильтр по user_id
+    query_all = select(Feedback).where(Feedback.brand == shop_id)
     result_all = await db.execute(query_all)
     feedbacks_all = result_all.scalars().all()
 
     # Если фильтр по периоду
     if start_date or end_date:
-        query_period = select(Feedback).where(
-            and_(Feedback.brand == shop_id, Feedback.user_id == user_id)
-        )
+        query_period = select(Feedback).where(Feedback.brand == shop_id)
         if start_date:
             query_period = query_period.where(Feedback.date >= start_date)
         if end_date:
@@ -582,13 +576,8 @@ async def get_efficiency_data_crud(
     logger = logging.getLogger("efficiency_data")
     logger.info(f"[EFFICIENCY] Запрос данных для shop_id={shop_id}, product_id={product_id}, user_id={user_id}")
     
-    # Базовый запрос для отзывов
-    query = select(Feedback).where(
-        and_(
-            Feedback.user_id == user_id,
-            Feedback.brand == shop_id
-        )
-    )
+    # Базовый запрос для отзывов - убираем фильтр по user_id
+    query = select(Feedback).where(Feedback.brand == shop_id)
     
     if start_date:
         query = query.where(Feedback.date >= start_date)
@@ -1473,11 +1462,10 @@ async def recalculate_all_top_tracking(
     logger.info(f"[TOP_TRACKING] Пересчитываем топ-трекинги для бренда {brand} user_id={user_id}")
     
     try:
-        # Получаем все отзывы бренда, отсортированные по времени
+        # Получаем все отзывы бренда, отсортированные по времени - убираем фильтр по user_id
         feedbacks_query = select(Feedback).where(
             and_(
                 Feedback.brand == brand,
-                Feedback.user_id == user_id,
                 Feedback.is_deleted == False
             )
         ).order_by(Feedback.date.asc())
@@ -1497,25 +1485,68 @@ async def recalculate_all_top_tracking(
         
         logger.info(f"[TOP_TRACKING] Найдено артикулов: {len(articles)}")
         
-        # Обрабатываем каждый артикул
+        # Обрабатываем артикулы параллельно
+        logger.info(f"[TOP_TRACKING] Начинаем параллельную обработку артикулов...")
+        
+        # Создаем задачи для каждого артикула
+        article_tasks = []
         for article, article_feedbacks in articles.items():
-            logger.info(f"[TOP_TRACKING] Обрабатываем артикул {article} ({len(article_feedbacks)} отзывов)")
+            logger.info(f"[TOP_TRACKING] Подготавливаем артикул {article} ({len(article_feedbacks)} отзывов)")
             
             # Сортируем отзывы по времени
             sorted_feedbacks = sorted(article_feedbacks, key=lambda f: f.date or f.created_at or datetime.min)
             
-            # Обрабатываем каждый отзыв
-            for i, feedback in enumerate(sorted_feedbacks):
-                await update_top_tracking_for_feedback(
-                    db, feedback.id, article, brand, feedback.date or feedback.created_at or datetime.now(), user_id
-                )
+            # Создаем задачу для артикула
+            task = process_article_top_tracking_batch(db, article, brand, sorted_feedbacks, user_id)
+            article_tasks.append(task)
         
-        logger.info(f"[TOP_TRACKING] Топ-трекинги пересчитаны для бренда {brand}")
+        # Выполняем все артикулы параллельно
+        logger.info(f"[TOP_TRACKING] Запускаем {len(article_tasks)} артикулов параллельно...")
+        await asyncio.gather(*article_tasks, return_exceptions=True)
+        
+        logger.info(f"[TOP_TRACKING] Топ-трекинги пересчитаны для бренда {brand} параллельно")
         
     except Exception as e:
         logger.error(f"[TOP_TRACKING] Ошибка при пересчете топ-трекингов: {e}")
         import traceback
         logger.error(f"[TOP_TRACKING] Traceback: {traceback.format_exc()}")
+
+
+async def process_article_top_tracking_batch(
+    db: AsyncSession,
+    article: str,
+    brand: str,
+    feedbacks: List[Feedback],
+    user_id: int
+) -> None:
+    """Обрабатывает топ-трекинг для всех отзывов артикула батчами"""
+    logger = logging.getLogger(__name__)
+    logger.info(f"[TOP_TRACKING_BATCH] Обрабатываем артикул {article} ({len(feedbacks)} отзывов)")
+    
+    try:
+        # Разбиваем отзывы на батчи для параллельной обработки
+        BATCH_SIZE = 50
+        feedback_batches = [feedbacks[i:i + BATCH_SIZE] for i in range(0, len(feedbacks), BATCH_SIZE)]
+        
+        logger.info(f"[TOP_TRACKING_BATCH] Разбито на {len(feedback_batches)} батчей по {BATCH_SIZE}")
+        
+        # Обрабатываем каждый батч параллельно
+        for batch_num, batch in enumerate(feedback_batches):
+            batch_tasks = []
+            for feedback in batch:
+                task = update_top_tracking_for_feedback(
+                    db, feedback.id, article, brand, feedback.date or feedback.created_at or datetime.now(), user_id
+                )
+                batch_tasks.append(task)
+            
+            # Выполняем батч параллельно
+            await asyncio.gather(*batch_tasks, return_exceptions=True)
+            logger.info(f"[TOP_TRACKING_BATCH] Обработан батч {batch_num + 1}/{len(feedback_batches)} ({len(batch)} отзывов)")
+        
+        logger.info(f"[TOP_TRACKING_BATCH] Артикул {article} обработан полностью")
+        
+    except Exception as e:
+        logger.error(f"[TOP_TRACKING_BATCH] Ошибка при обработке артикула {article}: {e}")
 
 
 async def process_top_tracking_for_product(
@@ -1526,12 +1557,11 @@ async def process_top_tracking_for_product(
 ) -> None:
     """Обработка топ-трекинга для всех отзывов товара"""
     
-    # Получаем все отзывы товара, отсортированные по времени
+    # Получаем все отзывы товара, отсортированные по времени - убираем фильтр по user_id
     feedbacks_query = select(Feedback).where(
         and_(
             Feedback.article == article,
             Feedback.brand == brand,
-            Feedback.user_id == user_id,
             Feedback.is_deleted == False
         )
     ).order_by(Feedback.date.asc())  # От старых к новым
@@ -1553,20 +1583,15 @@ async def get_shops_summary_crud(
         end_date: Optional[date] = None
 ) -> List[Dict[str, Any]]:
     """Получение сводки по магазинам"""
-    # Получаем все бренды пользователя
-    brands_query = select(Feedback.brand).distinct().where(Feedback.user_id == user_id)
+    # Получаем все бренды - убираем фильтр по user_id
+    brands_query = select(Feedback.brand).distinct()
     brands_result = await db.execute(brands_query)
     brands = brands_result.scalars().all()
 
     summary = []
     for brand in brands:
-        # Базовый запрос для бренда
-        query = select(Feedback).where(
-            and_(
-                Feedback.brand == brand,
-                Feedback.user_id == user_id
-            )
-        )
+        # Базовый запрос для бренда - убираем фильтр по user_id
+        query = select(Feedback).where(Feedback.brand == brand)
 
         if start_date:
             query = query.where(Feedback.date >= start_date)
@@ -1605,12 +1630,9 @@ async def get_shops_summary_crud(
                 try:
                     nm_id = int(article)
                     nm_id_str = str(nm_id)
-                    # Ищем vendor_code в feedbacks
+                    # Ищем vendor_code в feedbacks - убираем фильтр по user_id
                     vendor_code_query = select(Feedback.vendor_code).where(
-                        and_(
-                            Feedback.user_id == user_id,
-                            Feedback.article == nm_id_str
-                        )
+                        Feedback.article == nm_id_str
                     ).limit(1)
                     vendor_code_result = await db.execute(vendor_code_query)
                     vendor_code = vendor_code_result.scalar()
@@ -1806,7 +1828,7 @@ async def parse_shop_feedbacks_crud(
             for feedback in all_feedbacks_data:
                 wb_id = feedback.get('id') or feedback.get('wb_id')
                 article = feedback.get('article')
-                brand = mapped_shop_id
+                brand = shop_id  # Используем shop_id напрямую
                 
                 if wb_id and article and brand:
                     # Создаем уникальный ключ по комбинации wb_id + article + brand
@@ -1850,7 +1872,6 @@ async def parse_shop_feedbacks_crud(
                 unique_articles_query = select(Feedback.article).where(
                     and_(
                         Feedback.brand == shop_id,
-                        Feedback.user_id == user_id,
                         Feedback.is_deleted == False
                     )
                 ).distinct()
@@ -1860,15 +1881,20 @@ async def parse_shop_feedbacks_crud(
                 logger.info(f"[PARSE] Найдено уникальных артикулов: {len(unique_articles)}")
                 logger.info(f"[PARSE] Артикулы: {unique_articles[:5]}...")  # Показываем первые 5
                 
-                # Обновляем топ-трекинг для каждого артикула
-                logger.info(f"[PARSE] Начинаем обработку артикулов...")
-                for i, article in enumerate(unique_articles):
-                    logger.info(f"[PARSE] Обрабатываем артикул {i+1}/{len(unique_articles)}: {article}")
-                    logger.info(f"[PARSE] Вызываем update_top_tracking_for_all_feedbacks...")
-                    await update_top_tracking_for_all_feedbacks(db, article, shop_id, user_id)
-                    logger.info(f"[PARSE] Артикул {article} обработан")
+                # Обновляем топ-трекинг для всех артикулов параллельно
+                logger.info(f"[PARSE] Начинаем параллельную обработку артикулов...")
                 
-                logger.info(f"[PARSE] Топ-трекинг обновлен для всех артикулов")
+                # Создаем задачи для параллельного выполнения
+                tasks = []
+                for article in unique_articles:
+                    task = update_top_tracking_for_all_feedbacks(db, article, shop_id, user_id)
+                    tasks.append(task)
+                
+                # Выполняем все задачи параллельно
+                logger.info(f"[PARSE] Запускаем {len(tasks)} задач параллельно...")
+                await asyncio.gather(*tasks, return_exceptions=True)
+                
+                logger.info(f"[PARSE] Топ-трекинг обновлен для всех артикулов параллельно")
             except Exception as e:
                 logger.error(f"[PARSE] Ошибка при обновлении топ-трекинга: {e}")
                 import traceback
@@ -1916,12 +1942,11 @@ async def update_top_tracking_for_all_feedbacks(
     logger.info(f"[TOP_TRACKING] СТАРТ: Обновляем топ-трекинг для товара {article} бренда {brand} user_id={user_id}")
     
     try:
-        # Получаем все отзывы товара, отсортированные по времени
+        # Получаем все отзывы товара, отсортированные по времени - убираем фильтр по user_id
         feedbacks_query = select(Feedback).where(
             and_(
                 Feedback.article == article,
                 Feedback.brand == brand,
-                Feedback.user_id == user_id,
                 Feedback.is_deleted == False
             )
         ).order_by(Feedback.date.asc())  # От старых к новым
@@ -1932,11 +1957,27 @@ async def update_top_tracking_for_all_feedbacks(
         if not feedbacks:
             return
         
-        # Обрабатываем каждый отзыв
-        for feedback in feedbacks:
-            await update_top_tracking_for_feedback(
-                db, feedback.id, article, brand, feedback.date, user_id
-            )
+        # Обрабатываем отзывы батчами для ускорения
+        BATCH_SIZE = 50  # Размер батча для параллельной обработки
+        
+        # Разбиваем отзывы на батчи
+        feedback_batches = [feedbacks[i:i + BATCH_SIZE] for i in range(0, len(feedbacks), BATCH_SIZE)]
+        
+        logger.info(f"[TOP_TRACKING] Обрабатываем {len(feedbacks)} отзывов в {len(feedback_batches)} батчах по {BATCH_SIZE}")
+        
+        # Обрабатываем каждый батч параллельно
+        for batch_num, batch in enumerate(feedback_batches):
+            # Создаем задачи для батча
+            batch_tasks = []
+            for feedback in batch:
+                task = update_top_tracking_for_feedback(
+                    db, feedback.id, article, brand, feedback.date, user_id
+                )
+                batch_tasks.append(task)
+            
+            # Выполняем батч параллельно
+            await asyncio.gather(*batch_tasks, return_exceptions=True)
+            logger.info(f"[TOP_TRACKING] Обработан батч {batch_num + 1}/{len(feedback_batches)} ({len(batch)} отзывов)")
         
         logger.info(f"[TOP_TRACKING] Обновлен топ-трекинг для товара {article} бренда {brand}")
         
