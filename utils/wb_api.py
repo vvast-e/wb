@@ -94,6 +94,69 @@ class WBAPIClient:
         )
         return response
 
+    async def get_all_cards_with_pagination(self, brand: str = None, limit: int = 1000):
+        """Получает все товары бренда с пагинацией"""
+        all_cards = []
+        cursor = {}
+        page = 1
+        
+        while True:
+            logger.info(f"[WB_API] Запрашиваем страницу {page} товаров для бренда {brand}")
+            
+            payload = {
+                "settings": {
+                    "cursor": cursor,
+                    "filter": {"withPhoto": 1}
+                }
+            }
+            
+            # Добавляем фильтр по бренду если указан
+            if brand:
+                payload["settings"]["filter"]["brand"] = brand
+            
+            response = await self._make_request(
+                method="POST",
+                endpoint="/content/v2/get/cards/list",
+                json=payload
+            )
+            
+            if not response.success:
+                logger.error(f"[WB_API] Ошибка получения страницы {page}: {response.error}")
+                break
+            
+            data = response.data
+            if not data or not isinstance(data, dict):
+                logger.error(f"[WB_API] Неверный формат данных на странице {page}")
+                break
+            
+            cards = data.get("cards", [])
+            if not cards:
+                logger.info(f"[WB_API] На странице {page} нет товаров, завершаем")
+                break
+            
+            logger.info(f"[WB_API] Страница {page}: получено {len(cards)} товаров")
+            all_cards.extend(cards)
+            
+            # Проверяем, есть ли следующая страница
+            next_cursor = data.get("cursor", {})
+            if not next_cursor or next_cursor == cursor:
+                logger.info(f"[WB_API] Достигнут конец списка товаров")
+                break
+            
+            cursor = next_cursor
+            page += 1
+            
+            # Защита от бесконечного цикла
+            if page > 100:
+                logger.warning(f"[WB_API] Достигнут лимит страниц (100), останавливаемся")
+                break
+        
+        logger.info(f"[WB_API] Всего получено товаров: {len(all_cards)}")
+        return WBApiResponse(
+            success=True,
+            data={"cards": all_cards, "total": len(all_cards)}
+        )
+
     async def get_seller_info(self) -> WBApiResponse:
         """Получение информации о продавце через API WB"""
         # Костыль: используем конкретный URL для seller-info, а не базовый из конфига
@@ -286,7 +349,7 @@ class WBAPIClient:
 
     async def get_card_by_nm(self, nm_id: int):
         nm_id = str(nm_id)
-        response = await self.get_cards_list()
+        response = await self.get_all_cards_with_pagination()
 
         if not response.success:
             print(f"❌ Не удалось получить список карточек: {response.error}")
@@ -313,7 +376,8 @@ class WBAPIClient:
 
     async def get_card_by_vendor(self, vendorCode: str) -> WBApiResponse:
         try:
-            response = await self.get_cards_list()
+            # Используем новую функцию с пагинацией для поиска по vendorCode
+            response = await self.get_all_cards_with_pagination()
 
             if not response.success:
                 return WBApiResponse(
@@ -348,59 +412,5 @@ class WBAPIClient:
                 error=f"Ошибка при поиске: {str(e)}"
             )
 
-    async def get_all_cards(self, with_photo: int = -1, limit: int = 100):
-        all_cards = []
-        cursor = {}
-        try:
-            from models.product import Product
-            from sqlalchemy import select
-            from database import AsyncSessionLocal
-            async with AsyncSessionLocal() as db:
-                while True:
-                    payload = {
-                        "settings": {
-                            "cursor": {
-                                "limit": limit,
-                                **cursor
-                            },
-                            "filter": {
-                                "withPhoto": with_photo
-                            }
-                        }
-                    }
-                    response = await self._make_request(
-                        method="POST",
-                        endpoint="/content/v2/get/cards/list",
-                        json=payload
-                    )
-                    if not response.success:
-                        break
-                    data = response.data or {}
-                    cards = data.get("cards", [])
-                    all_cards.extend(cards)
-                    for card in cards:
-                        nm_id = card.get("nmID")
-                        vendor_code = card.get("vendorCode")
-                        brand = card.get("brand")
-                        if nm_id is None:
-                            continue
-                        nm_id_str = str(nm_id)
-                        result = await db.execute(select(Product).where(Product.nm_id == nm_id_str))
-                        exists = result.scalars().first()
-                        if not exists:
-                            db.add(Product(nm_id=nm_id_str, vendor_code=vendor_code, brand=brand))
-                            print(f"[Product Save] Добавлена карточка: nm_id={nm_id_str}, vendor_code={vendor_code}, brand={brand}")
-                        else:
-                            print(f"[Product Save] Пропущена (уже есть): nm_id={nm_id_str}")
-                    await db.commit()
-                    if len(cards) < limit:
-                        break
-                    last_card = cards[-1]
-                    cursor = {
-                        "updatedAt": last_card.get("updatedAt"),
-                        "nmID": last_card.get("nmID")
-                    }
-        except Exception as e:
-            print(f"[Product Save] Ошибка при сохранении карточек: {e}")
-        return all_cards
+    # Функция get_all_cards удалена - используйте get_all_cards_with_pagination
 

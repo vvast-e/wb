@@ -115,9 +115,9 @@ class WBPriceParser:
             # Получаем API ключ для бренда
             wb_api_key = await get_decrypted_wb_key(db_session, user, found_brand)
             
-            # Получаем список товаров бренда
+            # Получаем список товаров бренда с пагинацией
             wb_client = WBAPIClient(api_key=wb_api_key)
-            items_result = await wb_client.get_cards_list()
+            items_result = await wb_client.get_all_cards_with_pagination(brand=found_brand)
             
             if not items_result.success:
                 print(f"Не удалось получить товары бренда: {items_result.error}")

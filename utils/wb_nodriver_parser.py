@@ -221,9 +221,10 @@ async def _http_fallback_parser(article: int, max_date: datetime) -> List[Dict[s
                                 'cons': fb.get('cons', '')
                             })
                             
-                            if len(all_feedbacks) >= 1000: # Ограничиваем количество отзывов для диагностики
-                                print(f"[HTTP_PARSER] Достигнут лимит отзывов для диагностики: 1000")
-                                return all_feedbacks[:1000]
+                            # Убираем ограничение на 1000 отзывов - теперь парсим все доступные
+                            # if len(all_feedbacks) >= 1000:
+                            #     print(f"[HTTP_PARSER] Достигнут лимит отзывов для диагностики: 1000")
+                            #     return all_feedbacks[:1000]
                                 
                 except Exception as e:
                     logger.error(f"HTTP fallback ошибка для {host}: {e}")

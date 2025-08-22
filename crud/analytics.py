@@ -460,17 +460,28 @@ async def get_shop_products_crud(
         user_id: int,
         shop_id: str
 ) -> List[Dict[str, Any]]:
-    """Получение товаров магазина с расчетом рейтингов за весь период"""
+    """Получение активных товаров магазина (с отзывами за последние 6 месяцев)"""
     from models.product import Product  # Добавляем импорт
     import logging
     
     logger = logging.getLogger("shop_products")
-    logger.info(f"[SHOP_PRODUCTS] Запрос товаров для shop_id={shop_id}, user_id={user_id}")
+    logger.info(f"[SHOP_PRODUCTS] Запрос активных товаров для shop_id={shop_id}, user_id={user_id}")
     
+    # Вычисляем дату 6 месяцев назад
+    six_months_ago = datetime.now() - timedelta(days=180)
+    logger.info(f"[SHOP_PRODUCTS] Фильтруем отзывы за последние 6 месяцев (с {six_months_ago.strftime('%Y-%m-%d')})")
+    
+    # Получаем уникальные артикулы с отзывами за последние 6 месяцев
     query = select(Feedback.article).distinct().where(
         and_(
             Feedback.brand == shop_id,
-            Feedback.user_id == user_id
+            Feedback.user_id == user_id,
+            Feedback.is_deleted == False,
+            # Отзывы за последние 6 месяцев
+            or_(
+                Feedback.date >= six_months_ago,
+                Feedback.created_at >= six_months_ago
+            )
         )
     )
 
@@ -482,17 +493,23 @@ async def get_shop_products_crud(
     for article in articles:
         logger.info(f"[SHOP_PRODUCTS] Обрабатываем артикул: {article}")
         
-        # Получаем все отзывы по товару за весь период
+        # Получаем активные отзывы по товару за последние 6 месяцев
         feedbacks_query = select(Feedback).where(
             and_(
                 Feedback.article == article,
                 Feedback.brand == shop_id,
-                Feedback.user_id == user_id
+                Feedback.user_id == user_id,
+                Feedback.is_deleted == False,
+                # Отзывы за последние 6 месяцев
+                or_(
+                    Feedback.date >= six_months_ago,
+                    Feedback.created_at >= six_months_ago
+                )
             )
         )
         feedbacks_result = await db.execute(feedbacks_query)
         feedbacks = feedbacks_result.scalars().all()
-        logger.info(f"[SHOP_PRODUCTS] Для артикула {article} найдено отзывов: {len(feedbacks)}")
+        logger.info(f"[SHOP_PRODUCTS] Для артикула {article} найдено активных отзывов: {len(feedbacks)}")
         
         # average_rating
         ratings = [f.rating for f in feedbacks if hasattr(f, 'rating') and isinstance(f.rating, (int, float))]
@@ -529,10 +546,9 @@ async def get_shop_products_crud(
         # Получаем vendor_code для товара
         try:
             nm_id = int(article)
-            # Ищем vendor_code в feedbacks по nm_id (article)
+            # Ищем vendor_code в feedbacks по nm_id (article) - убираем фильтр по user_id
             vendor_code_query = select(Feedback.vendor_code).where(
                 and_(
-                    Feedback.user_id == user_id,
                     Feedback.brand == shop_id,
                     Feedback.article == str(nm_id)
                 )
@@ -549,14 +565,15 @@ async def get_shop_products_crud(
             "nm_id": article_id,  # Добавляем nm_id для внутреннего использования
             "name": f"товар {vendor_code}",
             "rating": round(float(avg_rating), 2),
-            "market_rating": round(float(market_rating), 2)
+            "market_rating": round(float(market_rating), 2),
+            "active_reviews_count": len(feedbacks)  # Добавляем количество активных отзывов
         }
         
         logger.info(f"[SHOP_PRODUCTS] Добавляем товар: {product_info}")
         products.append(product_info)
     
     products.sort(key=lambda x: x["market_rating"], reverse=True)
-    logger.info(f"[SHOP_PRODUCTS] Итого товаров: {len(products)}")
+    logger.info(f"[SHOP_PRODUCTS] Итого активных товаров (с отзывами за 6 мес): {len(products)}")
     return products
 
 
@@ -1715,10 +1732,10 @@ async def parse_shop_feedbacks_crud(
         wb_api_key = await get_decrypted_wb_key(db, user, shop_id)
         logger.info(f"[PARSE] API ключ получен успешно")
 
-        # Получаем список товаров бренда
-        logger.info(f"[PARSE] Получаем список товаров бренда {shop_id}...")
+        # Получаем список товаров бренда с пагинацией
+        logger.info(f"[PARSE] Получаем список товаров бренда {shop_id} с пагинацией...")
         wb_client = WBAPIClient(api_key=wb_api_key)
-        items_result = await wb_client.get_cards_list()
+        items_result = await wb_client.get_all_cards_with_pagination(brand=shop_id)
 
         if not items_result.success:
             error_msg = f"Не удалось получить товары бренда: {items_result.error}"

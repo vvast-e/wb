@@ -1,147 +1,43 @@
 [
   {
-    "id": "zYenbyGG7J3RLdSoAq6w",
-    "globalUserId": "bGkaxpXVHB4tPlt/hBl2/VHp5x7JKzIgrJK5wzhGRzc=",
-    "wbUserId": 0,
-    "wbUserDetails": {
-      "hasPhoto": false,
-      "name": "Екатерина",
-      "country": "ru"
-    },
-    "nmId": 243544250,
-    "text": "Я в всотроге от этого спрея , волосы не магнитяться и не пушатся  , как на фото до ) к тому же мягкие и легко расчесываются, однозначно советую и закажу снова 😍",
-    "pros": "",
-    "cons": "",
-    "matchingSize": "",
-    "matchingPhoto": "",
-    "matchingDescription": "",
-    "productValuation": 5,
-    "color": "",
-    "size": "",
-    "createdDate": "2024-08-16T04:57:47Z",
-    "updatedDate": "2025-04-14T19:21:33Z",
-    "answer": {
-      "text": "Уважаемая Екатерина, спасибо за отзыв! Мы рады, что спрей вас порадовал и помог сделать ваши волосы гладкими и послушными. Будем ждать вашего следующего заказа! 😊🌸",
-      "state": "wbRu",
-      "lastUpdate": "0001-01-01T00:00:00Z",
-      "createDate": "2024-08-16T06:25:44Z",
-      "rejectReason": 0,
-      "metadata": null,
-      "employeeId": 0,
-      "supplierId": 74507,
-      "editable": false
-    },
-    "feedbackHelpfulness": [
-      {
-        "globalUserId": "12567053",
-        "wbUserId": 0,
-        "helpfulness": "plus",
-        "time": "2024-09-19T18:03:56Z"
-      },
-      {
-        "globalUserId": "9714461",
-        "wbUserId": 0,
-        "helpfulness": "plus",
-        "time": "2024-09-27T06:08:00Z"
-      },
-      {
-        "globalUserId": "16884738",
-        "wbUserId": 0,
-        "helpfulness": "plus",
-        "time": "2024-12-17T07:07:32Z"
-      }
-    ],
-    "photo": [
-      202881343
-    ],
-    "video": null,
-    "votes": {
-      "pluses": 3,
-      "minuses": 0
-    },
-    "rank": 2.0,
-    "statusId": 0,
-    "bables": [],
-    "excludedFromRating": {
-      "isExcluded": false,
-      "reasons": []
-    }
-  },
-  {
-    "id": "YjXhZpERW7wZxlXY6z8W",
-    "globalUserId": "TIhZV4jqCvE6vYpo+O/aCGoG3FfE58nVGOE4xi9n2KY=",
+    "id": "b067gSLLdGsoUghfHxfM",
+    "globalUserId": "5KjM8dkrLzEzl4uJXlC2iUyNWX30vT3twhq3fIdBJQ==",
     "wbUserId": 0,
     "wbUserDetails": {
       "country": "ru",
-      "name": "Юлия",
+      "name": "Елена",
       "hasPhoto": false
     },
-    "nmId": 243544250,
-    "text": "Отличный спрей, волосы не пушатся, и хорошо расчесываются, перестали электризоваться.  Для меня этот спрей-незаменимый, обожаю 🫶",
+    "nmId": 214291276,
+    "text": "Это прям вода. Смывает макияж очень плохо 👎",
     "pros": "",
     "cons": "",
     "matchingSize": "",
     "matchingPhoto": "",
     "matchingDescription": "",
-    "productValuation": 5,
+    "productValuation": 2,
     "color": "",
-    "size": "",
-    "createdDate": "2024-08-13T09:52:36Z",
-    "updatedDate": "2025-04-14T19:21:33Z",
-    "answer": {
-      "text": "Уважаемая Юлия, благодарим Вас за доверие к нашему продукту! Мы рады, что спрей оправдал Ваши ожидания и помог справиться с проблемой пушистости волос. Надеемся, что продукт будет и дальше радовать Вас своим качеством. 🤍",
-      "state": "wbRu",
-      "lastUpdate": "0001-01-01T00:00:00Z",
-      "createDate": "2024-08-13T16:37:36Z",
-      "rejectReason": 0,
-      "metadata": null,
-      "employeeId": 0,
-      "editable": false,
-      "supplierId": 74507
-    },
-    "feedbackHelpfulness": [
-      {
-        "globalUserId": "26170909",
-        "wbUserId": 0,
-        "helpfulness": "plus",
-        "time": "2024-08-13T20:19:45Z"
-      },
-      {
-        "globalUserId": "16177390",
-        "wbUserId": 0,
-        "helpfulness": "plus",
-        "time": "2024-08-14T06:37:52Z"
-      },
-      {
-        "globalUserId": "73086934",
-        "wbUserId": 0,
-        "helpfulness": "minus",
-        "time": "2024-08-15T10:50:22Z"
-      },
-      {
-        "globalUserId": "29191143",
-        "wbUserId": 0,
-        "helpfulness": "plus",
-        "time": "2024-08-18T16:20:36Z"
-      },
-      {
-        "globalUserId": "27926140",
-        "wbUserId": 0,
-        "helpfulness": "plus",
-        "time": "2024-10-20T08:54:48Z"
-      }
-    ],
-    "photo": [
-      202104827
-    ],
+    "size": "0",
+    "createdDate": "2024-09-21T09:40:07Z",
+    "updatedDate": "2025-07-23T04:17:49Z",
+    "answer": null,
+    "feedbackHelpfulness": null,
     "video": null,
     "votes": {
-      "pluses": 4,
-      "minuses": 1
+      "pluses": 0,
+      "minuses": 0
     },
     "rank": 1.0,
-    "statusId": 0,
-    "bables": [],
+    "statusId": 16,
+    "bables": [
+      "сложно наносить или смывать"
+    ],
+    "reasons": {
+      "good": [],
+      "bad": [
+        46
+      ]
+    },
     "excludedFromRating": {
       "isExcluded": false,
       "reasons": []

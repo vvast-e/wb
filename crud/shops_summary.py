@@ -20,13 +20,7 @@ async def get_products_by_brand(db: AsyncSession, user_id: int, shop: str, brand
         user = user_result.scalars().first()
         wb_api_key = await get_decrypted_wb_key(db, user, brand_id)
         wb = WBAPIClient(wb_api_key)
-        payload = {
-            "settings": {
-                "cursor": {},
-                "filter": {"brand": brand_id, "withPhoto": 1}
-            }
-        }
-        response = await wb.get_cards_list(payload)
+        response = await wb.get_all_cards_with_pagination(brand=brand_id)
 
         # Безопасная обработка ответа WB API
         if not response or not getattr(response, 'success', False):
@@ -36,28 +30,36 @@ async def get_products_by_brand(db: AsyncSession, user_id: int, shop: str, brand
             return []
         cards = data.get("cards", [])
         
-        # Получаем vendor_code из feedbacks для всех nmID
+        # Получаем vendor_code из feedbacks для всех nmID (только активные товары с отзывами за 6 месяцев)
+        from datetime import datetime, timedelta
+        six_months_ago = datetime.now() - timedelta(days=180)
+        
         nm_ids = [str(card["nmID"]) for card in cards]
         vendor_codes = {}
+        active_nm_ids = []  # Только активные товары
         
         if nm_ids:
-            # Ищем vendor_code в feedbacks по nm_id (article)
-            feedback_query = select(Feedback.vendor_code).where(
+            # Ищем активные товары (с отзывами за последние 6 месяцев)
+            active_feedback_query = select(Feedback.article).where(
                 and_(
-                    Feedback.user_id == user_id,
                     Feedback.brand == brand_id,
-                    Feedback.article.in_(nm_ids)
+                    Feedback.article.in_(nm_ids),
+                    Feedback.is_deleted == False,
+                    # Отзывы за последние 6 месяцев
+                    or_(
+                        Feedback.date >= six_months_ago,
+                        Feedback.created_at >= six_months_ago
+                    )
                 )
             ).distinct()
-            feedback_result = await db.execute(feedback_query)
-            feedback_vendor_codes = feedback_result.scalars().all()
+            active_result = await db.execute(active_feedback_query)
+            active_articles = active_result.scalars().all()
+            active_nm_ids = [str(article) for article in active_articles]
             
-            # Создаем маппинг nm_id -> vendor_code
-            for nm_id in nm_ids:
-                # Ищем vendor_code для конкретного nm_id
+            # Создаем маппинг nm_id -> vendor_code только для активных товаров
+            for nm_id in active_nm_ids:
                 specific_query = select(Feedback.vendor_code).where(
                     and_(
-                        Feedback.user_id == user_id,
                         Feedback.brand == brand_id,
                         Feedback.article == nm_id
                     )
@@ -66,11 +68,24 @@ async def get_products_by_brand(db: AsyncSession, user_id: int, shop: str, brand
                 vendor_code = specific_result.scalar()
                 vendor_codes[nm_id] = vendor_code or nm_id
         
-        return [{"id": str(vendor_codes.get(str(card["nmID"]), card["nmID"])), "name": f"товар {vendor_codes.get(str(card['nmID']), card['nmID'])}"} for card in cards]
+        # Возвращаем только активные товары
+        active_cards = [card for card in cards if str(card["nmID"]) in active_nm_ids]
+        return [{"id": str(vendor_codes.get(str(card["nmID"]), card["nmID"])), "name": f"товар {vendor_codes.get(str(card['nmID']), card['nmID'])}"} for card in active_cards]
     else:
-        # Получаем vendor_code из отзывов
+        # Получаем vendor_code из отзывов (только активные товары с отзывами за 6 месяцев)
+        from datetime import datetime, timedelta
+        six_months_ago = datetime.now() - timedelta(days=180)
+        
         query = select(Feedback.vendor_code).where(
-            and_(Feedback.user_id == user_id, Feedback.brand == brand_id)
+            and_(
+                Feedback.brand == brand_id,
+                Feedback.is_deleted == False,
+                # Отзывы за последние 6 месяцев
+                or_(
+                    Feedback.date >= six_months_ago,
+                    Feedback.created_at >= six_months_ago
+                )
+            )
         ).distinct()
         result = await db.execute(query)
         vendor_codes = result.scalars().all()
@@ -94,7 +109,7 @@ async def get_shop_feedbacks_crud(
     if not metrics:
         metrics = ['total', 'negative', 'deleted']
     
-    query = select(Feedback).where(Feedback.user_id == user_id)
+    query = select(Feedback)  # Убираем фильтр по user_id - все отзывы доступны всем
     if brand_id:
         query = query.where(Feedback.brand == brand_id)
     if product_id:
@@ -189,7 +204,7 @@ async def get_shop_feedbacks_crud(
     return {"total_reviews": total_reviews, "by_day": by_day_list}
 
 async def get_reviews_tops_crud(db: AsyncSession, user_id: int, brand_id: Optional[str], product_id: Optional[str], date_from, date_to, type: str, limit: int, offset: int) -> List[Dict[str, Any]]:
-    query = select(Feedback).where(Feedback.user_id == user_id)
+    query = select(Feedback)  # Убираем фильтр по user_id - все отзывы доступны всем
     if brand_id:
         query = query.where(Feedback.brand == brand_id)
     if product_id:

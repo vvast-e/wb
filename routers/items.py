@@ -31,8 +31,11 @@ async def get_items(
 
     try:
         wb_client = WBAPIClient(api_key=wb_api_key)
-        cards = await wb_client.get_all_cards()
-        return WBApiResponse(success=True, data={"cards": cards, "total": len(cards)})
+        result = await wb_client.get_all_cards_with_pagination(brand=brand)
+        if result.success:
+            return result
+        else:
+            raise HTTPException(status_code=400, detail=result.error)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -45,7 +48,10 @@ async def get_item(
         db: AsyncSession = Depends(get_db)
 ):
     wb_client = WBAPIClient(api_key=wb_api_key)
-    cards = await wb_client.get_all_cards()
+    result = await wb_client.get_all_cards_with_pagination()
+    if not result.success or not result.data:
+        return WBApiResponse(success=False, error="Карточки не найдены")
+    cards = result.data.get("cards", [])
     if not cards:
         return WBApiResponse(success=False, error="Карточка не найдена")
     for card in cards:
@@ -290,13 +296,16 @@ async def search_item(
         vendor_code: str,
         current_user: User = Depends(get_current_user_with_wb_key),
         wb_api_key: str = Depends(get_wb_api_key),
-        db: AsyncSession = Depends(get_db),
-        brand: str = Query(..., description="Название бренда")
+        db: AsyncSession = Depends(get_db)
 ):
     wb_client = WBAPIClient(api_key=wb_api_key)
-    cards = await wb_client.get_all_cards()
+    result = await wb_client.get_all_cards_with_pagination()
+    if not result.success or not result.data:
+        return WBApiResponse(success=False, error="Карточки не найдены")
+    cards = result.data.get("cards", [])
     if not cards:
         return WBApiResponse(success=False, error="Карточка не найдена")
+    
     for card in cards:
         current_vc = str(card.get("vendorCode", "")).lower()
         if current_vc == vendor_code.lower():
