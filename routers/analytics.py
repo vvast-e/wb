@@ -101,7 +101,6 @@ async def get_shops_summary(
 @router.post("/shop/{shop_id}/parse-feedbacks")
 async def parse_shop_feedbacks_endpoint(
     shop_id: str,
-    max_count_per_product: int = Query(1000, ge=1, le=5000),
     save_to_db: bool = Query(True),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user_with_wb_key)
@@ -111,7 +110,6 @@ async def parse_shop_feedbacks_endpoint(
         db=db,
         user_id=current_user.id,
         shop_id=shop_id,
-        max_count_per_product=max_count_per_product,
         save_to_db=save_to_db
     )
     

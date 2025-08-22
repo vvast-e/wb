@@ -248,7 +248,7 @@ class FeedbackFilterRequest(BaseModel):
 class FeedbackParseRequest(BaseModel):
     article: int
     brand: str
-    max_count: Optional[int] = 1000
+    max_date: Optional[datetime] = None  # Максимальная дата отзыва (по умолчанию 2 года назад)
     save_to_db: bool = True
 
 

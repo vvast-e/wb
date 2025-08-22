@@ -439,8 +439,8 @@ async def sync_feedbacks_with_soft_delete_optimized(
     logger.info(f"=== СТАРТ ОПТИМИЗИРОВАННОЙ СИНХРОНИЗАЦИИ ДЛЯ БРЕНДА: {brand} ===")
     logger.info(f"Отзывов из WB: {len(feedbacks_from_wb)}")
 
-    # ОПТИМИЗАЦИЯ 1: Загружаем только wb_id вместо всех полей
-    existing_query = select(Feedback.wb_id, Feedback.id, Feedback.is_deleted).where(
+    # ОПТИМИЗАЦИЯ 1: Загружаем только wb_id, article, brand вместо всех полей
+    existing_query = select(Feedback.wb_id, Feedback.article, Feedback.brand, Feedback.id, Feedback.is_deleted).where(
         and_(Feedback.brand == brand, Feedback.wb_id.isnot(None))
     )
     existing_result = await db.execute(existing_query)
@@ -449,12 +449,24 @@ async def sync_feedbacks_with_soft_delete_optimized(
     logger.info(f"Существующих отзывов в БД: {len(existing_feedbacks_data)}")
 
     # Создаем словари для быстрого поиска
-    wb_ids = set(fb['id'] for fb in feedbacks_from_wb)
-    existing_wb_ids = {row.wb_id for row in existing_feedbacks_data}
-    existing_feedback_map = {row.wb_id: (row.id, row.is_deleted) for row in existing_feedbacks_data}
+    # Создаем уникальные ключи по wb_id + article + brand для отзывов из WB
+    wb_feedback_keys = set()
+    for fb in feedbacks_from_wb:
+        wb_id = fb.get('id') or fb.get('wb_id')
+        article = fb.get('article')
+        if wb_id and article:
+            wb_feedback_keys.add(f"{wb_id}_{article}_{brand}")
+    
+    # Создаем уникальные ключи по wb_id + article + brand для существующих отзывов
+    existing_feedback_keys = set()
+    existing_feedback_map = {}
+    for row in existing_feedbacks_data:
+        key = f"{row.wb_id}_{row.article}_{row.brand}"
+        existing_feedback_keys.add(key)
+        existing_feedback_map[key] = (row.id, row.is_deleted)
 
-    logger.info(f"Уникальных wb_id из WB: {len(wb_ids)}")
-    logger.info(f"Уникальных wb_id в БД: {len(existing_wb_ids)}")
+    logger.info(f"Уникальных ключей (wb_id + article + brand) из WB: {len(wb_feedback_keys)}")
+    logger.info(f"Уникальных ключей (wb_id + article + brand) в БД: {len(existing_feedback_keys)}")
 
     stats = {
         'total_wb_feedbacks': len(feedbacks_from_wb),
@@ -471,14 +483,14 @@ async def sync_feedbacks_with_soft_delete_optimized(
     
     # 1. Помечаем как удалённые отзывы, которых нет на WB
     logger.info("Проверяем отзывы для soft delete...")
-    for wb_id, (feedback_id, is_deleted) in existing_feedback_map.items():
-        if wb_id not in wb_ids and not is_deleted:
+    for key, (feedback_id, is_deleted) in existing_feedback_map.items():
+        if key not in wb_feedback_keys and not is_deleted:
             to_delete.append(feedback_id)
             stats['deleted_feedbacks'] += 1
-        elif wb_id in wb_ids and is_deleted:
+        elif key in wb_feedback_keys and is_deleted:
             to_restore.append(feedback_id)
             stats['restored_feedbacks'] += 1
-        elif wb_id in wb_ids and not is_deleted:
+        elif key in wb_feedback_keys and not is_deleted:
             stats['unchanged_feedbacks'] += 1
 
     # Батчевое обновление удаленных отзывов
@@ -513,53 +525,57 @@ async def sync_feedbacks_with_soft_delete_optimized(
     
     new_feedbacks = []
     for fb_data in feedbacks_from_wb:
-        if fb_data['id'] not in existing_wb_ids:
-            # Обработка даты - используем поле 'date' из парсера
-            date_obj = None
-            date_str = fb_data.get('date', '')
-            if date_str and isinstance(date_str, str) and date_str.strip():
-                date_obj = parse_wb_date(date_str)
-                # Убираем логирование ошибок парсинга дат
-            
-            # Извлекаем имя пользователя - используем поле 'author' из парсера
-            author_name = fb_data.get('author', 'Аноним')
-            if not author_name or author_name.strip() == '':
-                author_name = 'Аноним'
-            
-            # Извлекаем рейтинг - используем поле 'rating' из парсера
-            rating = fb_data.get('rating', 0)
-            
-            # Определяем негативность по рейтингу (1-2 = негативный, 3 = нейтральный, 4-5 = позитивный)
-            is_negative = 1 if rating <= 2 else 0
-            
-            # Убираем детальное логирование дат
-            logger.info(f"Обрабатываем отзыв {fb_data['id']}: rating={rating}, is_negative={is_negative}, author='{author_name}'")
-            
-            # Аспекты будут анализироваться отдельно через планировщик
-            aspects = None  # Убираем анализ аспектов из синхронизации
+        wb_id = fb_data.get('id') or fb_data.get('wb_id')
+        article = fb_data.get('article')
+        if wb_id and article:
+            key = f"{wb_id}_{article}_{brand}"
+            if key not in existing_feedback_keys:
+                # Обработка даты - используем поле 'date' из парсера
+                date_obj = None
+                date_str = fb_data.get('date', '')
+                if date_str and isinstance(date_str, str) and date_str.strip():
+                    date_obj = parse_wb_date(date_str)
+                    # Убираем логирование ошибок парсинга дат
+                
+                # Извлекаем имя пользователя - используем поле 'author' из парсера
+                author_name = fb_data.get('author', 'Аноним')
+                if not author_name or author_name.strip() == '':
+                    author_name = 'Аноним'
+                
+                # Извлекаем рейтинг - используем поле 'rating' из парсера
+                rating = fb_data.get('rating', 0)
+                
+                # Определяем негативность по рейтингу (1-2 = негативный, 3 = нейтральный, 4-5 = позитивный)
+                is_negative = 1 if rating <= 2 else 0
+                
+                # Убираем детальное логирование дат
+                logger.info(f"Обрабатываем отзыв {fb_data['id']}: rating={rating}, is_negative={is_negative}, author='{author_name}'")
+                
+                # Аспекты будут анализироваться отдельно через планировщик
+                aspects = None  # Убираем анализ аспектов из синхронизации
 
-            new_feedback = Feedback(
-                wb_id=str(fb_data['id']),  # Конвертируем в строку
-                article=str(fb_data.get('article', '')),  # Конвертируем артикул в строку
-                brand=brand,
-                vendor_code=fb_data.get('vendor_code', ''),  # Добавляем vendor_code
-                author=author_name,
-                rating=rating,
-                date=date_obj,
-                status=fb_data.get('status', 'Без подтверждения'),  # Используем поле 'status' из парсера
-                text=fb_data.get('text', ''),
-                main_text=fb_data.get('text', ''),
-                pros_text=fb_data.get('pros', ''),
-                cons_text=fb_data.get('cons', ''),
-                user_id=user_id,
-                history_id=history_id,
-                is_negative=is_negative,
-                is_deleted=False,
-                deleted_at=None,
-                aspects=aspects  # Добавляем проанализированные аспекты
-            )
-            new_feedbacks.append(new_feedback)
-            stats['new_feedbacks'] += 1
+                new_feedback = Feedback(
+                    wb_id=str(fb_data['id']),  # Конвертируем в строку
+                    article=str(fb_data.get('article', '')),  # Конвертируем артикул в строку
+                    brand=brand,
+                    vendor_code=fb_data.get('vendor_code', ''),  # Добавляем vendor_code
+                    author=author_name,
+                    rating=rating,
+                    date=date_obj,
+                    status=fb_data.get('status', 'Без подтверждения'),  # Используем поле 'status' из парсера
+                    text=fb_data.get('text', ''),
+                    main_text=fb_data.get('text', ''),
+                    pros_text=fb_data.get('pros', ''),
+                    cons_text=fb_data.get('cons', ''),
+                    user_id=user_id,
+                    history_id=history_id,
+                    is_negative=is_negative,
+                    is_deleted=False,
+                    deleted_at=None,
+                    aspects=aspects  # Добавляем проанализированные аспекты
+                )
+                new_feedbacks.append(new_feedback)
+                stats['new_feedbacks'] += 1
 
     logger.info(f"Новых отзывов для добавления: {len(new_feedbacks)}")
 

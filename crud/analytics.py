@@ -7,37 +7,9 @@ from models.feedback import Feedback, FeedbackTopTracking
 import logging
 logger = logging.getLogger(__name__)
 
-# Маппинг брендов для решения проблемы с похожими названиями
-BRAND_MAPPING = {
-    "11i Professional OZON": "11i Professional",
-    "11i professional": "11i Professional", 
-    "11 i Professional": "11i Professional",
-    "Mona Premium": "ООО \"МОНА БИОЛАБ\""
-}
+# Маппинг брендов убран - используем исходные названия напрямую
 
-def get_mapped_brand(brand_name: str) -> str:
-    """
-    Получает правильное название бренда из маппинга.
-    Если маппинг не найден, возвращает исходное название.
-    """
-    return BRAND_MAPPING.get(brand_name, brand_name)
 
-def get_all_mapped_brands(brand_name: str) -> List[str]:
-    """
-    Получает все возможные названия бренда (включая исходное и маппинг).
-    """
-    mapped_brand = get_mapped_brand(brand_name)
-    all_brands = [brand_name]  # Исходный бренд
-    
-    if mapped_brand != brand_name:
-        all_brands.append(mapped_brand)
-    
-    # Добавляем обратные маппинги
-    for key, value in BRAND_MAPPING.items():
-        if value == brand_name and key not in all_brands:
-            all_brands.append(key)
-    
-    return all_brands
 
 
 async def get_user_shopsList_crud(
@@ -1681,7 +1653,6 @@ async def parse_shop_feedbacks_crud(
         db: AsyncSession,
         user_id: int,
         shop_id: str,
-        max_count_per_product: int = 1000,
         save_to_db: bool = True
 ) -> Dict[str, Any]:
     """Массовый парсинг отзывов всех товаров магазина с поддержкой soft delete"""
@@ -1696,40 +1667,30 @@ async def parse_shop_feedbacks_crud(
     logger.setLevel(logging.INFO)
     
     logger.info(f"[PARSE] Начинаем парсинг отзывов для магазина: {shop_id}")
-    logger.info(f"[PARSE] user_id: {user_id}, max_count_per_product: {max_count_per_product}, save_to_db: {save_to_db}")
+    logger.info(f"[PARSE] user_id: {user_id}, save_to_db: {save_to_db}")
 
-    # Получаем правильный бренд из маппинга для поиска API ключа
-    mapped_shop_id = get_mapped_brand(shop_id)
-    all_possible_brands = get_all_mapped_brands(shop_id)
-    
-    logger.info(f"[PARSE] Маппинг брендов: '{shop_id}' → '{mapped_shop_id}'")
-    logger.info(f"[PARSE] Все возможные бренды: {all_possible_brands}")
+    # Используем исходный shop_id напрямую (без маппинга)
+    logger.info(f"[PARSE] Используем бренд: '{shop_id}'")
 
     user_query = select(User).where(User.id == user_id)
     user_result = await db.execute(user_query)
     user = user_result.scalars().first()
 
-    # Проверяем API ключ для всех возможных названий бренда
-    found_brand = None
-    for brand in all_possible_brands:
-        if user and user.wb_api_key and brand in user.wb_api_key:
-            found_brand = brand
-            break
-    
-    if not found_brand:
-        error_msg = f"API ключ для брендов {all_possible_brands} не найден"
+    # Проверяем API ключ для бренда
+    if not user or not user.wb_api_key or shop_id not in user.wb_api_key:
+        error_msg = f"API ключ для бренда '{shop_id}' не найден"
         logger.error(f"[PARSE] ОШИБКА: {error_msg}")
         return {
             "success": False,
             "error": error_msg
         }
     
-    logger.info(f"[PARSE] Используем API ключ для бренда: {found_brand}")
+    logger.info(f"[PARSE] Используем API ключ для бренда: {shop_id}")
 
     try:
-        # Получаем API ключ для найденного бренда
-        logger.info(f"[PARSE] Получаем API ключ для бренда {found_brand}...")
-        wb_api_key = await get_decrypted_wb_key(db, user, found_brand)
+        # Получаем API ключ для бренда
+        logger.info(f"[PARSE] Получаем API ключ для бренда {shop_id}...")
+        wb_api_key = await get_decrypted_wb_key(db, user, shop_id)
         logger.info(f"[PARSE] API ключ получен успешно")
 
         # Получаем список товаров бренда
@@ -1796,7 +1757,7 @@ async def parse_shop_feedbacks_crud(
                 logger.info(f"[PARSE] Парсим отзывы для товара nmID={nm_id}...")
                 feedbacks_data = await parse_feedbacks_optimized(
                     nm_id,
-                    max_count_per_product
+                    None  # Используем дефолтную дату (2 года назад)
                 )
 
                 if feedbacks_data is None:
@@ -1840,21 +1801,28 @@ async def parse_shop_feedbacks_crud(
 
         # Синхронизируем все отзывы один раз для всего бренда
         if save_to_db and all_feedbacks_data:
-            # Дедупликация отзывов по wb_id
+            # Дедупликация отзывов по wb_id + article + brand (а не только по wb_id)
             unique_feedbacks = {}
             for feedback in all_feedbacks_data:
                 wb_id = feedback.get('id') or feedback.get('wb_id')
-                if wb_id and wb_id not in unique_feedbacks:
-                    unique_feedbacks[wb_id] = feedback
+                article = feedback.get('article')
+                brand = mapped_shop_id
+                
+                if wb_id and article and brand:
+                    # Создаем уникальный ключ по комбинации wb_id + article + brand
+                    unique_key = f"{wb_id}_{article}_{brand}"
+                    if unique_key not in unique_feedbacks:
+                        unique_feedbacks[unique_key] = feedback
             
             deduplicated_feedbacks = list(unique_feedbacks.values())
             logger.info(f"[PARSE] Дедупликация: было {len(all_feedbacks_data)}, стало {len(deduplicated_feedbacks)}")
+            logger.info(f"[PARSE] Дедупликация по ключу: wb_id + article + brand")
             
-            logger.info(f"[PARSE] Синхронизируем все {len(deduplicated_feedbacks)} отзывов для бренда {mapped_shop_id}...")
+            logger.info(f"[PARSE] Синхронизируем все {len(deduplicated_feedbacks)} отзывов для бренда {shop_id}...")
             sync_stats = await sync_feedbacks_with_soft_delete_optimized(
                 db=db,
                 feedbacks_from_wb=deduplicated_feedbacks,
-                brand=mapped_shop_id,  # Используем правильный бренд из маппинга
+                brand=shop_id,  # Используем исходный shop_id
                 user_id=user_id
             )
             
@@ -1872,16 +1840,16 @@ async def parse_shop_feedbacks_crud(
         # Обновляем топ-трекинг для всех товаров бренда (ВСЕГДА, если save_to_db=True)
         if save_to_db:
             logger.info(f"[PARSE] ===== НАЧИНАЕМ ОБНОВЛЕНИЕ ТОП-ТРЕКИНГА =====")
-            logger.info(f"[PARSE] Обновляем топ-трекинг для всех товаров бренда {mapped_shop_id}...")
+            logger.info(f"[PARSE] Обновляем топ-трекинг для всех товаров бренда {shop_id}...")
             logger.info(f"[PARSE] user_id: {user_id}")
-            logger.info(f"[PARSE] mapped_shop_id: {mapped_shop_id}")
+            logger.info(f"[PARSE] shop_id: {shop_id}")
             
             try:
                 # Получаем уникальные артикулы для бренда
                 logger.info(f"[PARSE] Выполняем запрос для получения артикулов...")
                 unique_articles_query = select(Feedback.article).where(
                     and_(
-                        Feedback.brand == mapped_shop_id,
+                        Feedback.brand == shop_id,
                         Feedback.user_id == user_id,
                         Feedback.is_deleted == False
                     )
@@ -1897,7 +1865,7 @@ async def parse_shop_feedbacks_crud(
                 for i, article in enumerate(unique_articles):
                     logger.info(f"[PARSE] Обрабатываем артикул {i+1}/{len(unique_articles)}: {article}")
                     logger.info(f"[PARSE] Вызываем update_top_tracking_for_all_feedbacks...")
-                    await update_top_tracking_for_all_feedbacks(db, article, mapped_shop_id, user_id)
+                    await update_top_tracking_for_all_feedbacks(db, article, shop_id, user_id)
                     logger.info(f"[PARSE] Артикул {article} обработан")
                 
                 logger.info(f"[PARSE] Топ-трекинг обновлен для всех артикулов")

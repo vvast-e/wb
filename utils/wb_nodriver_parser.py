@@ -1,9 +1,10 @@
 import asyncio
 import logging
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from utils.nodriver import Browser
 import json
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ async def get_card_id(nmid: int, dest: str = "-1257786") -> int:
         print(f"[CARD_ID] ОШИБКА: {e}")
         return None
 
-async def _http_fallback_parser(article: int, max_count: int) -> List[Dict[str, Any]]:
+async def _http_fallback_parser(article: int, max_date: datetime) -> List[Dict[str, Any]]:
     """Fallback парсер через HTTP API с правильным двухэтапным процессом"""
     try:
         import aiohttp
@@ -150,11 +151,6 @@ async def _http_fallback_parser(article: int, max_count: int) -> List[Dict[str, 
                                 logger.debug(f"Пропускаем отзыв для другого артикула: {fb.get('nmId')} != {article}")
                                 continue
                             
-                            key = (fb.get('wbUserDetails', {}).get('name', 'Аноним'), fb.get('createdDate', fb.get('updatedDate', '')), fb.get('text', ''))
-                            if key in seen:
-                                continue
-                            seen.add(key)
-                            
                             # Обрабатываем дату - используем createdDate или updatedDate
                             date_str = fb.get('createdDate', fb.get('updatedDate', ''))
                             # Убираем логирование дат в файл
@@ -175,6 +171,42 @@ async def _http_fallback_parser(article: int, max_count: int) -> List[Dict[str, 
                             else:
                                 full_text = main_text
                             
+                            # Фильтруем отзывы по дате написания
+                            try:
+                                # Пробуем разные форматы дат
+                                fb_date = None
+                                date_formats = [
+                                    '%Y-%m-%dT%H:%M:%S.%fZ',  # 2025-08-22T13:20:29.123Z
+                                    '%Y-%m-%dT%H:%M:%SZ',     # 2025-08-22T13:20:29Z
+                                    '%Y-%m-%dT%H:%M:%S',      # 2025-08-22T13:20:29
+                                    '%Y-%m-%d'                 # 2025-08-22
+                                ]
+                                
+                                for date_format in date_formats:
+                                    try:
+                                        fb_date = datetime.strptime(date_str, date_format)
+                                        break
+                                    except ValueError:
+                                        continue
+                                
+                                if fb_date is None:
+                                    logger.warning(f"Не удалось распарсить дату отзыва: {date_str}")
+                                    continue
+                                
+                                # Фильтруем по дате
+                                if fb_date < max_date:
+                                    logger.debug(f"Пропускаем старый отзыв от {fb_date.strftime('%Y-%m-%d')}")
+                                    continue
+                                    
+                            except Exception as e:
+                                logger.warning(f"Ошибка при обработке даты отзыва '{date_str}': {e}")
+                                continue
+
+                            key = (fb.get('wbUserDetails', {}).get('name', 'Аноним'), fb.get('createdDate', fb.get('updatedDate', '')), fb.get('text', ''))
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            
                             all_feedbacks.append({
                                 'id': fb.get('id'),  # Добавляем wb_id
                                 'author': fb.get('wbUserDetails', {}).get('name', 'Аноним'),
@@ -189,9 +221,9 @@ async def _http_fallback_parser(article: int, max_count: int) -> List[Dict[str, 
                                 'cons': fb.get('cons', '')
                             })
                             
-                            if len(all_feedbacks) >= max_count:
-                                print(f"[HTTP_PARSER] Достигнут лимит отзывов: {max_count}")
-                                return all_feedbacks[:max_count]
+                            if len(all_feedbacks) >= 1000: # Ограничиваем количество отзывов для диагностики
+                                print(f"[HTTP_PARSER] Достигнут лимит отзывов для диагностики: 1000")
+                                return all_feedbacks[:1000]
                                 
                 except Exception as e:
                     logger.error(f"HTTP fallback ошибка для {host}: {e}")
@@ -199,22 +231,26 @@ async def _http_fallback_parser(article: int, max_count: int) -> List[Dict[str, 
                     continue
         
         print(f"[HTTP_PARSER] Итого найдено отзывов: {len(all_feedbacks)}")
-        return all_feedbacks[:max_count]
+        return all_feedbacks
         
     except Exception as e:
         logger.error(f"HTTP fallback критическая ошибка: {e}")
         print(f"[HTTP_PARSER] КРИТИЧЕСКАЯ ОШИБКА: {e}")
         return []
 
-async def parse_feedbacks_optimized(article: int, max_count: int = 1000) -> List[Dict[str, Any]]:
+async def parse_feedbacks_optimized(article: int, max_date: Optional[datetime] = None) -> List[Dict[str, Any]]:
     """
-    Асинхронный парсер отзывов Wildberries с автоматическим выбором метода
+    Асинхронный парсер отзывов Wildberries с фильтрацией по дате написания
     """
+    # Если max_date не указан, берем отзывы за последние 2 года
+    if max_date is None:
+        max_date = datetime.now() - timedelta(days=730)  # 2 года назад
+    
     logger.info(f"=== НАЧАЛО ПАРСИНГА ДЛЯ АРТИКУЛА {article} ===")
-    logger.info(f"Максимальное количество отзывов: {max_count}")
+    logger.info(f"Максимальная дата отзыва: {max_date.strftime('%Y-%m-%d')}")
     
     print(f"[PARSER] Начинаем парсинг отзывов для артикула {article}")
-    print(f"[PARSER] Максимальное количество отзывов: {max_count}")
+    print(f"[PARSER] Максимальная дата отзыва: {max_date.strftime('%Y-%m-%d')}")
     
     try:
         import aiohttp
@@ -228,7 +264,8 @@ async def parse_feedbacks_optimized(article: int, max_count: int = 1000) -> List
     logger.info("Используем HTTP парсер...")
     print("[PARSER] Используем HTTP парсер...")
     
-    http_feedbacks = await _http_fallback_parser(article, max_count)
+    # Передаем max_date вместо max_count
+    http_feedbacks = await _http_fallback_parser(article, max_date)
     
     if http_feedbacks:
         logger.info(f"HTTP парсер успешно нашел {len(http_feedbacks)} отзывов")
@@ -438,4 +475,4 @@ async def parse_feedbacks_optimized(article: int, max_count: int = 1000) -> List
     #     return await _http_fallback_parser(article, max_count)
     
     logger.info(f"Всего собрано отзывов: {len(all_feedbacks)}")
-    return all_feedbacks[:max_count] 
+    return all_feedbacks 

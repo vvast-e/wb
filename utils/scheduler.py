@@ -117,7 +117,7 @@ async def parse_all_shops_feedbacks():
                 continue
             for brand in (user.wb_api_key or {}).keys():
                 try:
-                    await parse_shop_feedbacks_crud(db, user.id, brand, max_count_per_product=1000, save_to_db=True)
+                    await parse_shop_feedbacks_crud(db, user.id, brand, save_to_db=True)
                 except Exception:
                     pass  # Игнорируем ошибки парсинга
     finally:

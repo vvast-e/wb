@@ -1,7 +1,7 @@
 """add vendor_code to feedbacks
 
 Revision ID: add_vendor_code_to_feedbacks
-Revises: restore_wb_id_unique
+Revises: add_platform_to_shops
 Create Date: 2025-01-16 12:00:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_vendor_code_to_feedbacks'
-down_revision = 'restore_wb_id_unique'
+down_revision = 'add_platform_to_shops'
 branch_labels = None
 depends_on = None
 
@@ -30,3 +30,4 @@ def downgrade():
     
     # Удаляем поле vendor_code
     op.drop_column('feedbacks', 'vendor_code')
+

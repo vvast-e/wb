@@ -30,7 +30,7 @@ async def parse_and_save_feedbacks(
         # Парсим отзывы через HTTP API
         feedbacks_data = await parse_feedbacks_optimized(
             request.article, 
-            request.max_count
+            request.max_date  # Используем дату из запроса или дефолтную (2 года назад)
         )
         
         if feedbacks_data is None:
