@@ -162,7 +162,7 @@ class WBAPIClient:
         # Костыль: используем конкретный URL для seller-info, а не базовый из конфига
         seller_info_url = "https://common-api.wildberries.ru/api/v1/seller-info"
         
-        headers = {"Authorization": self.api_key}
+        headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
         
         async with httpx.AsyncClient() as client:
             try:
@@ -413,4 +413,57 @@ class WBAPIClient:
             )
 
     # Функция get_all_cards удалена - используйте get_all_cards_with_pagination
+
+    async def get_stocks_report_products(self, nm_ids: list, start_date: str, end_date: str) -> WBApiResponse:
+        """Вызов отчёта истории остатков по товарам (isDeleted и др.)
+
+        Документация: Аналитика и данные → История остатков → Данные по товарам.
+        POST https://seller-analytics-api.wildberries.ru/api/v2/stocks-report/products/products
+
+        Параметры:
+        - nm_ids: список nmID
+        - start_date, end_date: YYYY-MM-DD
+        """
+        url = "https://seller-analytics-api.wildberries.ru/api/v2/stocks-report/products/products"
+        headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
+
+        # Минимальный валидный payload: nmIDs + даты. Добавляем таймзону по умолчанию
+        payload = {
+            "nmIDs": [int(x) for x in nm_ids if str(x).isdigit()],
+            "currentPeriod": {
+                "start": start_date,
+                "end": end_date
+            },
+            "stockType": "",
+            "skipDeletedNm": True,
+            "orderBy": {
+                "field": "avgOrders",
+                "mode": "asc"
+            },
+            "availabilityFilters": [
+                "deficient", "actual", "balanced", "nonActual", "nonLiquid", "invalidData"
+            ],
+            "limit": 1000,
+            "offset": 0
+        }
+
+        try:
+            logger.info(f"[WB_API] stocks-report: products={len(payload['nmIDs'])}, period={start_date}..{end_date}")
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, headers=headers, json=payload)
+                logger.info(f"[WB_API] stocks-report status={resp.status_code}")
+                body_text = resp.text
+                try:
+                    data = resp.json()
+                except json.JSONDecodeError:
+                    data = None
+
+                # Успех с первой попытки
+                if resp.is_success:
+                    return WBApiResponse(success=True, data=data, wb_response=data)
+
+                logger.warning(f"[WB_API] stocks-report 1st attempt failed: status={resp.status_code}, body={body_text}")
+                return WBApiResponse(success=False, error=f"HTTP {resp.status_code}", wb_response=data or {"raw": body_text})
+        except Exception as e:
+            return WBApiResponse(success=False, error=str(e))
 

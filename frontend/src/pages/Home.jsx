@@ -41,7 +41,8 @@ const Home = () => {
                 setBrands(brandData);
                 setSelectedBrand(Object.keys(brandData)[0]);
             } else {
-                setBrands({});
+                // Пустой список брендов – показываем информационный алерт
+                setBrands(null);
             }
 
         } catch (err) {

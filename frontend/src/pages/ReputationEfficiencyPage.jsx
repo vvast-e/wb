@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Card, Row, Col, Form, Spinner, Alert, Badge, ProgressBar } from 'react-bootstrap';
+import { useNavigate } from 'react-router-dom';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -39,6 +40,27 @@ const ReputationEfficiencyPage = () => {
         startDate: '',
         endDate: ''
     });
+
+    const navigate = useNavigate();
+
+    // Утилиты для времени HH:MM:SS
+    const parseTimeToSeconds = (timeStr) => {
+        if (!timeStr) return 0;
+        const [hh = '0', mm = '0', ss = '0'] = String(timeStr).split(':');
+        const h = parseFloat(hh) || 0;
+        const m = parseFloat(mm) || 0;
+        const s = parseFloat(ss) || 0;
+        return h * 3600 + m * 60 + s;
+    };
+
+    const formatSecondsToHHMMSS = (totalSeconds) => {
+        const sec = Math.max(0, Math.round(totalSeconds || 0));
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        const s = sec % 60;
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${pad(h)}:${pad(m)}:${pad(s)}`;
+    };
 
     useEffect(() => {
         fetchShops();
@@ -139,6 +161,21 @@ const ReputationEfficiencyPage = () => {
         }
     };
 
+    const navigateToReviewBase = (type) => {
+        const params = new URLSearchParams();
+        if (selectedShop) params.set('shop', selectedShop);
+        if (selectedProducts && selectedProducts.length > 0) {
+            params.set('product', selectedProducts.join(','));
+        }
+        if (dateRange.startDate) params.set('date_from', dateRange.startDate);
+        if (dateRange.endDate) params.set('date_to', dateRange.endDate);
+
+        if (type === 'negative') params.set('negative', 'true');
+        if (type === 'deleted') params.set('deleted', 'true');
+
+        navigate(`/analytics/review-analyzer?${params.toString()}`);
+    };
+
     const handleDateChange = (startDate, endDate) => {
         setDateRange({ startDate, endDate });
     };
@@ -184,6 +221,10 @@ const ReputationEfficiencyPage = () => {
             productIds.forEach((pid, pIndex) => {
                 const pdata = efficiencyDataByProduct[pid];
                 selectedMetrics.forEach((metric, mIndex) => {
+                    // Для временных метрик (часы) при сравнении 2+ товаров не строим линии по каждому товару
+                    if (metric.key.includes('top_') || metric.key === 'deletion_time') {
+                        return;
+                    }
                     let data = [];
                     let label = `${pid} — ${metric.name}`;
                     if (hasTrends) {
@@ -191,12 +232,6 @@ const ReputationEfficiencyPage = () => {
                             data = pdata.trends.map(t => t.negative_percent);
                         } else if (metric.key === 'deleted_percentage') {
                             data = pdata.trends.map(t => t.deleted_percent);
-                        } else if (metric.key.includes('top_') || metric.key === 'deletion_time') {
-                            const timeStr = pdata[metric.key] || '00:00:00';
-                            const [hh = '0', mm = '0', ss = '0'] = timeStr.split(':');
-                            const totalHours = parseFloat(hh) + parseFloat(mm) / 60 + parseFloat(ss) / 3600;
-                            data = pdata.trends.map(() => totalHours);
-                            label = `${pid} — ${metric.name} (часы)`;
                         }
                     } else {
                         if (metric.key === 'negative_percentage') {
@@ -205,12 +240,6 @@ const ReputationEfficiencyPage = () => {
                         } else if (metric.key === 'deleted_percentage') {
                             const val = pdata.total_reviews > 0 ? (pdata.deleted_count / pdata.total_reviews) * 100 : 0;
                             data = [val];
-                        } else if (metric.key.includes('top_') || metric.key === 'deletion_time') {
-                            const timeStr = pdata[metric.key] || '00:00:00';
-                            const [hh = '0', mm = '0', ss = '0'] = timeStr.split(':');
-                            const totalHours = parseFloat(hh) + parseFloat(mm) / 60 + parseFloat(ss) / 3600;
-                            data = [totalHours];
-                            label = `${pid} — ${metric.name} (часы)`;
                         }
                     }
 
@@ -224,6 +253,30 @@ const ReputationEfficiencyPage = () => {
                         fill: false
                     });
                 });
+            });
+
+            // Добавляем агрегированную (среднюю) линию для метрик времени при сравнении нескольких товаров
+            selectedMetrics.forEach((metric) => {
+                if (metric.key.includes('top_') || metric.key === 'deletion_time') {
+                    // среднее по выбранным товарам
+                    const values = productIds
+                        .map(pid => efficiencyDataByProduct[pid]?.[metric.key])
+                        .filter(Boolean)
+                        .map(parseTimeToSeconds);
+                    const avgSeconds = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+                    const avgHours = avgSeconds / 3600;
+                    const pointsCount = (hasTrends ? (firstProduct.trends?.length || 1) : 1);
+                    const data = Array(pointsCount).fill(avgHours);
+                    datasets.push({
+                        label: `Среднее — ${metric.name} (часы)`,
+                        data,
+                        borderColor: '#ffffff',
+                        backgroundColor: '#ffffff20',
+                        borderDash: [4, 4],
+                        tension: 0.1,
+                        fill: false
+                    });
+                }
             });
 
             return {
@@ -324,6 +377,19 @@ const ReputationEfficiencyPage = () => {
         return aggregate;
     };
 
+    const computeAverageTimeForSelected = (timeKey) => {
+        if (!efficiencyDataByProduct) return null;
+        const ids = Object.keys(efficiencyDataByProduct);
+        if (ids.length === 0) return null;
+        const values = ids
+            .map(pid => efficiencyDataByProduct[pid]?.[timeKey])
+            .filter(Boolean)
+            .map(parseTimeToSeconds);
+        if (values.length === 0) return null;
+        const avg = values.reduce((a, b) => a + b, 0) / values.length;
+        return formatSecondsToHHMMSS(avg);
+    };
+
     const chartOptions = {
         responsive: true,
         maintainAspectRatio: false,
@@ -411,6 +477,13 @@ const ReputationEfficiencyPage = () => {
                                         <div>
                                             <button
                                                 type="button"
+                                                className="btn btn-sm btn-outline-success me-2"
+                                                onClick={() => setSelectedProducts(products.map(p => p.id))}
+                                            >
+                                                Выбрать все
+                                            </button>
+                                            <button
+                                                type="button"
                                                 className="btn btn-sm btn-outline-secondary"
                                                 onClick={() => setSelectedProducts([])}
                                             >
@@ -421,9 +494,13 @@ const ReputationEfficiencyPage = () => {
 
                                     {/* Список товаров с прокруткой */}
                                     <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
-                                        {products
-                                            .filter(p => !productSearchTerm || p.id.toLowerCase().includes(productSearchTerm))
-                                            .map(p => (
+                                        {(() => {
+                                            const filtered = products.filter(p => !productSearchTerm || p.id.toLowerCase().includes(productSearchTerm));
+                                            const selectedSet = new Set(selectedProducts);
+                                            const selectedList = filtered.filter(p => selectedSet.has(p.id));
+                                            const unselectedList = filtered.filter(p => !selectedSet.has(p.id));
+                                            const visible = [...selectedList, ...unselectedList];
+                                            return visible.map(p => (
                                                 <div key={p.id} className="mb-1">
                                                     <Form.Check
                                                         type="checkbox"
@@ -440,8 +517,8 @@ const ReputationEfficiencyPage = () => {
                                                         className="text-light"
                                                     />
                                                 </div>
-                                            ))
-                                        }
+                                            ));
+                                        })()}
                                         {products.filter(p => !productSearchTerm || p.id.toLowerCase().includes(productSearchTerm)).length === 0 && (
                                             <small className="text-muted">Товары не найдены</small>
                                         )}
@@ -479,7 +556,7 @@ const ReputationEfficiencyPage = () => {
                     {/* Основные метрики */}
                     <Row className="mb-3">
                         <Col md={4}>
-                            <Card className="bg-dark border-success text-center">
+                            <Card className="bg-dark border-success text-center" onClick={() => navigateToReviewBase('all')} style={{ cursor: 'pointer' }}>
                                 <Card.Body className="py-3">
                                     <h2 className="text-light mb-1 fw-bold">{formatNumber((efficiencyData?.total_reviews) ?? (computeAggregateForSelected()?.total_reviews || 0))}</h2>
                                     <p className="text-light mb-0 small">Всего отзывов</p>
@@ -487,7 +564,7 @@ const ReputationEfficiencyPage = () => {
                             </Card>
                         </Col>
                         <Col md={4}>
-                            <Card className="bg-dark border-success text-center">
+                            <Card className="bg-dark border-success text-center" onClick={() => navigateToReviewBase('negative')} style={{ cursor: 'pointer' }}>
                                 <Card.Body className="py-3">
                                     <h2 className="text-light mb-1 fw-bold">{formatNumber((efficiencyData?.negative_count) ?? (computeAggregateForSelected()?.negative_count || 0))}</h2>
                                     <p className="text-light mb-0 small">Негативных</p>
@@ -495,7 +572,7 @@ const ReputationEfficiencyPage = () => {
                             </Card>
                         </Col>
                         <Col md={4}>
-                            <Card className="bg-dark border-success text-center">
+                            <Card className="bg-dark border-success text-center" onClick={() => navigateToReviewBase('deleted')} style={{ cursor: 'pointer' }}>
                                 <Card.Body className="py-3">
                                     <h2 className="text-light mb-1 fw-bold">{formatNumber((efficiencyData?.deleted_count) ?? (computeAggregateForSelected()?.deleted_count || 0))}</h2>
                                     <p className="text-light mb-0 small">Удалено</p>
@@ -554,7 +631,9 @@ const ReputationEfficiencyPage = () => {
                                             style={{ cursor: 'pointer' }}
                                         >
                                             <span className="text-light small">Время в ТОП 1:</span>
-                                            <span className="text-light fw-bold">{efficiencyData?.top_1_time || '—'}</span>
+                                            <span className="text-light fw-bold">{
+                                                efficiencyData?.top_1_time || computeAverageTimeForSelected('top_1_time') || '—'
+                                            }</span>
                                         </div>
                                     </div>
                                     <div className="mb-2">
@@ -564,7 +643,9 @@ const ReputationEfficiencyPage = () => {
                                             style={{ cursor: 'pointer' }}
                                         >
                                             <span className="text-light small">Время в ТОП 3:</span>
-                                            <span className="text-light fw-bold">{efficiencyData?.top_3_time || '—'}</span>
+                                            <span className="text-light fw-bold">{
+                                                efficiencyData?.top_3_time || computeAverageTimeForSelected('top_3_time') || '—'
+                                            }</span>
                                         </div>
                                     </div>
                                     <div className="mb-2">
@@ -574,7 +655,9 @@ const ReputationEfficiencyPage = () => {
                                             style={{ cursor: 'pointer' }}
                                         >
                                             <span className="text-light small">Время в ТОП 5:</span>
-                                            <span className="text-light fw-bold">{efficiencyData?.top_5_time || '—'}</span>
+                                            <span className="text-light fw-bold">{
+                                                efficiencyData?.top_5_time || computeAverageTimeForSelected('top_5_time') || '—'
+                                            }</span>
                                         </div>
                                     </div>
                                     <div className="mb-2">
@@ -584,7 +667,9 @@ const ReputationEfficiencyPage = () => {
                                             style={{ cursor: 'pointer' }}
                                         >
                                             <span className="text-light small">Время в ТОП 10:</span>
-                                            <span className="text-light fw-bold">{efficiencyData?.top_10_time || '—'}</span>
+                                            <span className="text-light fw-bold">{
+                                                efficiencyData?.top_10_time || computeAverageTimeForSelected('top_10_time') || '—'
+                                            }</span>
                                         </div>
                                     </div>
                                     <div className="mb-2">
@@ -594,7 +679,9 @@ const ReputationEfficiencyPage = () => {
                                             style={{ cursor: 'pointer' }}
                                         >
                                             <span className="text-light small">Время удаления:</span>
-                                            <span className="text-light fw-bold">{efficiencyData?.deletion_time || '—'}</span>
+                                            <span className="text-light fw-bold">{
+                                                efficiencyData?.deletion_time || computeAverageTimeForSelected('deletion_time') || '—'
+                                            }</span>
                                         </div>
                                     </div>
                                 </Card.Body>

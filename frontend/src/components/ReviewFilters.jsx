@@ -5,7 +5,7 @@ const ReviewFilters = ({ onFiltersChange, shops = [], products = [], initialFilt
     const [filters, setFilters] = useState({
         rating: '',
         shop: '',
-        product: '',
+        product: [],
         dateFrom: '',
         dateTo: '',
         lastNDays: '',
@@ -13,6 +13,8 @@ const ReviewFilters = ({ onFiltersChange, shops = [], products = [], initialFilt
         deleted: '',
         ...initialFilters
     });
+
+    const [productSearchTerm, setProductSearchTerm] = useState('');
 
     // Синхронизируем с initialFilters при их изменении
     useEffect(() => {
@@ -38,7 +40,7 @@ const ReviewFilters = ({ onFiltersChange, shops = [], products = [], initialFilt
 
             // Если изменился магазин, сбрасываем фильтр по товару
             if (name === 'shop') {
-                newFilters.product = '';
+                newFilters.product = [];
             }
 
             // Вызываем onFiltersChange только при изменении пользователем
@@ -114,19 +116,82 @@ const ReviewFilters = ({ onFiltersChange, shops = [], products = [], initialFilt
                         ))}
                     </Form.Select>
                 </Col>
-                <Col md={2}>
-                    <Form.Label className="text-light">Товар</Form.Label>
-                    <Form.Select
-                        value={filters.product}
-                        onChange={(e) => handleFilterChange('product', e.target.value)}
-                        className="bg-dark border-success text-light"
-                        disabled={!products || products.length === 0}
-                    >
-                        <option value="">Все товары</option>
-                        {products && products.map(product => (
-                            <option key={product.id} value={product.id}>{product.name}</option>
-                        ))}
-                    </Form.Select>
+                <Col md={4}>
+                    <Form.Label className="text-light">Выберите товары</Form.Label>
+                    <div className="bg-dark border border-success rounded p-2">
+                        {(!products || products.length === 0) ? (
+                            <small className="text-muted">Загружаем товары...</small>
+                        ) : (
+                            <>
+                                {/* Поиск */}
+                                <div className="mb-2">
+                                    <Form.Control
+                                        type="text"
+                                        placeholder="Поиск товаров..."
+                                        className="bg-dark border-success text-light"
+                                        onChange={(e) => setProductSearchTerm(e.target.value.toLowerCase())}
+                                    />
+                                </div>
+
+                                {/* Статистика выбора и кнопки */}
+                                <div className="d-flex justify-content-between align-items-center mb-2">
+                                    <small className="text-muted">
+                                        Выбрано: {filters.product.length} из {products.length}
+                                    </small>
+                                    <div>
+                                        <button
+                                            type="button"
+                                            className="btn btn-sm btn-outline-success me-2"
+                                            onClick={() => handleFilterChange('product', products.map(p => p.id))}
+                                        >
+                                            Выбрать все
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn-sm btn-outline-secondary"
+                                            onClick={() => handleFilterChange('product', [])}
+                                        >
+                                            Сброс
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Список товаров с прокруткой, выбранные сверху */}
+                                <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                                    {(() => {
+                                        const term = productSearchTerm;
+                                        const filtered = products.filter(p => !term || (p.id && p.id.toLowerCase().includes(term)));
+                                        const selectedSet = new Set(filters.product);
+                                        const selectedList = filtered.filter(p => selectedSet.has(p.id));
+                                        const unselectedList = filtered.filter(p => !selectedSet.has(p.id));
+                                        const visible = [...selectedList, ...unselectedList];
+                                        return visible.map(p => (
+                                            <div key={p.id} className="mb-1">
+                                                <Form.Check
+                                                    type="checkbox"
+                                                    id={`product-${p.id}`}
+                                                    label={p.id}
+                                                    checked={filters.product.includes(p.id)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            handleFilterChange('product', [...filters.product, p.id]);
+                                                        } else {
+                                                            handleFilterChange('product', filters.product.filter(id => id !== p.id));
+                                                        }
+                                                    }}
+                                                    className="text-light"
+                                                />
+                                            </div>
+                                        ));
+                                    })()}
+                                    {products.filter(p => !productSearchTerm || (p.id && p.id.toLowerCase().includes(productSearchTerm))).length === 0 && (
+                                        <small className="text-muted">Товары не найдены</small>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                    <small className="text-muted">Ничего не выбрано — показываем все товары</small>
                 </Col>
                 <Col md={2}>
                     <Form.Label className="text-light">Рейтинг</Form.Label>

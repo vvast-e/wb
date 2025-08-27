@@ -18,10 +18,12 @@ async def get_brands(db: AsyncSession, user_id: int) -> Dict[str, str]:
     user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="Admin not found")
+    # Если ключей нет, возвращаем пустой словарь, а не 404
     if not user.wb_api_key:
-        raise HTTPException(status_code=404, detail="Brands not found")
+        return {}
 
-    return decrypt_api_dict(user.wb_api_key)
+    decrypted = decrypt_api_dict(user.wb_api_key)
+    return decrypted or {}
 
 
 async def create_brand(

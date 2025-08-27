@@ -86,18 +86,25 @@ async def get_reviews_with_filters_crud(
     if product:
         logger.debug(f"[DEBUG] ===== ФИЛЬТР ПО ТОВАРУ =====")
         logger.debug(f"[DEBUG] product: '{product}' (тип: {type(product)})")
-        logger.debug(f"[DEBUG] shop: '{shop}' (тип: {type(shop)})")
-        
-        # Нормализация бренда для сравнения
-        normalized_shop = shop.lower() if shop else ""
-        logger.debug(f"[DEBUG] Нормализованный shop: '{normalized_shop}'")
-        
-        # Ищем товар по vendor_code в feedbacks
-        logger.debug(f"[DEBUG] Ищем товар по vendor_code: '{product}' и brand: '{normalized_shop}'")
-        # Просто фильтруем по vendor_code в feedbacks
-        query = query.where(Feedback.vendor_code == product)
-        logger.debug(f"[DEBUG] Применяем фильтр по vendor_code: {product}")
-        logger.debug(f"[DEBUG] Итоговый запрос после фильтра: {query}")
+
+        # Поддержка нескольких товаров: строка с запятыми или список
+        product_values = []
+        if isinstance(product, str):
+            # product может быть вида "code1,code2,code3"
+            product_values = [p.strip() for p in product.split(',') if p and p.strip()]
+        elif isinstance(product, (list, tuple, set)):
+            product_values = [str(p).strip() for p in product if str(p).strip()]
+
+        if product_values and len(product_values) > 1:
+            logger.debug(f"[DEBUG] Применяем фильтр по множеству vendor_code: {product_values}")
+            query = query.where(Feedback.vendor_code.in_(product_values))
+        elif product_values:
+            single = product_values[0]
+            logger.debug(f"[DEBUG] Применяем фильтр по одному vendor_code: {single}")
+            query = query.where(Feedback.vendor_code == single)
+        else:
+            # на случай пустой строки после split — фильтр не применяем
+            logger.debug(f"[DEBUG] Пустой фильтр product после парсинга — пропускаем")
     else:
         logger.debug(f"[DEBUG] Фильтр по товару не применяется (product = {product})")
 
@@ -1749,7 +1756,53 @@ async def parse_shop_feedbacks_crud(
         results = []
         all_feedbacks_data = []  # Собираем все отзывы
 
-        # Парсим отзывы для каждого товара
+        # Перед парсингом — проверяем историю остатков и фильтруем удалённые карточки (isDeleted)
+        try:
+            # Собираем nmIDs из карточек
+            nm_ids = []
+            for c in items:
+                nm = c.get("nmID")
+                if nm:
+                    nm_ids.append(int(nm))
+
+            # Диапазон по требованиям WB: не ранее 3 месяцев от текущей даты (90 дней)
+            end_date_str = datetime.now().strftime('%Y-%m-%d')
+            start_date_str = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+
+            stocks_resp = await wb_client.get_stocks_report_products(nm_ids=nm_ids, start_date=start_date_str, end_date=end_date_str)
+            if stocks_resp.success and isinstance(stocks_resp.data, dict):
+                # Ожидаем структуру с данными по товарам; оставляем только nmID со stockCount > 0
+                in_stock_nm_ids = set()
+                # Актуальная схема: data.items — массив TableProductItemSt
+                data_obj = stocks_resp.data.get('data') if isinstance(stocks_resp.data.get('data'), dict) else None
+                items_arr = (data_obj or {}).get('items') if data_obj else None
+                if isinstance(items_arr, list):
+                    for p in items_arr:
+                        try:
+                            nm = p.get('nmID')
+                            if nm is None:
+                                continue
+                            metrics = p.get('metrics') or {}
+                            stock_count = metrics.get('stockCount', 0) or 0
+                            try:
+                                stock_int = int(stock_count)
+                            except Exception:
+                                stock_int = 0
+                            if stock_int > 0:
+                                in_stock_nm_ids.add(int(nm))
+                        except Exception:
+                            continue
+
+                if in_stock_nm_ids:
+                    before = len(items)
+                    items = [it for it in items if int(it.get('nmID', 0)) in in_stock_nm_ids]
+                    logger.info(f"[PARSE] Фильтрация по остатку stockCount>0: было {before}, стало {len(items)} (доступно {len(in_stock_nm_ids)})")
+            else:
+                logger.warning(f"[PARSE] Не удалось получить stocks-report: {stocks_resp.error}; продолжаем без фильтрации isDeleted")
+        except Exception as e:
+            logger.warning(f"[PARSE] Ошибка при фильтрации по isDeleted: {e}; продолжаем без фильтрации")
+
+        # Парсим отзывы для каждого товара (после фильтрации)
         for i, item in enumerate(items):
             nm_id = item.get("nmID")
             vendor_code = item.get("vendorCode", "")

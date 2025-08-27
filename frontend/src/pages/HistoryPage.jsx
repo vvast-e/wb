@@ -51,6 +51,7 @@ const HistoryPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [selectedHistory, setSelectedHistory] = useState(null);
+    const [noBrands, setNoBrands] = useState(false);
 
     const [pagination, setPagination] = useState({
         page: 1,
@@ -88,6 +89,10 @@ const HistoryPage = () => {
                 setBrands(brandNames);
                 if (brandNames.length > 0) {
                     setSelectedBrand(brandNames[0]);
+                } else {
+                    // Нет брендов/ключей — показываем приглашение перейти в Панель управления
+                    setNoBrands(true);
+                    setLoading(false);
                 }
             } catch (err) {
                 setBrandsError('Не удалось загрузить бренды');
@@ -146,6 +151,9 @@ const HistoryPage = () => {
                 setError(detail.map(e => `${e.loc?.join('.')}: ${e.msg}`).join('; '));
             } else if (err.response?.status === 404) {
                 setError('Никаких изменений не было');
+            } else if (typeof detail === 'string' && detail.includes('WB API key not configured')) {
+                setNoBrands(true);
+                setError(null);
             } else {
                 setError(detail || err.message || 'Ошибка загрузки истории');
             }
@@ -289,6 +297,21 @@ const HistoryPage = () => {
         return items;
     };
 
+    if (noBrands) {
+        return (
+            <Container className="py-5">
+                <Alert variant="info">
+                    У вас пока нет добавленных магазинов. Добавьте WB API ключ в Панели управления, чтобы просматривать историю.
+                    <div className="mt-2">
+                        <Button variant="success" onClick={() => window.location.href = '/Admin'}>
+                            Перейти в Панель управления
+                        </Button>
+                    </div>
+                </Alert>
+            </Container>
+        );
+    }
+
     return (
         <Container className="py-5">
             <div className="d-flex justify-content-between align-items-center mb-4">
@@ -351,13 +374,27 @@ const HistoryPage = () => {
                     <Spinner animation="border" variant="success" />
                 </div>
             ) : error ? (
-                <Alert variant="danger">
-                    <Alert.Heading>Ошибка загрузки истории</Alert.Heading>
-                    <p>{error}</p>
-                    <Button variant="outline-danger" onClick={fetchHistory} size="sm" className="mt-2">
-                        <BiRefresh className="me-1" /> Попробовать снова
-                    </Button>
-                </Alert>
+                (() => {
+                    const isNoKey = typeof error === 'string' && error.includes('WB API key not configured');
+                    return isNoKey ? (
+                        <Alert variant="info">
+                            Не настроен WB API ключ. Добавьте ключ в Панели управления.
+                            <div className="mt-2">
+                                <Button variant="success" onClick={() => window.location.href = '/Admin'}>
+                                    Перейти в Панель управления
+                                </Button>
+                            </div>
+                        </Alert>
+                    ) : (
+                        <Alert variant="danger">
+                            <Alert.Heading>Ошибка загрузки истории</Alert.Heading>
+                            <p>{error}</p>
+                            <Button variant="outline-danger" onClick={fetchHistory} size="sm" className="mt-2">
+                                <BiRefresh className="me-1" /> Попробовать снова
+                            </Button>
+                        </Alert>
+                    );
+                })()
             ) : history.length > 0 ? (
                 <>
                     <div className="table-responsive">

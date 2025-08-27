@@ -25,16 +25,28 @@ const ReviewAnalyzerPage = () => {
     // Применяем URL параметры к фильтрам
     useEffect(() => {
         const shopFromUrl = searchParams.get('shop');
-        const productFromUrl = searchParams.get('product');
+        const productFromUrl = searchParams.get('product'); // может быть списком через запятую
         const negativeFromUrl = searchParams.get('negative');
+        const deletedFromUrl = searchParams.get('deleted');
+        const dateFromUrl = searchParams.get('date_from');
+        const dateToUrl = searchParams.get('date_to');
 
-        console.log('URL параметры:', { shopFromUrl, productFromUrl, negativeFromUrl });
+        console.log('URL параметры:', { shopFromUrl, productFromUrl, negativeFromUrl, deletedFromUrl, dateFromUrl, dateToUrl });
+
+        // Преобразуем product в массив (мультивыбор)
+        let productArray = [];
+        if (productFromUrl && productFromUrl.trim() !== '') {
+            productArray = productFromUrl.split(',').map(p => p.trim()).filter(Boolean);
+        }
 
         setFilters(prevFilters => ({
             ...prevFilters,
             shop: shopFromUrl || '',
-            product: productFromUrl || '',
-            negative: negativeFromUrl || ''
+            product: productArray, // массив значений
+            negative: negativeFromUrl || '',
+            deleted: deletedFromUrl || '',
+            dateFrom: dateFromUrl || '',
+            dateTo: dateToUrl || ''
         }));
     }, [searchParams]);
 
@@ -98,7 +110,9 @@ const ReviewAnalyzerPage = () => {
             if (filters.search) params.search = filters.search;
             if (filters.rating) params.rating = Number(filters.rating);
             if (filters.shop) params.shop = filters.shop;
-            if (filters.product) params.product = filters.product;
+            if (filters.product && Array.isArray(filters.product) && filters.product.length > 0) {
+                params.product = filters.product.join(',');
+            }
             if (filters.lastNDays && Number(filters.lastNDays) > 0) {
                 const now = new Date();
                 const from = new Date(now.getTime() - Number(filters.lastNDays) * 24 * 60 * 60 * 1000);

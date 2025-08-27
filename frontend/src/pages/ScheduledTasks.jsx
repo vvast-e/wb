@@ -30,10 +30,10 @@ const ScheduledTasks = () => {
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [noBrands, setNoBrands] = useState(false);
 
     const fetchTasks = async () => {
         try {
-            const token = localStorage.getItem('token');
             const response = await api.get('/tasks');
             setTasks(response.data);
             setLoading(false);
@@ -44,7 +44,24 @@ const ScheduledTasks = () => {
     };
 
     useEffect(() => {
-        fetchTasks();
+        const init = async () => {
+            try {
+                // Проверяем, есть ли настроенные бренды (WB ключи)
+                const brandsRes = await api.get('/admin/brands');
+                const brandsObj = brandsRes.data || {};
+                if (Object.keys(brandsObj).length === 0) {
+                    setNoBrands(true);
+                    setLoading(false);
+                    return;
+                }
+                await fetchTasks();
+            } catch (err) {
+                // Если токен невалиден, глобальный interceptor сделает редирект
+                setError(err.response?.data?.detail || err.message);
+                setLoading(false);
+            }
+        };
+        init();
     }, []);
 
     const handleDelete = async (taskId) => {
@@ -107,10 +124,37 @@ const ScheduledTasks = () => {
         );
     }
 
-    if (error) {
+    if (noBrands) {
         return (
             <Container className="mt-4">
-                <Alert variant="danger">{error}</Alert>
+                <Alert variant="info">
+                    У вас пока нет добавленных магазинов. Добавьте WB API ключ в Панели управления.
+                    <div className="mt-2">
+                        <Button variant="success" onClick={() => window.location.href = '/Admin'}>
+                            Перейти в Панель управления
+                        </Button>
+                    </div>
+                </Alert>
+            </Container>
+        );
+    }
+
+    if (error) {
+        const isNoKey = typeof error === 'string' && error.includes('WB API key not configured');
+        return (
+            <Container className="mt-4">
+                {isNoKey ? (
+                    <Alert variant="info">
+                        Не настроен WB API ключ. Добавьте ключ в Панели управления, чтобы видеть задачи.
+                        <div className="mt-2">
+                            <Button variant="success" onClick={() => window.location.href = '/Admin'}>
+                                Перейти в Панель управления
+                            </Button>
+                        </div>
+                    </Alert>
+                ) : (
+                    <Alert variant="danger">{error}</Alert>
+                )}
             </Container>
         );
     }
