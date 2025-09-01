@@ -12,7 +12,7 @@ import asyncio
 import httpx
 from datetime import datetime
 from typing import List, Dict, Optional
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlparse
 
 try:
     # curl_cffi даёт реальный TLS-отпечаток Chrome/Edge через impersonate
@@ -162,14 +162,43 @@ class OzonReviewsParser:
             except Exception:
                 return None
 
-    async def _fetch_json_via_flaresolverr(self, url: str) -> Optional[Dict]:
-        if get_html_flaresolverr is None:
-            return None
+    async def _fetch_json_via_flaresolverr(self, url: str, headers: Optional[Dict] = None) -> Optional[Dict]:
+        """Запрос через FlareSolverr с пробросом нужных заголовков, чтобы Ozon отдал JSON, а не HTML."""
         try:
-            raw = await get_html_flaresolverr(url)
-            return json.loads(raw)
+            payload = {
+                "cmd": "request.get",
+                "url": url,
+                "maxTimeout": 90000,
+            }
+            if headers:
+                payload["headers"] = headers
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post("http://127.0.0.1:8191/v1", json=payload)
+                data = resp.json()
+                if data.get("status") != "ok":
+                    return None
+                solution = data.get("solution", {})
+                body = solution.get("response", "")
+                # Пытаемся распарсить JSON
+                return json.loads(body)
         except Exception:
             return None
+
+    @staticmethod
+    def _normalize_product_path(product_url: str) -> str:
+        """Возвращает только путь '/product/.../' без домена и query."""
+        if product_url.startswith("http"):
+            parsed = urlparse(product_url)
+            path = parsed.path or "/"
+        else:
+            path = product_url
+        # Урезаем до сегмента /product/.../
+        if "/product/" in path:
+            path = path[path.find("/product/"):]
+        # Гарантируем завершающий '/'
+        if not path.endswith("/"):
+            path = path + "/"
+        return path
     
     def build_reviews_url(self, product_url: str, page: int = 1, page_key: str = "", start_page_id: str = "") -> str:
         """Строит URL для получения отзывов"""
@@ -196,11 +225,14 @@ class OzonReviewsParser:
     
     async def get_reviews_page(self, product_url: str, page: int = 1, page_key: str = "", start_page_id: str = "") -> Optional[Dict]:
         """Получает страницу отзывов с многоступенчатым обходом антибота."""
-        url = self.build_reviews_url(product_url, page, page_key, start_page_id)
+        # Нормализуем путь товара и собираем URL API
+        norm_path = self._normalize_product_path(product_url)
+        url = self.build_reviews_url(norm_path, page, page_key, start_page_id)
         # Задаём реальный Referer на карточку товара
-        full_product_url = product_url if product_url.startswith('http') else f"https://www.ozon.ru{product_url}"
+        full_product_url = product_url if product_url.startswith('http') else f"https://www.ozon.ru{norm_path}"
         per_request_headers = getattr(self, 'base_headers', {}).copy() if hasattr(self, 'base_headers') else {}
         per_request_headers['Referer'] = full_product_url
+        per_request_headers['Accept'] = 'application/json, text/plain, */*'
         print(f"[OZON REVIEWS] Запрос страницы {page}: {url}")
         attempt = 1
         backoff = self.initial_backoff_seconds
@@ -214,8 +246,8 @@ class OzonReviewsParser:
                 data = await self._fetch_json_via_httpx(url, headers=per_request_headers)
                 if data:
                     return data
-                # 3) Фолбэк: FlareSolverr (Cloudflare антибот)
-                data = await self._fetch_json_via_flaresolverr(url)
+                # 3) Фолбэк: FlareSolverr (Cloudflare антибот) с заголовками
+                data = await self._fetch_json_via_flaresolverr(url, headers=per_request_headers)
                 if data:
                     return data
             except Exception as e:
