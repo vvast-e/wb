@@ -46,13 +46,24 @@ class OzonReviewsParser:
         self.initial_backoff_seconds = 1.0
         
     async def __aenter__(self):
+        # Базовые заголовки ближе к реальному браузеру/клиенту OZON
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
-            'Referer': 'https://www.ozon.ru/',
-            'Origin': 'https://www.ozon.ru'
+            'Origin': 'https://www.ozon.ru',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-CH-UA-Platform': '"Windows"',
+            'Sec-CH-UA': '"Chromium";v="124", "Not-A.Brand";v="24", "Google Chrome";v="124"',
+            'Sec-CH-UA-Mobile': '?0',
+            # dweb мета заголовки ozon
+            'x-o3-app-name': 'dweb',
+            'x-o3-app-version': 'release',
+            'x-o3-language': 'ru'
         }
+        self.base_headers = headers.copy()
         # httpx клиент (асинхронный) — прокси задаются на уровне клиента
         httpx_proxies = None
         if self.proxy_url:
@@ -118,11 +129,11 @@ class OzonReviewsParser:
             return {"http://": proxy, "https://": proxy}
         return None
 
-    async def _fetch_json_via_curl(self, url: str) -> Optional[Dict]:
+    async def _fetch_json_via_curl(self, url: str, headers: Optional[Dict] = None) -> Optional[Dict]:
         if self.sync_session is None:
             return None
         def _do_get() -> Optional[Dict]:
-            resp = self.sync_session.get(url)
+            resp = self.sync_session.get(url, headers=headers or self.base_headers)
             ct = resp.headers.get("Content-Type")
             text = resp.text
             if self._is_blocked_response(resp.status_code, text, ct):
@@ -136,9 +147,9 @@ class OzonReviewsParser:
                     return None
         return await asyncio.to_thread(_do_get)
 
-    async def _fetch_json_via_httpx(self, url: str) -> Optional[Dict]:
+    async def _fetch_json_via_httpx(self, url: str, headers: Optional[Dict] = None) -> Optional[Dict]:
         # Прокси уже настроены на уровне AsyncClient в __aenter__
-        resp = await self.session.get(url)
+        resp = await self.session.get(url, headers=headers or self.base_headers)
         ct = resp.headers.get("Content-Type")
         text = resp.text
         if self._is_blocked_response(resp.status_code, text, ct):
@@ -186,17 +197,21 @@ class OzonReviewsParser:
     async def get_reviews_page(self, product_url: str, page: int = 1, page_key: str = "", start_page_id: str = "") -> Optional[Dict]:
         """Получает страницу отзывов с многоступенчатым обходом антибота."""
         url = self.build_reviews_url(product_url, page, page_key, start_page_id)
+        # Задаём реальный Referer на карточку товара
+        full_product_url = product_url if product_url.startswith('http') else f"https://www.ozon.ru{product_url}"
+        per_request_headers = getattr(self, 'base_headers', {}).copy() if hasattr(self, 'base_headers') else {}
+        per_request_headers['Referer'] = full_product_url
         print(f"[OZON REVIEWS] Запрос страницы {page}: {url}")
         attempt = 1
         backoff = self.initial_backoff_seconds
         while attempt <= self.max_attempts:
             try:
                 # 1) Пытаемся через curl_cffi (наиболее устойчивый TLS-отпечаток)
-                data = await self._fetch_json_via_curl(url)
+                data = await self._fetch_json_via_curl(url, headers=per_request_headers)
                 if data:
                     return data
                 # 2) Пробуем httpx с прокси (если задано)
-                data = await self._fetch_json_via_httpx(url)
+                data = await self._fetch_json_via_httpx(url, headers=per_request_headers)
                 if data:
                     return data
                 # 3) Фолбэк: FlareSolverr (Cloudflare антибот)
