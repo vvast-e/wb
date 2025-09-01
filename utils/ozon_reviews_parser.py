@@ -162,25 +162,61 @@ class OzonReviewsParser:
             except Exception:
                 return None
 
-    async def _fetch_json_via_flaresolverr(self, url: str, headers: Optional[Dict] = None) -> Optional[Dict]:
-        """Запрос через FlareSolverr с пробросом нужных заголовков, чтобы Ozon отдал JSON, а не HTML."""
+    async def _fetch_json_via_flaresolverr(self, api_url: str, full_product_url: str) -> Optional[Dict]:
+        """FlareSolverr: создаём сессию, сначала открываем страницу товара (чтобы получить куки/пройти челлендж),
+        затем в той же сессии запрашиваем JSON API. Возвращаем распарсенный JSON либо None."""
         try:
-            payload = {
-                "cmd": "request.get",
-                "url": url,
-                "maxTimeout": 90000,
-            }
-            if headers:
-                payload["headers"] = headers
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                resp = await client.post("http://127.0.0.1:8191/v1", json=payload)
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                # Создать сессию с нужным User-Agent
+                create_payload = {
+                    "cmd": "sessions.create",
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                }
+                resp = await client.post("http://127.0.0.1:8191/v1", json=create_payload)
                 data = resp.json()
                 if data.get("status") != "ok":
                     return None
-                solution = data.get("solution", {})
+                session_id = data.get("session")
+
+                # 1) Открыть страницу товара, чтобы установить куки/пройти антибот
+                open_payload = {
+                    "cmd": "request.get",
+                    "session": session_id,
+                    "url": full_product_url,
+                    "maxTimeout": 90000,
+                }
+                _ = await client.post("http://127.0.0.1:8191/v1", json=open_payload)
+
+                # 2) Запросить JSON API в той же сессии
+                api_payload = {
+                    "cmd": "request.get",
+                    "session": session_id,
+                    "url": api_url,
+                    "maxTimeout": 90000,
+                }
+                resp2 = await client.post("http://127.0.0.1:8191/v1", json=api_payload)
+                data2 = resp2.json()
+                if data2.get("status") != "ok":
+                    # Удаляем сессию
+                    try:
+                        await client.post("http://127.0.0.1:8191/v1", json={"cmd": "sessions.destroy", "session": session_id})
+                    except Exception:
+                        pass
+                    return None
+                solution = data2.get("solution", {})
                 body = solution.get("response", "")
-                # Пытаемся распарсить JSON
-                return json.loads(body)
+                try:
+                    parsed = json.loads(body)
+                except Exception:
+                    parsed = None
+
+                # Удаляем сессию
+                try:
+                    await client.post("http://127.0.0.1:8191/v1", json={"cmd": "sessions.destroy", "session": session_id})
+                except Exception:
+                    pass
+
+                return parsed
         except Exception:
             return None
 
@@ -228,17 +264,17 @@ class OzonReviewsParser:
         # Нормализуем путь товара и собираем URL API
         norm_path = self._normalize_product_path(product_url)
         url = self.build_reviews_url(norm_path, page, page_key, start_page_id)
-        # Задаём реальный Referer на карточку товара
+        # Задаём реальный URL карточки товара
         full_product_url = product_url if product_url.startswith('http') else f"https://www.ozon.ru{norm_path}"
-        per_request_headers = getattr(self, 'base_headers', {}).copy() if hasattr(self, 'base_headers') else {}
-        per_request_headers['Referer'] = full_product_url
-        per_request_headers['Accept'] = 'application/json, text/plain, */*'
         print(f"[OZON REVIEWS] Запрос страницы {page}: {url}")
         attempt = 1
         backoff = self.initial_backoff_seconds
         while attempt <= self.max_attempts:
             try:
                 # 1) Пытаемся через curl_cffi (наиболее устойчивый TLS-отпечаток)
+                per_request_headers = getattr(self, 'base_headers', {}).copy() if hasattr(self, 'base_headers') else {}
+                per_request_headers['Referer'] = full_product_url
+                per_request_headers['Accept'] = 'application/json, text/plain, */*'
                 data = await self._fetch_json_via_curl(url, headers=per_request_headers)
                 if data:
                     return data
@@ -246,8 +282,8 @@ class OzonReviewsParser:
                 data = await self._fetch_json_via_httpx(url, headers=per_request_headers)
                 if data:
                     return data
-                # 3) Фолбэк: FlareSolverr (Cloudflare антибот) с заголовками
-                data = await self._fetch_json_via_flaresolverr(url, headers=per_request_headers)
+                # 3) Фолбэк: FlareSolverr (Cloudflare антибот) с прогревом страницы товара в сессии
+                data = await self._fetch_json_via_flaresolverr(url, full_product_url)
                 if data:
                     return data
             except Exception as e:
