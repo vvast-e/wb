@@ -13,6 +13,7 @@ import httpx
 from datetime import datetime
 from typing import List, Dict, Optional
 from urllib.parse import quote, unquote, urlparse
+from bs4 import BeautifulSoup
 
 try:
     # curl_cffi даёт реальный TLS-отпечаток Chrome/Edge через impersonate
@@ -185,7 +186,23 @@ class OzonReviewsParser:
                     "url": full_product_url,
                     "maxTimeout": 90000,
                 }
-                _ = await client.post("http://127.0.0.1:8191/v1", json=open_payload)
+                open_resp = await client.post("http://127.0.0.1:8191/v1", json=open_payload)
+                open_data = open_resp.json()
+                # Попробуем сразу вытащить отзывы из HTML (если уже отрендерены на странице)
+                try:
+                    open_solution = open_data.get("solution", {})
+                    html = open_solution.get("response", "")
+                    if html:
+                        extracted = self._extract_reviews_from_html(html)
+                        if extracted:
+                            # Закрываем сессию
+                            try:
+                                await client.post("http://127.0.0.1:8191/v1", json={"cmd": "sessions.destroy", "session": session_id})
+                            except Exception:
+                                pass
+                            return {"widgetStatesFromHtml": extracted}
+                except Exception:
+                    pass
 
                 # 2) Запросить JSON API в той же сессии
                 api_payload = {
@@ -219,6 +236,69 @@ class OzonReviewsParser:
                 return parsed
         except Exception:
             return None
+
+    def _extract_reviews_from_html(self, html: str) -> List[Dict]:
+        """Хакасный парсинг отзывов из HTML: пробуем найти JSON с ключом 'reviews' и распарсить массив.
+        Возвращает список уже приведённых к нашему формату словарей (как parse_single_review)."""
+        results: List[Dict] = []
+        if not html:
+            return results
+        try:
+            # Простая попытка: найти фрагмент '"reviews":[' и вытащить JSON-массив скобочный
+            text = html
+            idx = 0
+            while True:
+                idx = text.find('"reviews":', idx)
+                if idx == -1:
+                    break
+                # Ищем начало массива
+                arr_start = text.find('[', idx)
+                if arr_start == -1:
+                    idx += 9
+                    continue
+                # Баланс скобок массива
+                depth = 0
+                end = arr_start
+                while end < len(text):
+                    ch = text[end]
+                    if ch == '[':
+                        depth += 1
+                    elif ch == ']':
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    end += 1
+                if depth != 0:
+                    idx = arr_start + 1
+                    continue
+                arr_json = text[arr_start:end+1]
+                try:
+                    # Попытка распарсить чистый массив отзывов
+                    reviews_list = json.loads(arr_json)
+                    if isinstance(reviews_list, list):
+                        for review in reviews_list:
+                            parsed = self.parse_single_review(review) or {}
+                            if parsed:
+                                results.append(parsed)
+                        if results:
+                            return results
+                except Exception:
+                    pass
+                idx = end + 1
+        except Exception:
+            return results
+        # Попытка №2: найти скриптовые блоки и проверить содержимое
+        try:
+            soup = BeautifulSoup(html, 'lxml')
+            for script in soup.find_all('script'):
+                content = script.string or script.text or ''
+                if '"reviews":' in content:
+                    tmp = self._extract_reviews_from_html(content)
+                    if tmp:
+                        return tmp
+        except Exception:
+            pass
+        return results
 
     @staticmethod
     def _normalize_product_path(product_url: str) -> str:
@@ -277,14 +357,22 @@ class OzonReviewsParser:
                 per_request_headers['Accept'] = 'application/json, text/plain, */*'
                 data = await self._fetch_json_via_curl(url, headers=per_request_headers)
                 if data:
+                    # Если это ответ-HTML, пробуем выдернуть из него
+                    if isinstance(data, dict) and 'widgetStatesFromHtml' in data:
+                        return data
                     return data
                 # 2) Пробуем httpx с прокси (если задано)
                 data = await self._fetch_json_via_httpx(url, headers=per_request_headers)
                 if data:
+                    if isinstance(data, dict) and 'widgetStatesFromHtml' in data:
+                        return data
                     return data
                 # 3) Фолбэк: FlareSolverr (Cloudflare антибот) с прогревом страницы товара в сессии
                 data = await self._fetch_json_via_flaresolverr(url, full_product_url)
                 if data:
+                    if isinstance(data, dict) and 'widgetStatesFromHtml' in data:
+                        # Уже получили готовый список отзывов (как минимум часть)
+                        return data
                     return data
             except Exception as e:
                 print(f"[OZON REVIEWS] Попытка {attempt} — ошибка: {e}")
