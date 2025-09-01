@@ -53,8 +53,17 @@ class OzonReviewsParser:
             'Referer': 'https://www.ozon.ru/',
             'Origin': 'https://www.ozon.ru'
         }
-        # httpx клиент (асинхронный)
-        self.session = httpx.AsyncClient(headers=headers, timeout=30.0)
+        # httpx клиент (асинхронный) — прокси задаются на уровне клиента
+        httpx_proxies = None
+        if self.proxy_url:
+            httpx_proxies = {"http://": self.proxy_url, "https://": self.proxy_url}
+        else:
+            if self.proxy_host and self.proxy_port:
+                auth = f"{self.proxy_user}:{self.proxy_pass}@" if self.proxy_user and self.proxy_pass else ""
+                proxy = f"{self.proxy_scheme}://{auth}{self.proxy_host}:{self.proxy_port}"
+                httpx_proxies = {"http://": proxy, "https://": proxy}
+
+        self.session = httpx.AsyncClient(headers=headers, timeout=30.0, proxies=httpx_proxies)
 
         # curl_cffi (синхронный), будет запускаться через asyncio.to_thread
         if curl_requests is not None:
@@ -128,8 +137,8 @@ class OzonReviewsParser:
         return await asyncio.to_thread(_do_get)
 
     async def _fetch_json_via_httpx(self, url: str) -> Optional[Dict]:
-        proxies = self._build_proxy_for_httpx()
-        resp = await self.session.get(url, proxies=proxies)
+        # Прокси уже настроены на уровне AsyncClient в __aenter__
+        resp = await self.session.get(url)
         ct = resp.headers.get("Content-Type")
         text = resp.text
         if self._is_blocked_response(resp.status_code, text, ct):
