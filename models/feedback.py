@@ -35,6 +35,15 @@ class Feedback(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Время удаления отзыва
     wb_id = Column(String, index=True, nullable=False)  # Убираем unique=True
     aspects = Column(JSON, nullable=True)
+    # Резолвленная карта баблов/причин: { good: [{id,name}], bad: [{id,name}] }
+    bables_resolved = Column(JSON, nullable=True)
+    # Дополнительные поля для надежной синхронизации
+    wb_updated_at = Column(DateTime, nullable=True)
+    global_user_id = Column(String, nullable=True, index=True)
+    wb_user_id = Column(Integer, nullable=True, index=True)
+    content_hash = Column(String, nullable=True, index=True)
+    suspected_deleted_at = Column(DateTime(timezone=True), nullable=True)
+    superseded_by_wb_id = Column(String, nullable=True)
 
     # Составные индексы для оптимизации запросов
     __table_args__ = (
@@ -46,6 +55,7 @@ class Feedback(Base):
         Index('idx_vendor_code_brand', 'vendor_code', 'brand'),  # Добавляем индекс для vendor_code + brand
         # Добавляем составной уникальный индекс для wb_id + article + brand
         Index('idx_wb_id_article_brand_unique', 'wb_id', 'article', 'brand', unique=True),
+        Index('idx_brand_article_global_user', 'brand', 'article', 'global_user_id'),
     )
 
 

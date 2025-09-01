@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import os
 import logging
+import asyncio
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,7 @@ from utils.aspect_processor import AspectProcessor
 from database import AsyncSessionLocal
 
 scheduler = AsyncIOScheduler(executors={'default': AsyncIOExecutor()})
+logger = logging.getLogger(__name__)
 
 
 async def get_db_session() -> AsyncSession:
@@ -116,10 +118,20 @@ async def parse_all_shops_feedbacks():
             if not user.wb_api_key:
                 continue
             for brand in (user.wb_api_key or {}).keys():
-                try:
-                    await parse_shop_feedbacks_crud(db, user.id, brand, save_to_db=True)
-                except Exception:
-                    pass  # Игнорируем ошибки парсинга
+                max_attempts = 3
+                attempt = 0
+                backoff_base_sec = 5
+                while attempt < max_attempts:
+                    try:
+                        await parse_shop_feedbacks_crud(db, user.id, brand, save_to_db=True)
+                        break
+                    except Exception as e:
+                        attempt += 1
+                        logger.error(f"[SCHEDULER] Ошибка парсинга бренда '{brand}' для user_id={user.id}: {e}. Попытка {attempt}/{max_attempts}")
+                        if attempt < max_attempts:
+                            await asyncio.sleep(backoff_base_sec * attempt)
+                        else:
+                            logger.error(f"[SCHEDULER] Бренд '{brand}' пропущен после {max_attempts} неудачных попыток")
     finally:
         await db.close()
 

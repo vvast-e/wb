@@ -15,6 +15,9 @@ from zoneinfo import ZoneInfo
 def moscow_now():
     return datetime.now(ZoneInfo("Europe/Moscow"))
 
+# Инициализируем модульный логгер
+logger = logging.getLogger(__name__)
+
 
 async def create_feedback(
     db: AsyncSession,
@@ -33,8 +36,8 @@ async def create_feedback(
     aspects: Optional[Dict[str, List[str]]] = None
 ) -> Feedback:
     """Создание нового отзыва"""
-    # Определяем негативность по рейтингу (1-2 = негативный, 3 = нейтральный, 4-5 = позитивный)
-    is_negative = 1 if rating <= 2 else 0
+    # Определяем негативность по рейтингу (1-3 = негативный, 4-5 = позитивный)
+    is_negative = 1 if rating <= 3 else 0
     
     feedback = Feedback(
         article=str(article),  # Конвертируем артикул в строку
@@ -289,7 +292,7 @@ async def save_feedbacks_batch(
         normalized_text = data.get('text', '').strip().replace('\n', ' ').replace('\r', ' ').replace('  ', ' ')
         existing_query = select(Feedback).where(
             and_(
-                Feedback.article == data.get('article'),
+                Feedback.article == str(data.get('article')),
                 Feedback.brand == brand,
                 Feedback.author == data.get('author', 'Аноним'),
                 Feedback.text == normalized_text
@@ -303,13 +306,13 @@ async def save_feedbacks_batch(
             continue
         
         # Разбираем текст на части
-        text = data.get('text', '')
+        original_text = data.get('text', '')
         main_text = None
         pros_text = None
         cons_text = None
         
-        if 'Достоинства:' in text:
-            parts = text.split('Достоинства:')
+        if 'Достоинства:' in original_text:
+            parts = original_text.split('Достоинства:')
             main_text = parts[0].strip()
             if 'Недостатки:' in parts[1]:
                 pros_cons = parts[1].split('Недостатки:')
@@ -317,25 +320,25 @@ async def save_feedbacks_batch(
                 cons_text = pros_cons[1].strip()
             else:
                 pros_text = parts[1].strip()
-        elif 'Недостатки:' in text:
-            parts = text.split('Недостатки:')
+        elif 'Недостатки:' in original_text:
+            parts = original_text.split('Недостатки:')
             main_text = parts[0].strip()
             cons_text = parts[1].strip()
         else:
             # Если нет разделителей, весь текст идет в main_text
-            main_text = text
+            main_text = original_text
             pros_text = None
             cons_text = None
         
         # Обработка даты
-        date_str = data.get('createdDate')
+        date_str = data.get('date')
         date_obj = None
         if date_str and isinstance(date_str, str) and date_str.strip():
             date_obj = parse_wb_date(date_str)
             # Убираем логирование ошибок парсинга дат
         
         # Определяем негативность по рейтингу (1-2 = негативный, 3 = нейтральный, 4-5 = позитивный)
-        rating = data.get('productValuation', 0)
+        rating = data.get('rating', data.get('productValuation', 0))
         is_negative = 1 if rating <= 3 else 0
         
         # Анализируем аспекты отзыва используя новую систему аспектов
@@ -343,7 +346,7 @@ async def save_feedbacks_batch(
         
         # Проверяем, есть ли текст для анализа
         has_text_for_analysis = False
-        if text and text.strip():
+        if original_text and original_text.strip():
             has_text_for_analysis = True
         if main_text and main_text.strip():
             has_text_for_analysis = True
@@ -365,7 +368,7 @@ async def save_feedbacks_batch(
             rating=rating,
             date=date_obj,
             status=data.get('status', 'Без подтверждения'),
-            text=text,
+            text=normalized_text,
             main_text=main_text,
             pros_text=pros_text,
             cons_text=cons_text,
@@ -439,9 +442,27 @@ async def sync_feedbacks_with_soft_delete_optimized(
     logger.info(f"=== СТАРТ ОПТИМИЗИРОВАННОЙ СИНХРОНИЗАЦИИ ДЛЯ БРЕНДА: {brand} ===")
     logger.info(f"Отзывов из WB: {len(feedbacks_from_wb)}")
 
-    # ОПТИМИЗАЦИЯ 1: Загружаем только wb_id, article, brand вместо всех полей
-    existing_query = select(Feedback.wb_id, Feedback.article, Feedback.brand, Feedback.id, Feedback.is_deleted).where(
-        and_(Feedback.brand == brand, Feedback.wb_id.isnot(None))
+    # Собираем множество обработанных nmId из входных данных
+    processed_articles = set()
+    for fb in feedbacks_from_wb:
+        art = fb.get('article') or fb.get('nmId')
+        if art is not None:
+            processed_articles.add(str(art))
+
+    # ОПТИМИЗАЦИЯ 1: Загружаем только нужные поля ТОЛЬКО для обработанных товаров
+    existing_query = select(
+        Feedback.wb_id,
+        Feedback.article,
+        Feedback.brand,
+        Feedback.id,
+        Feedback.is_deleted,
+        Feedback.global_user_id
+    ).where(
+        and_(
+            Feedback.brand == brand,
+            Feedback.wb_id.isnot(None),
+            Feedback.article.in_(processed_articles) if processed_articles else True
+        )
     )
     existing_result = await db.execute(existing_query)
     existing_feedbacks_data = existing_result.fetchall()
@@ -451,11 +472,16 @@ async def sync_feedbacks_with_soft_delete_optimized(
     # Создаем словари для быстрого поиска
     # Создаем уникальные ключи по wb_id + article + brand для отзывов из WB
     wb_feedback_keys = set()
+    # Карта для поиска возможных замен: (article, globalUserId) -> wb_id
+    incoming_by_article_and_global = {}
     for fb in feedbacks_from_wb:
         wb_id = fb.get('id') or fb.get('wb_id')
         article = fb.get('article')
+        global_user_id = fb.get('globalUserId') or fb.get('global_user_id')
         if wb_id and article:
             wb_feedback_keys.add(f"{wb_id}_{article}_{brand}")
+        if article and global_user_id:
+            incoming_by_article_and_global[(str(article), str(global_user_id))] = str(wb_id) if wb_id else None
     
     # Создаем уникальные ключи по wb_id + article + brand для существующих отзывов
     existing_feedback_keys = set()
@@ -463,7 +489,8 @@ async def sync_feedbacks_with_soft_delete_optimized(
     for row in existing_feedbacks_data:
         key = f"{row.wb_id}_{row.article}_{row.brand}"
         existing_feedback_keys.add(key)
-        existing_feedback_map[key] = (row.id, row.is_deleted)
+        # Сохраняем id, is_deleted, global_user_id, article
+        existing_feedback_map[key] = (row.id, row.is_deleted, row.global_user_id, row.article)
 
     logger.info(f"Уникальных ключей (wb_id + article + brand) из WB: {len(wb_feedback_keys)}")
     logger.info(f"Уникальных ключей (wb_id + article + brand) в БД: {len(existing_feedback_keys)}")
@@ -481,17 +508,59 @@ async def sync_feedbacks_with_soft_delete_optimized(
     to_delete = []
     to_restore = []
     
-    # 1. Помечаем как удалённые отзывы, которых нет на WB
-    logger.info("Проверяем отзывы для soft delete...")
-    for key, (feedback_id, is_deleted) in existing_feedback_map.items():
-        if key not in wb_feedback_keys and not is_deleted:
-            to_delete.append(feedback_id)
-            stats['deleted_feedbacks'] += 1
-        elif key in wb_feedback_keys and is_deleted:
-            to_restore.append(feedback_id)
-            stats['restored_feedbacks'] += 1
-        elif key in wb_feedback_keys and not is_deleted:
-            stats['unchanged_feedbacks'] += 1
+    # 1. Soft delete только в рамках обработанных товаров с подтверждением отсутствия
+    logger.info("Проверяем отзывы для soft delete (только обработанные товары)...")
+    # Загружаем suspected_deleted_at для кандидатов
+    suspected_query = select(Feedback.id, Feedback.wb_id, Feedback.article, Feedback.brand, Feedback.is_deleted, Feedback.suspected_deleted_at).where(
+        and_(Feedback.brand == brand, Feedback.article.in_(processed_articles) if processed_articles else False)
+    )
+    suspected_result = await db.execute(suspected_query)
+    suspected_rows = suspected_result.fetchall()
+    id_to_suspected = {row.id: row.suspected_deleted_at for row in suspected_rows}
+
+    for key, (feedback_id, is_deleted, existing_global_user_id, existing_article) in existing_feedback_map.items():
+        if key not in wb_feedback_keys:
+            # Проверяем сценарий "замены" от того же пользователя на тот же товар
+            if existing_global_user_id:
+                new_wb_for_user = incoming_by_article_and_global.get((str(existing_article), str(existing_global_user_id)))
+            else:
+                new_wb_for_user = None
+
+            if new_wb_for_user:
+                # Считаем отзыв заменённым, а не удалённым
+                await db.execute(
+                    update(Feedback)
+                    .where(Feedback.id == feedback_id)
+                    .values(superseded_by_wb_id=str(new_wb_for_user), suspected_deleted_at=None)
+                )
+                stats['unchanged_feedbacks'] += 1
+                continue
+
+            # Не пришёл в текущем достоверном прогоне — сначала помечаем как suspected, при втором подряд прогоне — удаляем
+            suspected_at = id_to_suspected.get(feedback_id)
+            if not suspected_at:
+                await db.execute(
+                    update(Feedback)
+                    .where(Feedback.id == feedback_id)
+                    .values(suspected_deleted_at=moscow_now())
+                )
+            else:
+                if not is_deleted:
+                    to_delete.append(feedback_id)
+                    stats['deleted_feedbacks'] += 1
+        else:
+            # Пришёл — если был удалён или в suspected, восстанавливаем/сбрасываем suspected
+            if is_deleted:
+                to_restore.append(feedback_id)
+                stats['restored_feedbacks'] += 1
+            else:
+                stats['unchanged_feedbacks'] += 1
+            # Сбрасываем suspected
+            await db.execute(
+                update(Feedback)
+                .where(Feedback.id == feedback_id)
+                .values(suspected_deleted_at=None)
+            )
 
     # Батчевое обновление удаленных отзывов
     if to_delete:
@@ -545,14 +614,42 @@ async def sync_feedbacks_with_soft_delete_optimized(
                 # Извлекаем рейтинг - используем поле 'rating' из парсера
                 rating = fb_data.get('rating', 0)
                 
-                # Определяем негативность по рейтингу (1-2 = негативный, 3 = нейтральный, 4-5 = позитивный)
-                is_negative = 1 if rating <= 2 else 0
+                # Определяем негативность по рейтингу (1-3 = негативный, 4-5 = позитивный)
+                is_negative = 1 if rating <= 3 else 0
                 
                 # Убираем детальное логирование дат
                 logger.info(f"Обрабатываем отзыв {fb_data['id']}: rating={rating}, is_negative={is_negative}, author='{author_name}'")
                 
                 # Аспекты будут анализироваться отдельно через планировщик
                 aspects = None  # Убираем анализ аспектов из синхронизации
+
+                # Санитизация основного текста: удаляем строки с метками Достоинства/Недостатки/Комментарий
+                # Берем main_text строго из text WB без склейки с pros/cons
+                raw_text = fb_data.get('text', '') or ''
+                main_text_clean = raw_text.strip() if isinstance(raw_text, str) else ''
+
+                # bables_resolved: формируем из WB полей bables (имена) и reasons {good,bad} (идентификаторы)
+                names = fb_data.get('bables') if isinstance(fb_data.get('bables'), list) else []
+                reasons_dict = fb_data.get('reasons') if isinstance(fb_data.get('reasons'), dict) else {}
+                good_ids = reasons_dict.get('good') or []
+                bad_ids = reasons_dict.get('bad') or []
+                resolved_good = []
+                resolved_bad = []
+                if names:
+                    # Если явно указан только один тип (good/bad) — относим все имена к нему
+                    if good_ids and not bad_ids:
+                        resolved_good = [{ 'id': rid, 'name': nm } for rid, nm in zip(good_ids, names)] if len(good_ids) == len(names) else [{ 'id': rid, 'name': nm } for nm in names for rid in ([] if good_ids else [None])][:len(names)] or [{ 'id': None, 'name': nm } for nm in names]
+                    elif bad_ids and not good_ids:
+                        resolved_bad = [{ 'id': rid, 'name': nm } for rid, nm in zip(bad_ids, names)] if len(bad_ids) == len(names) else [{ 'id': rid, 'name': nm } for nm in names for rid in ([] if bad_ids else [None])][:len(names)] or [{ 'id': None, 'name': nm } for nm in names]
+                    else:
+                        # Если оба присутствуют или оба пустые — распределяем по рейтингу как эвристику
+                        if rating >= 4:
+                            resolved_good = [{ 'id': None, 'name': nm } for nm in names]
+                        else:
+                            resolved_bad = [{ 'id': None, 'name': nm } for nm in names]
+                bables_resolved_payload = None
+                if resolved_good or resolved_bad:
+                    bables_resolved_payload = { 'good': resolved_good, 'bad': resolved_bad }
 
                 new_feedback = Feedback(
                     wb_id=str(fb_data['id']),  # Конвертируем в строку
@@ -563,16 +660,23 @@ async def sync_feedbacks_with_soft_delete_optimized(
                     rating=rating,
                     date=date_obj,
                     status=fb_data.get('status', 'Без подтверждения'),  # Используем поле 'status' из парсера
-                    text=fb_data.get('text', ''),
-                    main_text=fb_data.get('text', ''),
-                    pros_text=fb_data.get('pros', ''),
-                    cons_text=fb_data.get('cons', ''),
+                    text=raw_text,
+                    main_text=main_text_clean,
+                    pros_text=fb_data.get('pros', '') or '',
+                    cons_text=fb_data.get('cons', '') or '',
                     user_id=user_id,
                     history_id=history_id,
                     is_negative=is_negative,
                     is_deleted=False,
                     deleted_at=None,
-                    aspects=aspects  # Добавляем проанализированные аспекты
+                    aspects=aspects,
+                    wb_updated_at=parse_wb_date(fb_data.get('updatedDate')) if fb_data.get('updatedDate') else None,
+                    global_user_id=fb_data.get('globalUserId'),
+                    wb_user_id=fb_data.get('wbUserId'),
+                    content_hash=None,
+                    suspected_deleted_at=None,
+                    superseded_by_wb_id=None,
+                    bables_resolved=bables_resolved_payload
                 )
                 new_feedbacks.append(new_feedback)
                 stats['new_feedbacks'] += 1

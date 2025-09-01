@@ -1364,7 +1364,8 @@ async def update_top_tracking_for_feedback(
     feedback_id: int,
     article: str,
     brand: str,
-    feedback_date: datetime
+    feedback_date: datetime,
+    user_id: int
 ) -> None:
     """Обновление топ-трекинга при добавлении нового отзыва"""
     
@@ -1380,6 +1381,7 @@ async def update_top_tracking_for_feedback(
             feedback_id=feedback_id,
             article=article,
             brand=brand,
+            user_id=user_id,
             created_at=datetime.now()
         )
         db.add(tracking)
@@ -1499,7 +1501,7 @@ async def recalculate_all_top_tracking(
             sorted_feedbacks = sorted(article_feedbacks, key=lambda f: f.date or f.created_at or datetime.min)
             
             # Создаем задачу для артикула
-            task = process_article_top_tracking_batch(db, article, brand, sorted_feedbacks)
+            task = process_article_top_tracking_batch(db, article, brand, sorted_feedbacks, user_id)
             article_tasks.append(task)
         
         # Выполняем все артикулы параллельно
@@ -1518,7 +1520,8 @@ async def process_article_top_tracking_batch(
     db: AsyncSession,
     article: str,
     brand: str,
-    feedbacks: List[Feedback]
+    feedbacks: List[Feedback],
+    user_id: int
 ) -> None:
     """Обрабатывает топ-трекинг для всех отзывов артикула батчами"""
     logger = logging.getLogger(__name__)
@@ -1536,7 +1539,12 @@ async def process_article_top_tracking_batch(
             batch_tasks = []
             for feedback in batch:
                 task = update_top_tracking_for_feedback(
-                    db, feedback.id, article, brand, feedback.date or feedback.created_at or datetime.now()
+                    db,
+                    feedback.id,
+                    article,
+                    brand,
+                    feedback.date or feedback.created_at or datetime.now(),
+                    user_id
                 )
                 batch_tasks.append(task)
             
@@ -1553,7 +1561,8 @@ async def process_article_top_tracking_batch(
 async def process_top_tracking_for_product(
     db: AsyncSession,
     article: str,
-    brand: str
+    brand: str,
+    user_id: int
 ) -> None:
     """Обработка топ-трекинга для всех отзывов товара"""
     
@@ -1572,7 +1581,7 @@ async def process_top_tracking_for_product(
     # Обрабатываем каждый отзыв
     for i, feedback in enumerate(feedbacks):
         await update_top_tracking_for_feedback(
-            db, feedback.id, article, brand, feedback.date
+            db, feedback.id, article, brand, feedback.date, user_id
         )
 
 
@@ -1675,7 +1684,8 @@ async def parse_shop_feedbacks_crud(
         db: AsyncSession,
         user_id: int,
         shop_id: str,
-        save_to_db: bool = True
+        save_to_db: bool = True,
+        max_date: Optional[str] = None
 ) -> Dict[str, Any]:
     """Массовый парсинг отзывов всех товаров магазина с поддержкой soft delete"""
     from crud.user import get_decrypted_wb_key
@@ -1803,6 +1813,14 @@ async def parse_shop_feedbacks_crud(
             logger.warning(f"[PARSE] Ошибка при фильтрации по isDeleted: {e}; продолжаем без фильтрации")
 
         # Парсим отзывы для каждого товара (после фильтрации)
+        from datetime import datetime
+        max_dt = None
+        if max_date:
+            try:
+                max_dt = datetime.fromisoformat(max_date)
+            except Exception:
+                max_dt = None
+
         for i, item in enumerate(items):
             nm_id = item.get("nmID")
             vendor_code = item.get("vendorCode", "")
@@ -1825,7 +1843,7 @@ async def parse_shop_feedbacks_crud(
                 logger.info(f"[PARSE] Парсим отзывы для товара nmID={nm_id}...")
                 feedbacks_data = await parse_feedbacks_optimized(
                     nm_id,
-                    None  # Используем дефолтную дату (2 года назад)
+                    max_dt  # Если не задано, парсер сам возьмет дефолт (2 года)
                 )
 
                 if feedbacks_data is None:

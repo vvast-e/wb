@@ -156,20 +156,10 @@ async def _http_fallback_parser(article: int, max_date: datetime) -> List[Dict[s
                             # Убираем логирование дат в файл
                             # НЕ обрабатываем дату здесь - это будет сделано в parse_wb_date
                             
-                            # Формируем текст с правильными разделителями
+                            # Берем поля раздельно: text/pros/cons без склейки
                             main_text = fb.get('text', '')
                             pros_text = fb.get('pros', '')
                             cons_text = fb.get('cons', '')
-                            
-                            # Если есть отдельные поля pros/cons, формируем структурированный текст
-                            if pros_text or cons_text:
-                                full_text = main_text
-                                if pros_text:
-                                    full_text += f"\nДостоинства: {pros_text}"
-                                if cons_text:
-                                    full_text += f"\nНедостатки: {cons_text}"
-                            else:
-                                full_text = main_text
                             
                             # Фильтруем отзывы по дате написания
                             try:
@@ -213,12 +203,15 @@ async def _http_fallback_parser(article: int, max_date: datetime) -> List[Dict[s
                                 'date': date_str,
                                 'status': 'Подтвержденная покупка' if fb.get('statusId', 0) == 16 else 'Без подтверждения',
                                 'rating': fb.get('productValuation', 0),
-                                'text': full_text,
+                                'text': main_text,
                                 'article': article,
                                 'nmId': fb.get('nmId'),
                                 'wb_id': fb.get('id'),  # Добавлено поле wb_id
-                                'pros': fb.get('pros', ''),
-                                'cons': fb.get('cons', '')
+                                'pros': pros_text,
+                                'cons': cons_text,
+                                'globalUserId': fb.get('globalUserId'),
+                                'wbUserId': fb.get('wbUserId'),
+                                'updatedDate': fb.get('updatedDate')
                             })
                             
                             # Убираем ограничение на 1000 отзывов - теперь парсим все доступные

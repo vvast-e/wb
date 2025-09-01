@@ -207,6 +207,7 @@ class FeedbackResponse(FeedbackBase):
     history_id: Optional[int] = None
     is_deleted: bool = False
     deleted_at: Optional[datetime] = None
+    bables_resolved: Optional[Dict[str, Any]] = None
 
     class Config:
         orm_mode = True

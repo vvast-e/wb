@@ -102,6 +102,7 @@ async def get_shops_summary(
 async def parse_shop_feedbacks_endpoint(
     shop_id: str,
     save_to_db: bool = Query(True),
+    max_date: Optional[str] = Query(None, description="Максимальная дата отзыва YYYY-MM-DD (включительно)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user_with_wb_key)
 ):
@@ -110,7 +111,8 @@ async def parse_shop_feedbacks_endpoint(
         db=db,
         user_id=current_user.id,
         shop_id=shop_id,
-        save_to_db=save_to_db
+        save_to_db=save_to_db,
+        max_date=max_date
     )
     
     if not result["success"]:

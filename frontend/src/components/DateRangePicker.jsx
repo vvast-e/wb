@@ -1,10 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Form, Button, Row, Col } from 'react-bootstrap';
 
 const DateRangePicker = ({ onDateChange, initialStartDate, initialEndDate }) => {
     const [startDate, setStartDate] = useState(initialStartDate || '');
     const [endDate, setEndDate] = useState(initialEndDate || '');
     const [lastNDays, setLastNDays] = useState('');
+
+    // Синхронизируем локальное состояние при изменении входящих значений (например, при возврате "назад")
+    useEffect(() => {
+        const s = initialStartDate || '';
+        const e = initialEndDate || '';
+        setStartDate(s);
+        setEndDate(e);
+        // Не трогаем lastNDays, чтобы не затирать введённое значение (например, "50")
+    }, [initialStartDate, initialEndDate]);
 
     const handleReset = () => {
         setStartDate('');

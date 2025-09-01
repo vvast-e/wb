@@ -188,7 +188,8 @@ const ReviewAnalyzerPage = () => {
     };
 
     const formatDate = (dateString) => {
-        return new Date(dateString).toLocaleDateString('ru-RU');
+        const d = new Date(dateString);
+        return d.toLocaleString('ru-RU');
     };
 
     const renderStars = (rating) => {
@@ -292,6 +293,18 @@ const ReviewAnalyzerPage = () => {
                                 )}
                                 {review.main_text && (
                                     <p className="text-light mb-2"><strong>Комментарий:</strong> {review.main_text.replace(/^Комментарий:/i, '').trim()}</p>
+                                )}
+
+                                {/* Bables resolved rendering */}
+                                {review.bables_resolved && (
+                                    <div className="mb-2">
+                                        {Array.isArray(review.bables_resolved.good) && review.bables_resolved.good.length > 0 && (
+                                            <p className="text-light mb-1"><strong>Плюсы:</strong> {review.bables_resolved.good.map(b => b.name).filter(Boolean).join(', ')}</p>
+                                        )}
+                                        {Array.isArray(review.bables_resolved.bad) && review.bables_resolved.bad.length > 0 && (
+                                            <p className="text-light mb-1"><strong>Минусы:</strong> {review.bables_resolved.bad.map(b => b.name).filter(Boolean).join(', ')}</p>
+                                        )}
+                                    </div>
                                 )}
 
                                 <p className="text-light mb-2">

@@ -103,10 +103,15 @@ const AddBrandForm = ({ onSuccess }) => {
             // Получаем название магазина из ответа API
             let shopName = formData.platform; // fallback
             if (mode === 'add' && response.data) {
-                // Ищем название магазина в ответе
-                const brandNames = Object.keys(response.data);
-                if (brandNames.length > 0) {
-                    shopName = brandNames[0]; // Берем первое название
+                // Вычисляем реально добавленный бренд по разнице ключей
+                const beforeKeys = Object.keys(brands || {});
+                const afterKeys = Object.keys(response.data || {});
+                const diff = afterKeys.find((k) => !beforeKeys.includes(k));
+                if (diff) {
+                    shopName = diff;
+                } else if (afterKeys.length > 0) {
+                    // На всякий случай берем последний ключ (как наиболее вероятно новый)
+                    shopName = afterKeys[afterKeys.length - 1];
                 }
             }
 
@@ -366,7 +371,8 @@ const AddBrandForm = ({ onSuccess }) => {
                                                 `${import.meta.env.VITE_API_URL}/analytics/shop/${selectedBrand}/parse-feedbacks`,
                                                 {},
                                                 {
-                                                    headers: { Authorization: `Bearer ${token}` }
+                                                    headers: { Authorization: `Bearer ${token}` },
+                                                    params: {}
                                                 }
                                             );
 

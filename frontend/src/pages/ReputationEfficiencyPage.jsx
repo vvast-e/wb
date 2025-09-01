@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Container, Card, Row, Col, Form, Spinner, Alert, Badge, ProgressBar } from 'react-bootstrap';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -42,6 +42,9 @@ const ReputationEfficiencyPage = () => {
     });
 
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const hydratedRef = useRef(false);
+    const [isHydrated, setIsHydrated] = useState(false);
 
     // Утилиты для времени HH:MM:SS
     const parseTimeToSeconds = (timeStr) => {
@@ -66,6 +69,24 @@ const ReputationEfficiencyPage = () => {
         fetchShops();
     }, []);
 
+    // Гидратация состояния из URL (сохранение параметров при возврате "назад")
+    useEffect(() => {
+        if (hydratedRef.current) return;
+        const shop = searchParams.get('shop') || '';
+        const productStr = searchParams.get('product') || '';
+        const dateFrom = searchParams.get('date_from') || '';
+        const dateTo = searchParams.get('date_to') || '';
+
+        if (shop) setSelectedShop(shop);
+        if (productStr) setSelectedProducts(productStr.split(',').map(p => p.trim()).filter(Boolean));
+        if (dateFrom || dateTo) setDateRange({ startDate: dateFrom, endDate: dateTo });
+
+        hydratedRef.current = true;
+        setIsHydrated(true);
+        console.log('[EFFICIENCY] hydrated from URL', { shop, productStr, dateFrom, dateTo });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     useEffect(() => {
         if (selectedShop) {
             fetchProducts();
@@ -77,10 +98,24 @@ const ReputationEfficiencyPage = () => {
     }, [selectedShop]);
 
     useEffect(() => {
+        if (!isHydrated) return;
         if (selectedShop && dateRange.startDate && dateRange.endDate) {
             fetchEfficiencyData();
         }
-    }, [selectedShop, selectedProducts, dateRange]);
+    }, [selectedShop, selectedProducts, dateRange, isHydrated]);
+
+    // Синхронизация состояния в URL (чтобы при возврате "назад" параметры сохранялись)
+    useEffect(() => {
+        if (!isHydrated) return;
+        const params = new URLSearchParams();
+        if (selectedShop) params.set('shop', selectedShop);
+        if (selectedProducts && selectedProducts.length > 0) {
+            params.set('product', selectedProducts.join(','));
+        }
+        if (dateRange.startDate) params.set('date_from', dateRange.startDate);
+        if (dateRange.endDate) params.set('date_to', dateRange.endDate);
+        setSearchParams(params);
+    }, [selectedShop, selectedProducts, dateRange, setSearchParams, isHydrated]);
 
     const fetchShops = async () => {
         try {
@@ -119,6 +154,7 @@ const ReputationEfficiencyPage = () => {
 
             // Нет выбранных товаров → агрегат по магазину (как сейчас)
             if (!selectedProducts || selectedProducts.length === 0) {
+                console.log('[EFFICIENCY] fetch (aggregate)', selectedShop, baseParams);
                 const response = await api.get(`/analytics/efficiency/${selectedShop}`, {
                     headers: { 'Authorization': `Bearer ${token}` },
                     params: baseParams
@@ -130,6 +166,7 @@ const ReputationEfficiencyPage = () => {
 
             // Один товар → одиночный режим (как сейчас)
             if (selectedProducts.length === 1) {
+                console.log('[EFFICIENCY] fetch (single)', selectedShop, { ...baseParams, product_id: selectedProducts[0] });
                 const response = await api.get(`/analytics/efficiency/${selectedShop}`, {
                     headers: { 'Authorization': `Bearer ${token}` },
                     params: { ...baseParams, product_id: selectedProducts[0] }
@@ -146,6 +183,7 @@ const ReputationEfficiencyPage = () => {
                     params: { ...baseParams, product_id: pid }
                 }).then(res => ({ pid, data: res.data }))
             );
+            console.log('[EFFICIENCY] fetch (multi)', selectedShop, selectedProducts, baseParams);
 
             const results = await Promise.all(requests);
             const byProduct = {};
@@ -495,10 +533,10 @@ const ReputationEfficiencyPage = () => {
                                     {/* Список товаров с прокруткой */}
                                     <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
                                         {(() => {
-                                            const filtered = products.filter(p => !productSearchTerm || p.id.toLowerCase().includes(productSearchTerm));
-                                            const selectedSet = new Set(selectedProducts);
-                                            const selectedList = filtered.filter(p => selectedSet.has(p.id));
-                                            const unselectedList = filtered.filter(p => !selectedSet.has(p.id));
+                                            const filtered = products.filter(p => !productSearchTerm || String(p.id).toLowerCase().includes(productSearchTerm));
+                                            const selectedSet = new Set((selectedProducts || []).map(v => String(v).toLowerCase()));
+                                            const selectedList = filtered.filter(p => selectedSet.has(String(p.id).toLowerCase()));
+                                            const unselectedList = filtered.filter(p => !selectedSet.has(String(p.id).toLowerCase()));
                                             const visible = [...selectedList, ...unselectedList];
                                             return visible.map(p => (
                                                 <div key={p.id} className="mb-1">
@@ -506,12 +544,17 @@ const ReputationEfficiencyPage = () => {
                                                         type="checkbox"
                                                         id={`product-${p.id}`}
                                                         label={p.id}
-                                                        checked={selectedProducts.includes(p.id)}
+                                                        checked={selectedSet.has(String(p.id).toLowerCase())}
                                                         onChange={(e) => {
                                                             if (e.target.checked) {
-                                                                setSelectedProducts([...selectedProducts, p.id]);
+                                                                const pid = String(p.id);
+                                                                const setLower = new Set((selectedProducts || []).map(v => String(v).toLowerCase()));
+                                                                if (!setLower.has(pid.toLowerCase())) {
+                                                                    setSelectedProducts([...(selectedProducts || []), pid]);
+                                                                }
                                                             } else {
-                                                                setSelectedProducts(selectedProducts.filter(id => id !== p.id));
+                                                                const pid = String(p.id).toLowerCase();
+                                                                setSelectedProducts((selectedProducts || []).filter(id => String(id).toLowerCase() !== pid));
                                                             }
                                                         }}
                                                         className="text-light"
@@ -519,7 +562,7 @@ const ReputationEfficiencyPage = () => {
                                                 </div>
                                             ));
                                         })()}
-                                        {products.filter(p => !productSearchTerm || p.id.toLowerCase().includes(productSearchTerm)).length === 0 && (
+                                        {products.filter(p => !productSearchTerm || String(p.id).toLowerCase().includes(productSearchTerm)).length === 0 && (
                                             <small className="text-muted">Товары не найдены</small>
                                         )}
                                     </div>

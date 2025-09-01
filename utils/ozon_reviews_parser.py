@@ -7,11 +7,24 @@
 import json
 import re
 import time
+import os
 import asyncio
 import httpx
 from datetime import datetime
 from typing import List, Dict, Optional
 from urllib.parse import quote, unquote
+
+try:
+    # curl_cffi даёт реальный TLS-отпечаток Chrome/Edge через impersonate
+    from curl_cffi import requests as curl_requests  # type: ignore
+except Exception:
+    curl_requests = None
+
+# Пытаемся реиспользовать уже готовый обход Cloudflare через FlareSolverr
+try:
+    from utils.ozon_playwright_parser import get_html_flaresolverr  # type: ignore
+except Exception:
+    get_html_flaresolverr = None
 
 class OzonReviewsParser:
     """Парсер отзывов Ozon"""
@@ -19,23 +32,124 @@ class OzonReviewsParser:
     def __init__(self):
         self.base_url = "https://www.ozon.ru/api/entrypoint-api.bx/page/json/v2"
         self.session = None
+        self.sync_session = None  # curl_cffi session
+        # Прокси можно задать одной строкой (схема://user:pass@host:port)
+        self.proxy_url = os.getenv("OZON_PROXY_URL")
+        # или по частям
+        self.proxy_host = os.getenv("OZON_PROXY_HOST")
+        self.proxy_port = os.getenv("OZON_PROXY_PORT")
+        self.proxy_user = os.getenv("OZON_PROXY_USERNAME")
+        self.proxy_pass = os.getenv("OZON_PROXY_PASSWORD")
+        self.proxy_scheme = os.getenv("OZON_PROXY_SCHEME", "http")
+        # Настройки retry
+        self.max_attempts = 4
+        self.initial_backoff_seconds = 1.0
         
     async def __aenter__(self):
-        self.session = httpx.AsyncClient(
-            headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
-                'Referer': 'https://www.ozon.ru/',
-                'Origin': 'https://www.ozon.ru'
-            },
-            timeout=30.0
-        )
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+            'Referer': 'https://www.ozon.ru/',
+            'Origin': 'https://www.ozon.ru'
+        }
+        # httpx клиент (асинхронный)
+        self.session = httpx.AsyncClient(headers=headers, timeout=30.0)
+
+        # curl_cffi (синхронный), будет запускаться через asyncio.to_thread
+        if curl_requests is not None:
+            curl_proxies = None
+            if self.proxy_url:
+                curl_proxies = {"http": self.proxy_url, "https": self.proxy_url}
+            else:
+                if self.proxy_host and self.proxy_port:
+                    auth = f"{self.proxy_user}:{self.proxy_pass}@" if self.proxy_user and self.proxy_pass else ""
+                    curl_proxies = {
+                        "http": f"{self.proxy_scheme}://{auth}{self.proxy_host}:{self.proxy_port}",
+                        "https": f"{self.proxy_scheme}://{auth}{self.proxy_host}:{self.proxy_port}",
+                    }
+            # impersonate имитирует Chrome и корректный TLS fingerprint
+            self.sync_session = curl_requests.Session(
+                impersonate="chrome120",
+                timeout=30.0,
+                headers=headers,
+                proxies=curl_proxies,
+                verify=True,
+            )
         return self
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.session:
             await self.session.aclose()
+        # curl_cffi сессия не требует async закрытия
+        self.sync_session = None
+
+    def _is_blocked_response(self, status_code: int, text: str, content_type: Optional[str]) -> bool:
+        if status_code != 200:
+            return True
+        if content_type and "application/json" in content_type.lower():
+            # Ожидаем JSON — ок
+            return False
+        # Частый случай блокировок — HTML/капча вместо JSON
+        if "<html" in text.lower() or "captcha" in text.lower() or "attention required" in text.lower():
+            return True
+        # Если не JSON и выглядит как мусор
+        try:
+            _ = json.loads(text)
+            return False
+        except Exception:
+            return True
+
+    def _build_proxy_for_httpx(self) -> Optional[Dict[str, str]]:
+        if self.proxy_url:
+            return {"http://": self.proxy_url, "https://": self.proxy_url}
+        if self.proxy_host and self.proxy_port:
+            auth = f"{self.proxy_user}:{self.proxy_pass}@" if self.proxy_user and self.proxy_pass else ""
+            proxy = f"{self.proxy_scheme}://{auth}{self.proxy_host}:{self.proxy_port}"
+            return {"http://": proxy, "https://": proxy}
+        return None
+
+    async def _fetch_json_via_curl(self, url: str) -> Optional[Dict]:
+        if self.sync_session is None:
+            return None
+        def _do_get() -> Optional[Dict]:
+            resp = self.sync_session.get(url)
+            ct = resp.headers.get("Content-Type")
+            text = resp.text
+            if self._is_blocked_response(resp.status_code, text, ct):
+                return None
+            try:
+                return resp.json()
+            except Exception:
+                try:
+                    return json.loads(text)
+                except Exception:
+                    return None
+        return await asyncio.to_thread(_do_get)
+
+    async def _fetch_json_via_httpx(self, url: str) -> Optional[Dict]:
+        proxies = self._build_proxy_for_httpx()
+        resp = await self.session.get(url, proxies=proxies)
+        ct = resp.headers.get("Content-Type")
+        text = resp.text
+        if self._is_blocked_response(resp.status_code, text, ct):
+            return None
+        try:
+            return resp.json()
+        except Exception:
+            try:
+                return json.loads(text)
+            except Exception:
+                return None
+
+    async def _fetch_json_via_flaresolverr(self, url: str) -> Optional[Dict]:
+        if get_html_flaresolverr is None:
+            return None
+        try:
+            raw = await get_html_flaresolverr(url)
+            return json.loads(raw)
+        except Exception:
+            return None
     
     def build_reviews_url(self, product_url: str, page: int = 1, page_key: str = "", start_page_id: str = "") -> str:
         """Строит URL для получения отзывов"""
@@ -61,22 +175,35 @@ class OzonReviewsParser:
         return f"{self.base_url}?url={encoded_url}&{query_string}"
     
     async def get_reviews_page(self, product_url: str, page: int = 1, page_key: str = "", start_page_id: str = "") -> Optional[Dict]:
-        """Получает страницу отзывов"""
-        try:
-            url = self.build_reviews_url(product_url, page, page_key, start_page_id)
-            print(f"[OZON REVIEWS] Запрос страницы {page}: {url}")
-            
-            response = await self.session.get(url)
-            if response.status_code == 200:
-                data = response.json()
-                return data
-            else:
-                print(f"[OZON REVIEWS] Ошибка {response.status_code}: {response.text}")
-                return None
-                
-        except Exception as e:
-            print(f"[OZON REVIEWS] Ошибка при получении страницы {page}: {e}")
-            return None
+        """Получает страницу отзывов с многоступенчатым обходом антибота."""
+        url = self.build_reviews_url(product_url, page, page_key, start_page_id)
+        print(f"[OZON REVIEWS] Запрос страницы {page}: {url}")
+        attempt = 1
+        backoff = self.initial_backoff_seconds
+        while attempt <= self.max_attempts:
+            try:
+                # 1) Пытаемся через curl_cffi (наиболее устойчивый TLS-отпечаток)
+                data = await self._fetch_json_via_curl(url)
+                if data:
+                    return data
+                # 2) Пробуем httpx с прокси (если задано)
+                data = await self._fetch_json_via_httpx(url)
+                if data:
+                    return data
+                # 3) Фолбэк: FlareSolverr (Cloudflare антибот)
+                data = await self._fetch_json_via_flaresolverr(url)
+                if data:
+                    return data
+            except Exception as e:
+                print(f"[OZON REVIEWS] Попытка {attempt} — ошибка: {e}")
+            # Экспоненциальная пауза с джиттером
+            sleep_for = backoff + (0.2 * backoff * (0.5 - (time.time() % 1)))
+            print(f"[OZON REVIEWS] Блок/ошибка, пауза {sleep_for:.2f}s и ретрай...")
+            await asyncio.sleep(sleep_for)
+            backoff *= 2
+            attempt += 1
+        print("[OZON REVIEWS] Все попытки исчерпаны")
+        return None
     
     def extract_reviews_from_response(self, response_data: Dict) -> List[Dict]:
         """Извлекает отзывы из ответа API"""
@@ -218,6 +345,8 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
 
 
 
