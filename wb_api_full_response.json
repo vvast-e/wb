@@ -3,30 +3,204 @@
   "photo": null,
   "photos": null,
   "valuation": "4.9",
-  "valuationSum": 259,
+  "valuationSum": 284,
   "valuationDistribution": {
     "1": 0,
     "2": 1,
     "3": 1,
     "4": 1,
-    "5": 50
+    "5": 55
   },
   "valuationDistributionPercent": {
     "1": 0,
     "2": 2,
     "3": 2,
-    "4": 2,
-    "5": 94
+    "4": 1,
+    "5": 95
   },
   "matchingSizePercentages": null,
-  "feedbackCount": 53,
-  "feedbackCountWithPhoto": 11,
-  "feedbackCountWithText": 32,
+  "feedbackCount": 58,
+  "feedbackCountWithPhoto": 13,
+  "feedbackCountWithText": 35,
   "feedbackCountWithVideo": 0,
   "feedbacks": [
     {
+      "id": "H4fKfg4cg9vsjhrw94qd",
+      "globalUserId": "fZyGz0hl4IIdPfAY80J/yGKlqH05I2a7FcktFqTn5T4=",
+      "wbUserId": 0,
+      "wbUserDetails": {
+        "country": "ru",
+        "name": "Кирилл",
+        "hasPhoto": false
+      },
+      "nmId": 363320775,
+      "text": "Всем советую беру не первый раз",
+      "pros": "Все понравилось пришло в целости и сохранности",
+      "cons": "",
+      "matchingSize": "",
+      "matchingPhoto": "",
+      "matchingDescription": "",
+      "productValuation": 5,
+      "color": "30 мл",
+      "size": "0",
+      "createdDate": "2025-09-03T10:35:54Z",
+      "updatedDate": "2025-09-03T12:56:37Z",
+      "answer": {
+        "text": "Большое спасибо за положительный отзыв! Мы делаем все, чтобы наши клиенты остались довольны. Надеемся, что и дальше будем вас радовать высоким результатом!",
+        "state": "wbRu",
+        "lastUpdate": "2025-09-03T12:56:37Z",
+        "createDate": "2025-09-03T12:48:47Z",
+        "rejectReason": 0,
+        "metadata": null,
+        "employeeId": 0,
+        "supplierId": 412228,
+        "editable": false
+      },
+      "feedbackHelpfulness": null,
+      "photos": [
+        {
+          "id": 328049241,
+          "key": "1/1267ddae-8254-49d7-9e66-f8c6f1ad083e",
+          "is_blurred": false
+        }
+      ],
+      "photo": [
+        328049241
+      ],
+      "video": null,
+      "votes": {
+        "pluses": 0,
+        "minuses": 0
+      },
+      "rank": 35.0,
+      "statusId": 16,
+      "bables": [
+        "качество",
+        "удобно пользоваться"
+      ],
+      "reasons": {
+        "good": [
+          10073,
+          10086
+        ],
+        "bad": []
+      },
+      "excludedFromRating": {
+        "isExcluded": false,
+        "reasons": []
+      }
+    },
+    {
+      "id": "KAGsQCP6M0S5gu12xXa1",
+      "globalUserId": "nGb638X4S1p3xuOwb90Tiavczu3i8i4/cGYVcS8DwqI=",
+      "wbUserId": 0,
+      "wbUserDetails": {
+        "country": "by",
+        "name": "Ксения",
+        "hasPhoto": false
+      },
+      "nmId": 363320775,
+      "text": "",
+      "pros": "Покупаю уже 2 раз, результат уже присутствует",
+      "cons": "-",
+      "matchingSize": "",
+      "matchingPhoto": "",
+      "matchingDescription": "",
+      "productValuation": 5,
+      "color": "",
+      "size": "",
+      "createdDate": "2025-09-01T15:51:30Z",
+      "updatedDate": "2025-09-02T09:14:39Z",
+      "answer": {
+        "text": "Большое спасибо за высокую оценку! Рады, что вам понравилось! Мы стараемся учитывать пожелания клиентов и совершенствовать нашу продукцию. Если у вас есть дополнительные комментарии или пожелания, обязательно дайте нам знать! Спасибо, что выбрали нас!",
+        "state": "wbRu",
+        "lastUpdate": "2025-09-02T09:14:39Z",
+        "createDate": "2025-09-02T09:04:03Z",
+        "rejectReason": 0,
+        "metadata": null,
+        "employeeId": 0,
+        "supplierId": 412228,
+        "editable": false
+      },
+      "feedbackHelpfulness": null,
+      "photos": [
+        {
+          "id": 327389778,
+          "key": "3/4c951978-0129-467c-9e78-4009cf792a6e",
+          "is_blurred": false
+        }
+      ],
+      "photo": [
+        327389778
+      ],
+      "video": null,
+      "votes": {
+        "pluses": 0,
+        "minuses": 0
+      },
+      "rank": 34.0,
+      "statusId": 16,
+      "reasons": {
+        "good": [],
+        "bad": []
+      },
+      "excludedFromRating": {
+        "isExcluded": false,
+        "reasons": []
+      }
+    },
+    {
+      "id": "zWy9hT95EP9vKF0bCqtF",
+      "globalUserId": "NAMncqJhbEkwTmc2gu3KEqDsPOtr1uaile2ppHjmkbii",
+      "wbUserId": 0,
+      "wbUserDetails": {
+        "country": "ru",
+        "name": "",
+        "hasPhoto": false
+      },
+      "nmId": 363320775,
+      "text": "",
+      "pros": "Пака пользуюсь",
+      "cons": "",
+      "matchingSize": "",
+      "matchingPhoto": "",
+      "matchingDescription": "",
+      "productValuation": 5,
+      "color": "30 мл",
+      "size": "0",
+      "createdDate": "2025-08-30T15:19:26Z",
+      "updatedDate": "2025-08-30T15:26:24Z",
+      "answer": {
+        "text": "Спасибо за высокую оценку! Для нас важно, чтобы клиенты оставались довольны. Если у вас есть дополнительные комментарии или пожелания, обязательно дайте нам знать!",
+        "state": "wbRu",
+        "lastUpdate": "2025-08-30T15:26:24Z",
+        "createDate": "2025-08-30T15:24:48Z",
+        "rejectReason": 0,
+        "metadata": null,
+        "employeeId": 0,
+        "editable": false,
+        "supplierId": 412228
+      },
+      "feedbackHelpfulness": null,
+      "video": null,
+      "votes": {
+        "pluses": 0,
+        "minuses": 0
+      },
+      "rank": 33.0,
+      "statusId": 16,
+      "reasons": {
+        "good": [],
+        "bad": []
+      },
+      "excludedFromRating": {
+        "isExcluded": false,
+        "reasons": []
+      }
+    },
+    {
       "id": "ec4ljnUkRbhpyHlIwGSQ",
-      "globalUserId": "7BrPdcewLCvlPkOeFl0k3sXFi6IL00FHBhh4kwnW7mfS",
+      "globalUserId": "q6zH/RmzGf1Ccb54i5Uao79DhsBJeESZNIS4yDGsTeHT",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -53,8 +227,8 @@
         "rejectReason": 0,
         "metadata": null,
         "editable": false,
-        "supplierId": 412228,
-        "employeeId": 0
+        "employeeId": 0,
+        "supplierId": 412228
       },
       "feedbackHelpfulness": null,
       "video": null,
@@ -75,7 +249,7 @@
     },
     {
       "id": "uMBOJX1LM61vCEackiVw",
-      "globalUserId": "x5s7Z5zjRQlppjnhRzHknoNqm+cQKVc2vytgENrrZ7pe",
+      "globalUserId": "wogWPMr/IeVn0BsZIAGkTQjO2XH2GmXsZIVk8fPsa/a7",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -101,9 +275,9 @@
         "createDate": "2025-08-25T14:35:00Z",
         "rejectReason": 0,
         "metadata": null,
-        "editable": false,
         "employeeId": 0,
-        "supplierId": 412228
+        "supplierId": 412228,
+        "editable": false
       },
       "feedbackHelpfulness": [
         {
@@ -145,7 +319,7 @@
     },
     {
       "id": "ScxmQZePzeAOmG30xz5Q",
-      "globalUserId": "tePSEL7xxRPXAqebb+2hpKNJcMrOdGwwWFQDpchBbjI=",
+      "globalUserId": "S8QNLKiyfx0yZ59gClNzmqjFTo+Noop3ES47rFcYns4=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -171,8 +345,8 @@
         "createDate": "2025-08-24T14:29:58Z",
         "rejectReason": 0,
         "metadata": null,
-        "editable": false,
         "employeeId": 0,
+        "editable": false,
         "supplierId": 412228
       },
       "feedbackHelpfulness": null,
@@ -203,7 +377,7 @@
     },
     {
       "id": "LJ6U9SDs7iU3xyY8J528",
-      "globalUserId": "TOfXmpLljwDF3x5VLBF06buOC9rfJSqk35mFzZD1jv4=",
+      "globalUserId": "IHUaKM6oIX3ILYA5icMkqWhw7VfbUXKTRYmNx7da4RI=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -229,9 +403,9 @@
         "createDate": "2025-08-18T17:05:57Z",
         "rejectReason": 0,
         "metadata": null,
-        "supplierId": 412228,
+        "editable": false,
         "employeeId": 0,
-        "editable": false
+        "supplierId": 412228
       },
       "feedbackHelpfulness": null,
       "video": null,
@@ -252,7 +426,7 @@
     },
     {
       "id": "U1XLRBI43Wh7wWyGVrF4",
-      "globalUserId": "+2MI0HmtyxoWnAs7oXA0Bq62ydPfJs1v6eMNV96Ip98=",
+      "globalUserId": "8zzSzh3nHw9tGmmkcigWXzMP0QbfK7qN2pKgEZHv5gE=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -279,8 +453,8 @@
         "rejectReason": 0,
         "metadata": null,
         "employeeId": 0,
-        "supplierId": 412228,
-        "editable": false
+        "editable": false,
+        "supplierId": 412228
       },
       "feedbackHelpfulness": [
         {
@@ -347,7 +521,7 @@
     },
     {
       "id": "MBNcfRpbXcDpnQAYSB2f",
-      "globalUserId": "LimGKS3GU/ctpexe5Yq8aYb13pXNP5j1wa+qFm0CFgM=",
+      "globalUserId": "B8lXEHMruKRHUo/XIjW0kR3kJX1YJkUtN+nVRWsNi84=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -374,8 +548,8 @@
         "rejectReason": 0,
         "metadata": null,
         "employeeId": 0,
-        "supplierId": 412228,
-        "editable": false
+        "editable": false,
+        "supplierId": 412228
       },
       "feedbackHelpfulness": null,
       "video": null,
@@ -407,7 +581,7 @@
     },
     {
       "id": "MJ6EmYwuskaPN3zGIEHb",
-      "globalUserId": "CB/lxUg2ydTCLib3gtXPUD4NCKUjfAya+HfauRaCDG4=",
+      "globalUserId": "+Y7jHSyYiutkz2fXTSKCsSXj4fT4bvmRF7qutswcXuk=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "RU",
@@ -433,9 +607,9 @@
         "createDate": "2025-08-14T11:48:31Z",
         "rejectReason": 0,
         "metadata": null,
+        "employeeId": 0,
         "editable": false,
-        "supplierId": 412228,
-        "employeeId": 0
+        "supplierId": 412228
       },
       "feedbackHelpfulness": null,
       "video": null,
@@ -456,7 +630,7 @@
     },
     {
       "id": "moJSI7JVZx9pWc5gV0Ef",
-      "globalUserId": "ufqvcYJktuMKHCfg6GyB7WOKX4hKDEZEHce5pnA7VyI=",
+      "globalUserId": "ZUzeuvpY6Lvjo+N3qT5U4UVZN4KBv/KuCKCY7mp9Cq4=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -482,9 +656,9 @@
         "createDate": "2025-08-14T09:54:34Z",
         "rejectReason": 0,
         "metadata": null,
-        "editable": false,
+        "employeeId": 0,
         "supplierId": 412228,
-        "employeeId": 0
+        "editable": false
       },
       "feedbackHelpfulness": null,
       "video": null,
@@ -505,7 +679,7 @@
     },
     {
       "id": "ZgXavx6uwfXhz6QM5pZL",
-      "globalUserId": "jYgQwyEAQF/Tv5u0j0wFuSjJJaKxNDawD17KLiQtAQ==",
+      "globalUserId": "CWxw5hQ40+l0Tvarj20rFkthGy9T2u5GzFYI0QmQyg==",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "RU",
@@ -531,9 +705,9 @@
         "createDate": "2025-08-14T08:14:35Z",
         "rejectReason": 0,
         "metadata": null,
+        "employeeId": 0,
         "editable": false,
-        "supplierId": 412228,
-        "employeeId": 0
+        "supplierId": 412228
       },
       "feedbackHelpfulness": [
         {
@@ -561,7 +735,7 @@
     },
     {
       "id": "U0I6ETSGZrDOzizFFlYL",
-      "globalUserId": "MCOlQr05gmt78RPIRbRtVocbQdoNIIHf2HX1ZwAqPCc=",
+      "globalUserId": "rgi3YP6lV6KHJsjk8Sh6aeVZh2bDD1rhGyZ1mA7Z6ew=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -587,8 +761,8 @@
         "createDate": "2025-08-12T13:55:06Z",
         "rejectReason": 0,
         "metadata": null,
-        "editable": false,
         "supplierId": 412228,
+        "editable": false,
         "employeeId": 0
       },
       "feedbackHelpfulness": null,
@@ -619,7 +793,7 @@
     },
     {
       "id": "0ZwsPVT0v76J4eA6GLom",
-      "globalUserId": "kx/TND+aHHyDCSganGlrYdDSap62uGba/0VXJK4c0vg=",
+      "globalUserId": "BGOmu5nefXsVyjjYOx7QRrL6hK5ZwiAcLZRS9qFmvpA=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -646,8 +820,8 @@
         "rejectReason": 0,
         "metadata": null,
         "employeeId": 0,
-        "editable": false,
-        "supplierId": 412228
+        "supplierId": 412228,
+        "editable": false
       },
       "feedbackHelpfulness": null,
       "video": null,
@@ -673,7 +847,7 @@
     },
     {
       "id": "q1pnP3CAHrD3jvWf6yKO",
-      "globalUserId": "U/p1qCN+c+sF7auhjHeK1+BDWRlmDqwDVy8HNeGIZw==",
+      "globalUserId": "HCjG9e+eF3fQZgyNsUAGSw2nRaEkkUijMvVgic0qaA==",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "by",
@@ -699,9 +873,9 @@
         "createDate": "2025-08-01T14:51:47Z",
         "rejectReason": 0,
         "metadata": null,
+        "employeeId": 0,
         "editable": false,
-        "supplierId": 412228,
-        "employeeId": 0
+        "supplierId": 412228
       },
       "feedbackHelpfulness": [
         {
@@ -746,7 +920,7 @@
     },
     {
       "id": "1P7z5t3fv3ws2q7hhX3B",
-      "globalUserId": "n4H297xirjWgBo5A7Do11tXLRFxbV/6z0PcJCsLl9mQ=",
+      "globalUserId": "96MUAl8Z/Tb3v7eYUtCmWVKdNz/W2HSIWxCksizCTaw=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -772,9 +946,9 @@
         "createDate": "2025-07-30T10:32:58Z",
         "rejectReason": 0,
         "metadata": null,
-        "supplierId": 412228,
         "editable": false,
-        "employeeId": 0
+        "employeeId": 0,
+        "supplierId": 412228
       },
       "feedbackHelpfulness": [
         {
@@ -820,7 +994,7 @@
     },
     {
       "id": "z0o6dA3YYGbZrxVCnyuQ",
-      "globalUserId": "hgIDpSSketWB6BxoKii6SldNoed7U9yBOelAq1drmT0=",
+      "globalUserId": "LxDMVC1FXCrKHtdlNByf3lanQ1GmagOGPXGsv91x9Oc=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -846,8 +1020,8 @@
         "createDate": "2025-07-26T17:09:42Z",
         "rejectReason": 0,
         "metadata": null,
-        "employeeId": 0,
         "supplierId": 412228,
+        "employeeId": 0,
         "editable": false
       },
       "feedbackHelpfulness": [
@@ -900,7 +1074,7 @@
     },
     {
       "id": "pofS5hzyFy80CWBrL0vx",
-      "globalUserId": "uYDu1ruOEqgZLwBC4hQs9A2EGVqBGCDgLO9DjUsTjps=",
+      "globalUserId": "QEd7aBxDqSWHb+aP2wMyj3lXqt994+4OudlI4zBBuXo=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -949,7 +1123,7 @@
     },
     {
       "id": "Me5oK0vkMHWxqT22BUKB",
-      "globalUserId": "6jaLkL/6425l8Sg80g3HFg0EGf+ND5miHW9xdzfkNUjq",
+      "globalUserId": "8sp+fuszolOAiEzJCmiAimxAjz+4YnW4AC2nOPIeQu/4",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -975,9 +1149,9 @@
         "createDate": "2025-07-17T08:09:42Z",
         "rejectReason": 0,
         "metadata": null,
-        "editable": false,
+        "employeeId": 0,
         "supplierId": 412228,
-        "employeeId": 0
+        "editable": false
       },
       "feedbackHelpfulness": null,
       "video": null,
@@ -1005,7 +1179,7 @@
     },
     {
       "id": "AT6FKAQIDnbQOMrrAVqv",
-      "globalUserId": "jPiuPVaWXtXxyfU54oc4qinEXTRMbLlAijZEFjAJRg==",
+      "globalUserId": "uAYgFpJyjrCfENK/KwL855ceGLtMCoOPvBJW3PQCnA==",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1031,9 +1205,9 @@
         "createDate": "2025-07-12T07:58:34Z",
         "rejectReason": 0,
         "metadata": null,
-        "employeeId": 0,
+        "editable": false,
         "supplierId": 412228,
-        "editable": false
+        "employeeId": 0
       },
       "feedbackHelpfulness": [
         {
@@ -1082,7 +1256,7 @@
     },
     {
       "id": "gamabMimFz1M62sFCwdn",
-      "globalUserId": "K8Xt+WEt29CGlbBaHsyos3+thAQ3RVPmcfza25yU0mI=",
+      "globalUserId": "rT6yt0gjmcVWsuPIc7flqsBRQMBqkEyJB4qM/VU+84U=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1108,8 +1282,8 @@
         "createDate": "2025-07-09T16:55:40Z",
         "rejectReason": 0,
         "metadata": null,
-        "editable": false,
         "employeeId": 0,
+        "editable": false,
         "supplierId": 412228
       },
       "feedbackHelpfulness": [
@@ -1173,7 +1347,7 @@
     },
     {
       "id": "jjFGuZUoWcL3yBopGxkn",
-      "globalUserId": "tsvAjSp9IPh0bIgI9j/gpZyd2JNjpvv/wf3LLw2C/ik=",
+      "globalUserId": "8vrMpnoFEC9RObUudHlpSRl7/0ClwBmtiZPN4Zq/Utw=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1199,9 +1373,9 @@
         "createDate": "2025-07-09T14:24:53Z",
         "rejectReason": 0,
         "metadata": null,
-        "supplierId": 412228,
         "editable": false,
-        "employeeId": 0
+        "employeeId": 0,
+        "supplierId": 412228
       },
       "feedbackHelpfulness": [
         {
@@ -1269,7 +1443,7 @@
     },
     {
       "id": "JuAV39H2S1f6ekvGE4gA",
-      "globalUserId": "X6S7auXvmUEpm+5ZDapDP+0Q/NNJVIXf9w/5WkHGWw==",
+      "globalUserId": "Jw1sogN5En+bWAa1gHSjj2TJAWIR7qMc1+NUQfHElA==",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1295,8 +1469,8 @@
         "createDate": "2025-07-09T11:16:54Z",
         "rejectReason": 0,
         "metadata": null,
-        "supplierId": 412228,
         "editable": false,
+        "supplierId": 412228,
         "employeeId": 0
       },
       "feedbackHelpfulness": [
@@ -1360,7 +1534,7 @@
     },
     {
       "id": "wmBvSNM0A8RarpK1cauG",
-      "globalUserId": "c+VPjj0p3NN5NUHLM4OR1CdXrHU1qscqw3Cn7LB1XQA=",
+      "globalUserId": "60/HDGk65MIskRyykhql9s4KpuQfQuW63IAp614DRpE=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1386,9 +1560,9 @@
         "createDate": "2025-07-07T10:08:24Z",
         "rejectReason": 0,
         "metadata": null,
-        "editable": false,
         "supplierId": 412228,
-        "employeeId": 0
+        "employeeId": 0,
+        "editable": false
       },
       "feedbackHelpfulness": [
         {
@@ -1421,7 +1595,7 @@
     },
     {
       "id": "cgQarZWsZ1jNSzJmkN9X",
-      "globalUserId": "2XnEuuo23C6wcmOtapXHbKFUVwOw4p4jiDw9IZbKoyk=",
+      "globalUserId": "+isX4V4yU21ZzaVJR5xT5tF4GiNOSdyyTAhYvkVoSiI=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1447,9 +1621,9 @@
         "createDate": "2025-07-04T19:31:21Z",
         "rejectReason": 0,
         "metadata": null,
+        "editable": false,
         "supplierId": 412228,
-        "employeeId": 0,
-        "editable": false
+        "employeeId": 0
       },
       "feedbackHelpfulness": null,
       "photo": [
@@ -1469,7 +1643,7 @@
     },
     {
       "id": "uXOwyc4ECUvoDUzkmGU9",
-      "globalUserId": "gm0eYu4WuRqum2qEmGMtQYAs4nOu6t4ci5K7JUjuoZw=",
+      "globalUserId": "85pw6FVx4JS/UIoNqB39WsJE6fHqg7o8U5ejNrHXoU8=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1495,9 +1669,9 @@
         "createDate": "2025-06-16T07:05:26Z",
         "rejectReason": 0,
         "metadata": null,
+        "editable": false,
         "employeeId": 0,
-        "supplierId": 412228,
-        "editable": false
+        "supplierId": 412228
       },
       "feedbackHelpfulness": [
         {
@@ -1548,7 +1722,7 @@
     },
     {
       "id": "F0MPjvsRgmySPCixNwp3",
-      "globalUserId": "Rc3hwNAVH0MKX+RdyONuvhYcNn8YzuGVWW/HjIXhuQ==",
+      "globalUserId": "yzObFPsKT+Fz5trWMsCptnUmFMEzEsak7Nt3SJWfMQ==",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1574,8 +1748,8 @@
         "createDate": "2025-06-16T07:05:26Z",
         "rejectReason": 0,
         "metadata": null,
-        "editable": false,
         "supplierId": 412228,
+        "editable": false,
         "employeeId": 0
       },
       "feedbackHelpfulness": [
@@ -1616,7 +1790,7 @@
     },
     {
       "id": "HNBSUNztMJFAgyrLvQsX",
-      "globalUserId": "1HGZqxOv4qjW5jfMHJxyQRXI/PGpDwHHKs2PyPPJkC8=",
+      "globalUserId": "DyebzmkAi88Av1dj9BcsD0RMMUbdPy+v7mPId7Hunbc=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1643,8 +1817,8 @@
         "rejectReason": 0,
         "metadata": null,
         "employeeId": 0,
-        "supplierId": 412228,
-        "editable": false
+        "editable": false,
+        "supplierId": 412228
       },
       "feedbackHelpfulness": [
         {
@@ -1695,7 +1869,7 @@
     },
     {
       "id": "kFvIwXLUxwSK7WocAvjh",
-      "globalUserId": "n+WiwHEEXUHkRgsHhHKrYxxKj6+NYB4JtrRJtDcklQ==",
+      "globalUserId": "TmFzQ8Ea8+prwSAQFFZLxO/0AVCUOY0sxbwf9XAVhQ==",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1721,8 +1895,8 @@
         "createDate": "2025-06-15T10:21:33Z",
         "rejectReason": 0,
         "metadata": null,
-        "supplierId": 412228,
         "employeeId": 0,
+        "supplierId": 412228,
         "editable": false
       },
       "feedbackHelpfulness": [
@@ -1747,7 +1921,7 @@
     },
     {
       "id": "GGTArtbd2LYwiohSXZTu",
-      "globalUserId": "YWzKCmKnlkMLcxj0GglU5wmS4K+eNV+qmX8ycXpHlI0=",
+      "globalUserId": "mPVAVuCEQwo+MDtf4+T5K+xxQt8ucdajDBMQwjJ59R0=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1792,7 +1966,7 @@
     },
     {
       "id": "fz5CY7hrHDWtYAp8IZXE",
-      "globalUserId": "FpeJdnmaleL2NJ0u64v37Kf7I+pmeZgHtLSVvr11H6Wb",
+      "globalUserId": "z8ROH85Yq5BkeMLKuBbttwblDPEM9OVB/uNz32fFFzAH",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "RU",
@@ -1818,9 +1992,9 @@
         "createDate": "2025-06-13T10:46:35Z",
         "rejectReason": 0,
         "metadata": null,
-        "employeeId": 0,
         "editable": false,
-        "supplierId": 412228
+        "supplierId": 412228,
+        "employeeId": 0
       },
       "feedbackHelpfulness": null,
       "video": null,
@@ -1837,7 +2011,7 @@
     },
     {
       "id": "vIAVcCZqQQ1abdu9M3nr",
-      "globalUserId": "/eNKaSn3mHqT8tkB3z7cAmf2nBRvyBni8scwicXZhTc=",
+      "globalUserId": "w7gja7oCDV34drv4N2a8H7+VIimjDv2YNwCl5Jp7RQE=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1863,9 +2037,9 @@
         "createDate": "2025-06-12T02:02:26Z",
         "rejectReason": 0,
         "metadata": null,
-        "employeeId": 0,
         "editable": false,
-        "supplierId": 412228
+        "supplierId": 412228,
+        "employeeId": 0
       },
       "feedbackHelpfulness": null,
       "video": null,
@@ -1882,7 +2056,7 @@
     },
     {
       "id": "JpaWpY0JYwBVKa3TK2nt",
-      "globalUserId": "zzZABQlQIHIqPI6V1jUGfX8ZUYcJ4WfkQmM7Macjv/E=",
+      "globalUserId": "YfQDN69JXNAtM6nSH+ozcDZTpDL9YF4CAghBX5iKdHc=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1908,9 +2082,9 @@
         "createDate": "2025-06-11T15:39:48Z",
         "rejectReason": 0,
         "metadata": null,
-        "employeeId": 0,
         "supplierId": 412228,
-        "editable": false
+        "editable": false,
+        "employeeId": 0
       },
       "feedbackHelpfulness": null,
       "video": null,
@@ -1927,7 +2101,7 @@
     },
     {
       "id": "ldaySpQcHDNKmdUpAjW7",
-      "globalUserId": "F7XgMS4wKX2KmmiV4moPb4IBjc4ivcOVt2mCnG0sDvk=",
+      "globalUserId": "MJtyNjOHCIWYiSvvTpRFJ/N55+Jr4ZwV43UBo8d5Nos=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -1990,7 +2164,7 @@
     },
     {
       "id": "7L4MJaiME1l7mQnm0rKN",
-      "globalUserId": "RtKkV1D2Y9hbpPuPFYfBTBCe5z4Nmr8Nak6lDCAEQaI=",
+      "globalUserId": "V783DhpTot6UCZTLTpeDHbsxpl+/1XhJBRWUSzwWCtw=",
       "wbUserId": 0,
       "wbUserDetails": {
         "country": "ru",
@@ -2016,9 +2190,9 @@
         "createDate": "2025-06-08T09:45:13Z",
         "rejectReason": 0,
         "metadata": null,
-        "editable": false,
         "supplierId": 412228,
-        "employeeId": 0
+        "employeeId": 0,
+        "editable": false
       },
       "feedbackHelpfulness": [
         {

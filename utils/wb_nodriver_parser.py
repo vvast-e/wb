@@ -9,45 +9,68 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 async def get_card_id(nmid: int, dest: str = "-1257786") -> int:
-    """Получаем card_id по nmid через API карточки товара"""
+    """Получаем card_id по nmid через API карточки товара.
+    Делает несколько попыток с разными dest и версиями эндпоинта WB.
+    Возвращает int card_id или None."""
     try:
         import aiohttp
         headers = {
             'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+            'Origin': 'https://www.wildberries.ru',
+            'Referer': f'https://www.wildberries.ru/catalog/{nmid}/detail.aspx'
         }
-        
-        url = f'https://card.wb.ru/cards/v2/detail?dest={dest}&nm={nmid}'
-        logger.info(f"Получаем card_id для nmid {nmid}: {url}")
-        print(f"[CARD_ID] Получаем card_id для nmid {nmid}: {url}")
-        
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-            async with session.get(url, headers=headers) as response:
-                print(f"[CARD_ID] HTTP статус: {response.status}")
-                if response.status != 200:
-                    logger.error(f"Ошибка получения card_id: HTTP {response.status}")
-                    print(f"[CARD_ID] ОШИБКА: HTTP {response.status}")
-                    return None
-                
-                content = await response.json()
-                logger.info(f"Ответ API карточки: {type(content)}")
-                print(f"[CARD_ID] Ответ API карточки: {type(content)}")
-                
-                if not content.get("data", {}).get("products"):
-                    logger.error("Нет данных о продукте в ответе")
-                    print(f"[CARD_ID] ОШИБКА: Нет данных о продукте в ответе")
-                    print(f"[CARD_ID] Содержимое ответа: {content}")
-                    return None
-                
-                card_id = content["data"]["products"][0]["root"]
-                logger.info(f"Получен card_id: {card_id}")
-                print(f"[CARD_ID] Получен card_id: {card_id}")
-                return card_id
+
+        dest_candidates = [
+            dest,
+            "-1257786",  # РФ дефолт
+            "12358524", "12358210", "123580", "123993", "117673", "0"
+        ]
+        endpoints = [
+            # v4 detail (как в вашем примере — top-level products)
+            lambda d: f'https://card.wb.ru/cards/v4/detail?appType=1&curr=rub&dest={d}&spp=30&ab_testing=false&lang=ru&nm={nmid}',
+            # v2 detail (текущий)
+            lambda d: f'https://card.wb.ru/cards/v2/detail?dest={d}&nm={nmid}',
+            # v1 detail (иногда отдаёт данные стабильнее)
+            lambda d: f'https://card.wb.ru/cards/detail?appType=1&curr=rub&dest={d}&spp=30&locale=ru&nm={nmid}',
+        ]
+
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
+            for d in dest_candidates:
+                for make_url in endpoints:
+                    url = make_url(d)
+                    logger.debug(f"Получаем card_id для nmid {nmid}: {url}")
+                    try:
+                        async with session.get(url, headers=headers) as response:
+                            logger.debug(f"[CARD_ID] HTTP статус: {response.status}")
+                            if response.status != 200:
+                                continue
+                            content = await response.json()
+                            logger.debug(f"Ответ API карточки: {type(content)}")
+                            # v4: top-level products; v2/v1: data.products; иногда data — массив
+                            products = (content or {}).get("products") or []
+                            if not products:
+                                products = (content or {}).get("data", {}).get("products") or []
+                            if not products and isinstance(content, dict) and content.get("data") and isinstance(content["data"], list):
+                                # иногда data — массив с product
+                                products = content["data"]
+                            if products:
+                                product0 = products[0] or {}
+                                card_id = product0.get("root") or product0.get("id") or product0.get("nm")
+                                if card_id:
+                                    logger.debug(f"Получен card_id: {card_id}")
+                                    return int(card_id)
+                            else:
+                                logger.debug(f"[CARD_ID] Нет products в ответе")
+                    except Exception as e:
+                        logger.debug(f"[CARD_ID] Ошибка запроса {url}: {e}")
+                        continue
+        # Не удалось
+        return None
                 
     except Exception as e:
         logger.error(f"Ошибка получения card_id: {e}")
-        print(f"[CARD_ID] ОШИБКА: {e}")
         return None
 
 async def _http_fallback_parser(article: int, max_date: datetime) -> List[Dict[str, Any]]:
@@ -55,20 +78,15 @@ async def _http_fallback_parser(article: int, max_date: datetime) -> List[Dict[s
     try:
         import aiohttp
         
-        print(f"[HTTP_PARSER] Начинаем HTTP парсинг для артикула {article}")
+        logger.debug(f"[HTTP_PARSER] Начинаем HTTP парсинг для артикула {article}")
         
-        # Этап 1: Получаем card_id по nmid
-        print(f"[HTTP_PARSER] Этап 1: Получаем card_id для артикула {article}...")
-        card_id = await get_card_id(article)
-        if not card_id:
-            logger.error(f"Не удалось получить card_id для артикула {article}")
-            print(f"[HTTP_PARSER] ОШИБКА: Не удалось получить card_id для артикула {article}")
-            return []
-        
-        print(f"[HTTP_PARSER] Получен card_id: {card_id}")
-        
-        # Этап 2: Получаем отзывы по card_id
-        print(f"[HTTP_PARSER] Этап 2: Получаем отзывы по card_id {card_id}...")
+        # Получаем root (card_id) через cards/v4 и используем его в feedbacks/v2/{root}
+        logger.debug(f"[HTTP_PARSER] Получаем root для nm_id {article} через cards/v4...")
+        root_id = await get_card_id(article)  # get_card_id теперь умеет v4 и вернет root/id
+        if not root_id:
+            logger.warning(f"root не получен, пробуем nmId как root: {article}")
+            root_id = article
+        logger.debug(f"[HTTP_PARSER] Используем root: {root_id}")
         hosts = ["feedbacks1.wb.ru", "feedbacks2.wb.ru"]
         headers = {
             'accept': 'application/json',
@@ -82,13 +100,11 @@ async def _http_fallback_parser(article: int, max_date: datetime) -> List[Dict[s
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
             for host in hosts:
                 try:
-                    url = f'https://{host}/feedbacks/v2/{card_id}'
-                    logger.info(f"HTTP fallback: запрос к {url}")
-                    print(f"[HTTP_PARSER] Запрос к {url}")
+                    url = f'https://{host}/feedbacks/v2/{root_id}'
+                    logger.debug(f"HTTP fallback: запрос к {url}")
                     
                     async with session.get(url, headers=headers) as resp:
-                        logger.info(f"HTTP статус от {host}: {resp.status}")
-                        print(f"[HTTP_PARSER] HTTP статус от {host}: {resp.status}")
+                        logger.debug(f"HTTP статус от {host}: {resp.status}")
                         
                         if resp.status != 200:
                             logger.warning(f"Ошибка HTTP {resp.status} от {host}")
@@ -99,11 +115,9 @@ async def _http_fallback_parser(article: int, max_date: datetime) -> List[Dict[s
                             data = await resp.json()
                         except Exception as e:
                             logger.error(f"Ошибка парсинга JSON от {host}: {e}")
-                            print(f"[HTTP_PARSER] ОШИБКА парсинга JSON от {host}: {e}")
                             continue
                         
-                        logger.info(f"Получен ответ от {host}: {type(data)}")
-                        print(f"[HTTP_PARSER] Получен ответ от {host}: {type(data)}")
+                        logger.debug(f"Получен ответ от {host}: {type(data)}")
                         
                         # --- Сохраняем первые 10 отзывов для диагностики ---
                         feedbacks = data.get('feedbacks', [])
@@ -124,26 +138,22 @@ async def _http_fallback_parser(article: int, max_date: datetime) -> List[Dict[s
                         
                         if not data:
                             logger.warning(f"Пустой ответ от {host}")
-                            print(f"[HTTP_PARSER] Пустой ответ от {host}")
+                            logger.debug(f"[HTTP_PARSER] Пустой ответ от {host}")
                             continue
                         
                         feedbacks = data.get('feedbacks', [])
                         feedback_count = data.get('feedbackCount', 0)
                         
-                        print(f"[HTTP_PARSER] feedbackCount в ответе: {feedback_count}")
-                        print(f"[HTTP_PARSER] feedbacks в ответе: {len(feedbacks) if feedbacks else 'None'}")
+                        logger.debug(f"[HTTP_PARSER] feedbackCount в ответе: {feedback_count}")
+                        logger.debug(f"[HTTP_PARSER] feedbacks в ответе: {len(feedbacks) if feedbacks else 'None'}")
                         
                         if not feedbacks:
                             logger.warning(f"Нет отзывов в ответе от {host}")
                             logger.warning(f"feedbacks: {feedbacks}")
                             logger.warning(f"feedbackCount: {data.get('feedbackCount', 'N/A')}")
-                            print(f"[HTTP_PARSER] Нет отзывов в ответе от {host}")
-                            print(f"[HTTP_PARSER] feedbacks: {feedbacks}")
-                            print(f"[HTTP_PARSER] feedbackCount: {data.get('feedbackCount', 'N/A')}")
                             continue
                         
-                        logger.info(f"Найдено {len(feedbacks)} отзывов от {host}")
-                        print(f"[HTTP_PARSER] Найдено {len(feedbacks)} отзывов от {host}")
+                        logger.debug(f"Найдено {len(feedbacks)} отзывов от {host}")
                         
                         for fb in feedbacks:
                             # Проверяем, что отзыв соответствует нашему артикулу
@@ -221,15 +231,13 @@ async def _http_fallback_parser(article: int, max_date: datetime) -> List[Dict[s
                                 
                 except Exception as e:
                     logger.error(f"HTTP fallback ошибка для {host}: {e}")
-                    print(f"[HTTP_PARSER] ОШИБКА для {host}: {e}")
                     continue
         
-        print(f"[HTTP_PARSER] Итого найдено отзывов: {len(all_feedbacks)}")
+        logger.debug(f"[HTTP_PARSER] Итого найдено отзывов: {len(all_feedbacks)}")
         return all_feedbacks
         
     except Exception as e:
         logger.error(f"HTTP fallback критическая ошибка: {e}")
-        print(f"[HTTP_PARSER] КРИТИЧЕСКАЯ ОШИБКА: {e}")
         return []
 
 async def parse_feedbacks_optimized(article: int, max_date: Optional[datetime] = None) -> List[Dict[str, Any]]:
@@ -240,34 +248,26 @@ async def parse_feedbacks_optimized(article: int, max_date: Optional[datetime] =
     if max_date is None:
         max_date = datetime.now() - timedelta(days=730)  # 2 года назад
     
-    logger.info(f"=== НАЧАЛО ПАРСИНГА ДЛЯ АРТИКУЛА {article} ===")
-    logger.info(f"Максимальная дата отзыва: {max_date.strftime('%Y-%m-%d')}")
-    
-    print(f"[PARSER] Начинаем парсинг отзывов для артикула {article}")
-    print(f"[PARSER] Максимальная дата отзыва: {max_date.strftime('%Y-%m-%d')}")
+    logger.debug(f"=== НАЧАЛО ПАРСИНГА ДЛЯ АРТИКУЛА {article} ===")
+    logger.debug(f"Максимальная дата отзыва: {max_date.strftime('%Y-%m-%d')}")
     
     try:
         import aiohttp
-        logger.info("aiohttp доступен")
-        print("[PARSER] aiohttp доступен")
+        logger.debug("aiohttp доступен")
     except ImportError as e:
         logger.error(f"aiohttp не установлен: {e}")
-        print(f"[PARSER] ОШИБКА: aiohttp не установлен: {e}")
         return []
     
-    logger.info("Используем HTTP парсер...")
-    print("[PARSER] Используем HTTP парсер...")
+    logger.debug("Используем HTTP парсер...")
     
     # Передаем max_date вместо max_count
     http_feedbacks = await _http_fallback_parser(article, max_date)
     
     if http_feedbacks:
-        logger.info(f"HTTP парсер успешно нашел {len(http_feedbacks)} отзывов")
-        print(f"[PARSER] HTTP парсер успешно нашел {len(http_feedbacks)} отзывов")
+        logger.debug(f"HTTP парсер успешно нашел {len(http_feedbacks)} отзывов")
         return http_feedbacks
     else:
         logger.warning("HTTP парсер не нашел отзывов")
-        print("[PARSER] HTTP парсер не нашел отзывов")
         return []
     
     # Отключаем nodriver для сервера (проблемы с браузером)
@@ -468,5 +468,5 @@ async def parse_feedbacks_optimized(article: int, max_date: Optional[datetime] =
     #     # Fallback на HTTP парсер
     #     return await _http_fallback_parser(article, max_count)
     
-    logger.info(f"Всего собрано отзывов: {len(all_feedbacks)}")
+    logger.debug(f"Всего собрано отзывов: {len(all_feedbacks)}")
     return all_feedbacks 

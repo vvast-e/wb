@@ -1,0 +1,2476 @@
+{
+  "data": {
+    "items": [
+      {
+        "nmID": 15926075,
+        "isDeleted": false,
+        "subjectName": "Аксессуары для рукоделия",
+        "name": "Сосновая шишка для декора рукоделия поделок обработаны 20 шт",
+        "vendorCode": "Other2",
+        "brandName": "Top-Quality",
+        "mainPhoto": "https://basket-02.wbbasket.ru/vol159/part15926/15926075/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 0,
+          "ordersSum": 0,
+          "avgOrders": 0,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 0
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 0
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 0
+            }
+          ],
+          "buyoutCount": 0,
+          "buyoutSum": 0,
+          "buyoutPercent": 0,
+          "stockCount": 3,
+          "stockSum": 761,
+          "saleRate": {
+            "days": 0,
+            "hours": -1
+          },
+          "avgStockTurnover": {
+            "days": 0,
+            "hours": -1
+          },
+          "toClientCount": 0,
+          "fromClientCount": 1,
+          "officeMissingTime": {
+            "days": 89,
+            "hours": 17
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 254,
+            "maxPrice": 254
+          },
+          "availability": "nonLiquid"
+        }
+      },
+      {
+        "nmID": 97982377,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Сыворотка для роста и укрепления ресниц и бровей 8 мл",
+        "vendorCode": "transparent",
+        "brandName": "Mona Premium",
+        "mainPhoto": "https://basket-05.wbbasket.ru/vol979/part97982/97982377/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 0,
+          "ordersSum": 0,
+          "avgOrders": 0,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 0
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 0
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 0
+            }
+          ],
+          "buyoutCount": 0,
+          "buyoutSum": 0,
+          "buyoutPercent": 0,
+          "stockCount": 462,
+          "stockSum": 810764,
+          "saleRate": {
+            "days": 0,
+            "hours": -1
+          },
+          "avgStockTurnover": {
+            "days": 0,
+            "hours": -1
+          },
+          "toClientCount": 0,
+          "fromClientCount": 1,
+          "officeMissingTime": {
+            "days": 89,
+            "hours": 18
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1755,
+            "maxPrice": 1755
+          },
+          "availability": "nonLiquid"
+        }
+      },
+      {
+        "nmID": 105352720,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Сыворотка капиксил15% для роста волос",
+        "vendorCode": "Lotion",
+        "brandName": "Mona Premium",
+        "mainPhoto": "https://basket-06.wbbasket.ru/vol1053/part105352/105352720/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 0,
+          "ordersSum": 0,
+          "avgOrders": 0,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 0
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 0
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 0
+            }
+          ],
+          "buyoutCount": 0,
+          "buyoutSum": 0,
+          "buyoutPercent": 0,
+          "stockCount": 836,
+          "stockSum": 1466428,
+          "saleRate": {
+            "days": 0,
+            "hours": -1
+          },
+          "avgStockTurnover": {
+            "days": 0,
+            "hours": -1
+          },
+          "toClientCount": 1,
+          "fromClientCount": 4,
+          "officeMissingTime": {
+            "days": 89,
+            "hours": 18
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1754,
+            "maxPrice": 1754
+          },
+          "availability": "nonLiquid"
+        }
+      },
+      {
+        "nmID": 142538800,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Сыворотка для роста волос. Против выпадения и облысения",
+        "vendorCode": "i006",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-10.wbbasket.ru/vol1425/part142538/142538800/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 0,
+          "ordersSum": 0,
+          "avgOrders": 0,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 0
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 0
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 0
+            }
+          ],
+          "buyoutCount": 0,
+          "buyoutSum": 0,
+          "buyoutPercent": 0,
+          "stockCount": 1265,
+          "stockSum": 1716124,
+          "saleRate": {
+            "days": 0,
+            "hours": -1
+          },
+          "avgStockTurnover": {
+            "days": 0,
+            "hours": -1
+          },
+          "toClientCount": 3,
+          "fromClientCount": 8,
+          "officeMissingTime": {
+            "days": 89,
+            "hours": 18
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1357,
+            "maxPrice": 1357
+          },
+          "availability": "nonLiquid"
+        }
+      },
+      {
+        "nmID": 149561572,
+        "isDeleted": false,
+        "subjectName": "Шампуни",
+        "name": "Набор для волос. Бессульфатный шампунь и увлажняющая маска",
+        "vendorCode": "i009",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-10.wbbasket.ru/vol1495/part149561/149561572/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 0,
+          "ordersSum": 0,
+          "avgOrders": 0,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 0
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 0
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 0
+            }
+          ],
+          "buyoutCount": 0,
+          "buyoutSum": 0,
+          "buyoutPercent": 0,
+          "stockCount": 361,
+          "stockSum": 643042,
+          "saleRate": {
+            "days": 0,
+            "hours": -1
+          },
+          "avgStockTurnover": {
+            "days": 0,
+            "hours": -1
+          },
+          "toClientCount": 3,
+          "fromClientCount": 0,
+          "officeMissingTime": {
+            "days": 89,
+            "hours": 18
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1781,
+            "maxPrice": 1781
+          },
+          "availability": "nonLiquid"
+        }
+      },
+      {
+        "nmID": 142534413,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Укрепляющая сыворотка для роста ресниц и бровей 8 мл",
+        "vendorCode": "i005",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-10.wbbasket.ru/vol1425/part142534/142534413/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 1,
+          "ordersSum": 1370,
+          "avgOrders": 0.06,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 0
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 0
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 0.2
+            }
+          ],
+          "buyoutCount": 0,
+          "buyoutSum": 0,
+          "buyoutPercent": 0,
+          "stockCount": 768,
+          "stockSum": 1052191,
+          "saleRate": {
+            "days": 0,
+            "hours": -1
+          },
+          "avgStockTurnover": {
+            "days": 0,
+            "hours": -1
+          },
+          "toClientCount": 1,
+          "fromClientCount": 13,
+          "officeMissingTime": {
+            "days": 89,
+            "hours": 18
+          },
+          "lostOrdersCount": 70.55,
+          "lostOrdersSum": 96662.37,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1370,
+            "maxPrice": 1370
+          },
+          "availability": "nonLiquid"
+        }
+      },
+      {
+        "nmID": 13672329,
+        "isDeleted": false,
+        "subjectName": "Маски косметические",
+        "name": "Структурирующий несмываемый спрей для роста волос",
+        "vendorCode": "white2",
+        "brandName": "Mona Premium",
+        "mainPhoto": "https://basket-01.wbbasket.ru/vol136/part13672/13672329/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 2,
+          "ordersSum": 3262,
+          "avgOrders": 0.12,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 0
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 0
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 0.4
+            }
+          ],
+          "buyoutCount": 0,
+          "buyoutSum": 0,
+          "buyoutPercent": 0,
+          "stockCount": 1376,
+          "stockSum": 2244228,
+          "saleRate": {
+            "days": 0,
+            "hours": -1
+          },
+          "avgStockTurnover": {
+            "days": 0,
+            "hours": -1
+          },
+          "toClientCount": 4,
+          "fromClientCount": 13,
+          "officeMissingTime": {
+            "days": 89,
+            "hours": 18
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1631,
+            "maxPrice": 1631
+          },
+          "availability": "nonLiquid"
+        }
+      },
+      {
+        "nmID": 172434685,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Лосьон для роста и от выпадения волос и бороды. Капиксил 5%",
+        "vendorCode": "i014",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-12.wbbasket.ru/vol1724/part172434/172434685/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 4,
+          "ordersSum": 5644,
+          "avgOrders": 0.25,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 0
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 0
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 0.8
+            }
+          ],
+          "buyoutCount": 0,
+          "buyoutSum": 0,
+          "buyoutPercent": 0,
+          "stockCount": 1413,
+          "stockSum": 1994351,
+          "saleRate": {
+            "days": 0,
+            "hours": -1
+          },
+          "avgStockTurnover": {
+            "days": 0,
+            "hours": -1
+          },
+          "toClientCount": 0,
+          "fromClientCount": 5,
+          "officeMissingTime": {
+            "days": 89,
+            "hours": 18
+          },
+          "lostOrdersCount": 282.22,
+          "lostOrdersSum": 398330.47,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1411,
+            "maxPrice": 1411
+          },
+          "availability": "nonLiquid"
+        }
+      },
+      {
+        "nmID": 139139411,
+        "isDeleted": false,
+        "subjectName": "Маски косметические",
+        "name": "Профессиональная маска - спрей для волос 24 в 1",
+        "vendorCode": "i001",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-10.wbbasket.ru/vol1391/part139139/139139411/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 7,
+          "ordersSum": 8155,
+          "avgOrders": 0.43,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 0
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 0
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 1.4
+            }
+          ],
+          "buyoutCount": 0,
+          "buyoutSum": 0,
+          "buyoutPercent": 0,
+          "stockCount": 1240,
+          "stockSum": 1444674,
+          "saleRate": {
+            "days": 0,
+            "hours": -1
+          },
+          "avgStockTurnover": {
+            "days": 0,
+            "hours": -1
+          },
+          "toClientCount": 6,
+          "fromClientCount": 15,
+          "officeMissingTime": {
+            "days": 89,
+            "hours": 18
+          },
+          "lostOrdersCount": 493.88,
+          "lostOrdersSum": 575400.88,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1165,
+            "maxPrice": 1165
+          },
+          "availability": "nonLiquid"
+        }
+      },
+      {
+        "nmID": 139187783,
+        "isDeleted": false,
+        "subjectName": "Маски косметические",
+        "name": "Холодный БОТОКС профессиональный - Маска ламинирование волос",
+        "vendorCode": "i003",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-10.wbbasket.ru/vol1391/part139187/139187783/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 7,
+          "ordersSum": 8120,
+          "avgOrders": 0.43,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 0
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 0
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 1.4
+            }
+          ],
+          "buyoutCount": 0,
+          "buyoutSum": 0,
+          "buyoutPercent": 0,
+          "stockCount": 2627,
+          "stockSum": 3047977,
+          "saleRate": {
+            "days": 0,
+            "hours": -1
+          },
+          "avgStockTurnover": {
+            "days": 0,
+            "hours": -1
+          },
+          "toClientCount": 15,
+          "fromClientCount": 48,
+          "officeMissingTime": {
+            "days": 89,
+            "hours": 18
+          },
+          "lostOrdersCount": 507.9,
+          "lostOrdersSum": 589287.14,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1160,
+            "maxPrice": 1160
+          },
+          "availability": "nonLiquid"
+        }
+      },
+      {
+        "nmID": 169608675,
+        "isDeleted": false,
+        "subjectName": "Кремы",
+        "name": "Антивозрастной крем флюид для лица увлажняющий питательный",
+        "vendorCode": "i013",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-12.wbbasket.ru/vol1696/part169608/169608675/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 7,
+          "ordersSum": 8645,
+          "avgOrders": 0.43,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 0
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 0
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 1.4
+            }
+          ],
+          "buyoutCount": 0,
+          "buyoutSum": 0,
+          "buyoutPercent": 0,
+          "stockCount": 908,
+          "stockSum": 1121380,
+          "saleRate": {
+            "days": 0,
+            "hours": -1
+          },
+          "avgStockTurnover": {
+            "days": 0,
+            "hours": -1
+          },
+          "toClientCount": 6,
+          "fromClientCount": 10,
+          "officeMissingTime": {
+            "days": 89,
+            "hours": 18
+          },
+          "lostOrdersCount": 493.88,
+          "lostOrdersSum": 609942.91,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1235,
+            "maxPrice": 1235
+          },
+          "availability": "nonLiquid"
+        }
+      },
+      {
+        "nmID": 340212187,
+        "isDeleted": false,
+        "subjectName": "Кремы",
+        "name": "Крем ланолин для сосков от трещин натуральный в роддом",
+        "vendorCode": "i037_1",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-20.wbbasket.ru/vol3402/part340212/340212187/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 40,
+          "ordersSum": 44471,
+          "avgOrders": 0.86,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0.08
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 0.26
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 0.65
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 2
+            }
+          ],
+          "buyoutCount": 29,
+          "buyoutSum": 34604,
+          "buyoutPercent": 100,
+          "stockCount": 117,
+          "stockSum": 104949,
+          "saleRate": {
+            "days": 163,
+            "hours": 16
+          },
+          "avgStockTurnover": {
+            "days": 229,
+            "hours": 1
+          },
+          "toClientCount": 11,
+          "fromClientCount": 2,
+          "officeMissingTime": {
+            "days": 19,
+            "hours": 22
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 897,
+            "maxPrice": 897
+          },
+          "availability": "balanced"
+        }
+      },
+      {
+        "nmID": 465568548,
+        "isDeleted": false,
+        "subjectName": "Масла",
+        "name": "Масло розмарина для роста волос от выпадения",
+        "vendorCode": "i054",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-26.wbbasket.ru/vol4655/part465568/465568548/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 130,
+          "ordersSum": 237004,
+          "avgOrders": 2.2,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 0.55
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 2.97
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 4.2
+            }
+          ],
+          "buyoutCount": 94,
+          "buyoutSum": 174290,
+          "buyoutPercent": 89,
+          "stockCount": 188,
+          "stockSum": 325165,
+          "saleRate": {
+            "days": 59,
+            "hours": 12
+          },
+          "avgStockTurnover": {
+            "days": 75,
+            "hours": 22
+          },
+          "toClientCount": 22,
+          "fromClientCount": 6,
+          "officeMissingTime": {
+            "days": 17,
+            "hours": 19
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1730,
+            "maxPrice": 1730
+          },
+          "availability": "actual"
+        }
+      },
+      {
+        "nmID": 238701668,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Сыворотка для роста волос 17% капиксил",
+        "vendorCode": "i027",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-15.wbbasket.ru/vol2387/part238701/238701668/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 296,
+          "ordersSum": 1155039,
+          "avgOrders": 2.86,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 3.25
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 3.45
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 3.29
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 1.8
+            }
+          ],
+          "buyoutCount": 260,
+          "buyoutSum": 1015360,
+          "buyoutPercent": 91,
+          "stockCount": 614,
+          "stockSum": 2313552,
+          "saleRate": {
+            "days": 158,
+            "hours": 19
+          },
+          "avgStockTurnover": {
+            "days": 175,
+            "hours": 21
+          },
+          "toClientCount": 8,
+          "fromClientCount": 2,
+          "officeMissingTime": {
+            "days": 33,
+            "hours": 22
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 3768,
+            "maxPrice": 3768
+          },
+          "availability": "balanced"
+        }
+      },
+      {
+        "nmID": 412203112,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Сыворотка спрей для роста и от выпадения волос",
+        "vendorCode": "i060",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-23.wbbasket.ru/vol4122/part412203/412203112/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 358,
+          "ordersSum": 971034,
+          "avgOrders": 3.84,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 0.92
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 4.23
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 6.03
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 3.6
+            }
+          ],
+          "buyoutCount": 289,
+          "buyoutSum": 790406,
+          "buyoutPercent": 88,
+          "stockCount": 465,
+          "stockSum": 1154739,
+          "saleRate": {
+            "days": 85,
+            "hours": 13
+          },
+          "avgStockTurnover": {
+            "days": 110,
+            "hours": 19
+          },
+          "toClientCount": 31,
+          "fromClientCount": 4,
+          "officeMissingTime": {
+            "days": 41,
+            "hours": 16
+          },
+          "lostOrdersCount": 33.5,
+          "lostOrdersSum": 83188.68,
+          "lostBuyoutsCount": 29.61,
+          "lostBuyoutsSum": 73521.49,
+          "currentPrice": {
+            "minPrice": 2483,
+            "maxPrice": 2483
+          },
+          "availability": "actual"
+        }
+      },
+      {
+        "nmID": 245325786,
+        "isDeleted": false,
+        "subjectName": "Гели",
+        "name": "Гель для душа парфюмированный с кислотами",
+        "vendorCode": "i035",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-16.wbbasket.ru/vol2453/part245325/245325786/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 485,
+          "ordersSum": 717520,
+          "avgOrders": 5.88,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 3.21
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 5.61
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 6.35
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 7.4
+            }
+          ],
+          "buyoutCount": 392,
+          "buyoutSum": 581912,
+          "buyoutPercent": 90,
+          "stockCount": 506,
+          "stockSum": 721207,
+          "saleRate": {
+            "days": 86,
+            "hours": 4
+          },
+          "avgStockTurnover": {
+            "days": 99,
+            "hours": 16
+          },
+          "toClientCount": 42,
+          "fromClientCount": 2,
+          "officeMissingTime": {
+            "days": 37,
+            "hours": 1
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1425,
+            "maxPrice": 1425
+          },
+          "availability": "actual"
+        }
+      },
+      {
+        "nmID": 217042648,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Бустер 5% для роста бороды и волос. От выпадения",
+        "vendorCode": "i023",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-14.wbbasket.ru/vol2170/part217042/217042648/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 528,
+          "ordersSum": 730216,
+          "avgOrders": 5.29,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 5.92
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 6.9
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 4.9
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 4
+            }
+          ],
+          "buyoutCount": 431,
+          "buyoutSum": 596520,
+          "buyoutPercent": 86,
+          "stockCount": 822,
+          "stockSum": 1103930,
+          "saleRate": {
+            "days": 140,
+            "hours": 12
+          },
+          "avgStockTurnover": {
+            "days": 144,
+            "hours": 21
+          },
+          "toClientCount": 22,
+          "fromClientCount": 5,
+          "officeMissingTime": {
+            "days": 31,
+            "hours": 17
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1343,
+            "maxPrice": 1343
+          },
+          "availability": "balanced"
+        }
+      },
+      {
+        "nmID": 249183860,
+        "isDeleted": false,
+        "subjectName": "Спреи",
+        "name": "Солнцезащитный крем спрей спф 50 для лица и тела водостойкий",
+        "vendorCode": "i034",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-16.wbbasket.ru/vol2491/part249183/249183860/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 540,
+          "ordersSum": 741574,
+          "avgOrders": 5.15,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 2.25
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 11.48
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 3.61
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 3.6
+            }
+          ],
+          "buyoutCount": 451,
+          "buyoutSum": 620340,
+          "buyoutPercent": 88,
+          "stockCount": 832,
+          "stockSum": 1095045,
+          "saleRate": {
+            "days": 132,
+            "hours": 11
+          },
+          "avgStockTurnover": {
+            "days": 124,
+            "hours": 17
+          },
+          "toClientCount": 14,
+          "fromClientCount": 3,
+          "officeMissingTime": {
+            "days": 44,
+            "hours": 5
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1316,
+            "maxPrice": 1316
+          },
+          "availability": "balanced"
+        }
+      },
+      {
+        "nmID": 244710962,
+        "isDeleted": false,
+        "subjectName": "Кремы",
+        "name": "Солнцезащитный крем для лица и тела SPF 50+",
+        "vendorCode": "i036",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-16.wbbasket.ru/vol2447/part244710/244710962/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 625,
+          "ordersSum": 908731,
+          "avgOrders": 6.13,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 8.96
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 7.52
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 5.03
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 4.2
+            }
+          ],
+          "buyoutCount": 526,
+          "buyoutSum": 766488,
+          "buyoutPercent": 89,
+          "stockCount": 1318,
+          "stockSum": 1853398,
+          "saleRate": {
+            "days": 185,
+            "hours": 23
+          },
+          "avgStockTurnover": {
+            "days": 196,
+            "hours": 3
+          },
+          "toClientCount": 24,
+          "fromClientCount": 5,
+          "officeMissingTime": {
+            "days": 45,
+            "hours": 14
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1406,
+            "maxPrice": 1406
+          },
+          "availability": "balanced"
+        }
+      },
+      {
+        "nmID": 363320775,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Сыворотка для роста и густоты волос с капиксил 10%",
+        "vendorCode": "i053",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-21.wbbasket.ru/vol3633/part363320/363320775/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 699,
+          "ordersSum": 1277920,
+          "avgOrders": 7.02,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 4.63
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 9.61
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 8.48
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 5.4
+            }
+          ],
+          "buyoutCount": 587,
+          "buyoutSum": 1076425,
+          "buyoutPercent": 90,
+          "stockCount": 954,
+          "stockSum": 1716628,
+          "saleRate": {
+            "days": 99,
+            "hours": 1
+          },
+          "avgStockTurnover": {
+            "days": 110,
+            "hours": 5
+          },
+          "toClientCount": 35,
+          "fromClientCount": 5,
+          "officeMissingTime": {
+            "days": 38,
+            "hours": 1
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1799,
+            "maxPrice": 1799
+          },
+          "availability": "actual"
+        }
+      },
+      {
+        "nmID": 214291313,
+        "isDeleted": false,
+        "subjectName": "Гидрофильные масла",
+        "name": "Гидрофильное масло для очищения и умывания лица",
+        "vendorCode": "i025",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-14.wbbasket.ru/vol2142/part214291/214291313/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 749,
+          "ordersSum": 951665,
+          "avgOrders": 7.83,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 4.46
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 9.1
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 10.52
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 6.8
+            }
+          ],
+          "buyoutCount": 634,
+          "buyoutSum": 804401,
+          "buyoutPercent": 90,
+          "stockCount": 408,
+          "stockSum": 525626,
+          "saleRate": {
+            "days": 38,
+            "hours": 14
+          },
+          "avgStockTurnover": {
+            "days": 49,
+            "hours": 20
+          },
+          "toClientCount": 42,
+          "fromClientCount": 9,
+          "officeMissingTime": {
+            "days": 43,
+            "hours": 22
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1288,
+            "maxPrice": 1288
+          },
+          "availability": "actual"
+        }
+      },
+      {
+        "nmID": 203721680,
+        "isDeleted": false,
+        "subjectName": "Тоники",
+        "name": "Тоник для лица с кислотами успокаивающий очищающий 150 мл",
+        "vendorCode": "i018",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-13.wbbasket.ru/vol2037/part203721/203721680/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 805,
+          "ordersSum": 1002182,
+          "avgOrders": 9.09,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 7.92
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 9.39
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 8.87
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 9.8
+            }
+          ],
+          "buyoutCount": 695,
+          "buyoutSum": 862831,
+          "buyoutPercent": 93,
+          "stockCount": 588,
+          "stockSum": 762342,
+          "saleRate": {
+            "days": 57,
+            "hours": 13
+          },
+          "avgStockTurnover": {
+            "days": 58,
+            "hours": 22
+          },
+          "toClientCount": 41,
+          "fromClientCount": 9,
+          "officeMissingTime": {
+            "days": 45,
+            "hours": 17
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1297,
+            "maxPrice": 1297
+          },
+          "availability": "actual"
+        }
+      },
+      {
+        "nmID": 391220420,
+        "isDeleted": false,
+        "subjectName": "Шампуни",
+        "name": "Шампунь для всех типов волос",
+        "vendorCode": "i042",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-22.wbbasket.ru/vol3912/part391220/391220420/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 827,
+          "ordersSum": 1061822,
+          "avgOrders": 9.17,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 7.63
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 11.06
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 8.16
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 9.6
+            }
+          ],
+          "buyoutCount": 757,
+          "buyoutSum": 973661,
+          "buyoutPercent": 98,
+          "stockCount": 302,
+          "stockSum": 379946,
+          "saleRate": {
+            "days": 22,
+            "hours": 4
+          },
+          "avgStockTurnover": {
+            "days": 43,
+            "hours": 2
+          },
+          "toClientCount": 37,
+          "fromClientCount": 2,
+          "officeMissingTime": {
+            "days": 37,
+            "hours": 1
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1258,
+            "maxPrice": 1258
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 238731362,
+        "isDeleted": false,
+        "subjectName": "Маски косметические",
+        "name": "Восстанавливающая и увлажняющая маска для волос с кератином",
+        "vendorCode": "i033",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-15.wbbasket.ru/vol2387/part238731/238731362/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 861,
+          "ordersSum": 1126531,
+          "avgOrders": 9.14,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 5.83
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 9.39
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 12.55
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 8.2
+            }
+          ],
+          "buyoutCount": 749,
+          "buyoutSum": 981169,
+          "buyoutPercent": 92,
+          "stockCount": 398,
+          "stockSum": 511732,
+          "saleRate": {
+            "days": 41,
+            "hours": 16
+          },
+          "avgStockTurnover": {
+            "days": 50,
+            "hours": 16
+          },
+          "toClientCount": 41,
+          "fromClientCount": 5,
+          "officeMissingTime": {
+            "days": 48,
+            "hours": 5
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1286,
+            "maxPrice": 1286
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 203721573,
+        "isDeleted": false,
+        "subjectName": "Пенки",
+        "name": "Пенка для умывания лица очищающая увлажняющая",
+        "vendorCode": "i020",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-13.wbbasket.ru/vol2037/part203721/203721573/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 913,
+          "ordersSum": 1045421,
+          "avgOrders": 10.27,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 6.29
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 9.39
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 13.45
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 10.8
+            }
+          ],
+          "buyoutCount": 792,
+          "buyoutSum": 907000,
+          "buyoutPercent": 93,
+          "stockCount": 501,
+          "stockSum": 572142,
+          "saleRate": {
+            "days": 41,
+            "hours": 21
+          },
+          "avgStockTurnover": {
+            "days": 45,
+            "hours": 7
+          },
+          "toClientCount": 55,
+          "fromClientCount": 6,
+          "officeMissingTime": {
+            "days": 33,
+            "hours": 7
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1142,
+            "maxPrice": 1142
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 203001733,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Пептидная сыворотка для лица с витамином с",
+        "vendorCode": "i016",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-13.wbbasket.ru/vol2030/part203001/203001733/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 914,
+          "ordersSum": 1203291,
+          "avgOrders": 9.6,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 6.96
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 12.23
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 10.48
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 8.6
+            }
+          ],
+          "buyoutCount": 808,
+          "buyoutSum": 1064497,
+          "buyoutPercent": 94,
+          "stockCount": 760,
+          "stockSum": 985849,
+          "saleRate": {
+            "days": 49,
+            "hours": 19
+          },
+          "avgStockTurnover": {
+            "days": 74,
+            "hours": 2
+          },
+          "toClientCount": 44,
+          "fromClientCount": 3,
+          "officeMissingTime": {
+            "days": 32,
+            "hours": 18
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1297,
+            "maxPrice": 1297
+          },
+          "availability": "actual"
+        }
+      },
+      {
+        "nmID": 312915441,
+        "isDeleted": false,
+        "subjectName": "Кремы",
+        "name": "Крем от прыщей и черных точек с ниацинамидом. Увлажняющий",
+        "vendorCode": "i038",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-19.wbbasket.ru/vol3129/part312915/312915441/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 1186,
+          "ordersSum": 1645687,
+          "avgOrders": 14.21,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 6.46
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 12.97
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 17.48
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 17.4
+            }
+          ],
+          "buyoutCount": 989,
+          "buyoutSum": 1382055,
+          "buyoutPercent": 91,
+          "stockCount": 629,
+          "stockSum": 795182,
+          "saleRate": {
+            "days": 47,
+            "hours": 9
+          },
+          "avgStockTurnover": {
+            "days": 50,
+            "hours": 3
+          },
+          "toClientCount": 89,
+          "fromClientCount": 10,
+          "officeMissingTime": {
+            "days": 39,
+            "hours": 15
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1264,
+            "maxPrice": 1264
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 238730291,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Сыворотка капиксил 27% для роста волос и бороды",
+        "vendorCode": "i030",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-15.wbbasket.ru/vol2387/part238730/238730291/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 1532,
+          "ordersSum": 6665433,
+          "avgOrders": 15.02,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 17.71
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 18.61
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 15.45
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 10.2
+            }
+          ],
+          "buyoutCount": 1279,
+          "buyoutSum": 5566729,
+          "buyoutPercent": 87,
+          "stockCount": 834,
+          "stockSum": 3518813,
+          "saleRate": {
+            "days": 45,
+            "hours": 15
+          },
+          "avgStockTurnover": {
+            "days": 52,
+            "hours": 14
+          },
+          "toClientCount": 53,
+          "fromClientCount": 7,
+          "officeMissingTime": {
+            "days": 46,
+            "hours": 8
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 4219,
+            "maxPrice": 4219
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 285453285,
+        "isDeleted": false,
+        "subjectName": "Кремы",
+        "name": "Крем от прыщей и акне для лица и тела с ниацинамидом",
+        "vendorCode": "i039",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-18.wbbasket.ru/vol2854/part285453/285453285/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 1690,
+          "ordersSum": 2319242,
+          "avgOrders": 22.92,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 2.71
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 8.29
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 38.71
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 33.6
+            }
+          ],
+          "buyoutCount": 1298,
+          "buyoutSum": 1784334,
+          "buyoutPercent": 88,
+          "stockCount": 1020,
+          "stockSum": 1382712,
+          "saleRate": {
+            "days": 67,
+            "hours": 2
+          },
+          "avgStockTurnover": {
+            "days": 36,
+            "hours": 19
+          },
+          "toClientCount": 187,
+          "fromClientCount": 29,
+          "officeMissingTime": {
+            "days": 48,
+            "hours": 16
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1356,
+            "maxPrice": 1356
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 283312924,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Сыворотка спрей для роста волос с перцем. От выпадения",
+        "vendorCode": "i047",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-17.wbbasket.ru/vol2833/part283312/283312924/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 1695,
+          "ordersSum": 2941755,
+          "avgOrders": 16.87,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 17.29
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 20.23
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 19.1
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 12.2
+            }
+          ],
+          "buyoutCount": 1457,
+          "buyoutSum": 2529860,
+          "buyoutPercent": 91,
+          "stockCount": 985,
+          "stockSum": 1687896,
+          "saleRate": {
+            "days": 52,
+            "hours": 15
+          },
+          "avgStockTurnover": {
+            "days": 58,
+            "hours": 11
+          },
+          "toClientCount": 73,
+          "fromClientCount": 20,
+          "officeMissingTime": {
+            "days": 50,
+            "hours": 3
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1714,
+            "maxPrice": 1714
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 238731233,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Сыворотка для лица с ретинолом Корея",
+        "vendorCode": "i032",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-15.wbbasket.ru/vol2387/part238731/238731233/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 1879,
+          "ordersSum": 2479781,
+          "avgOrders": 22.96,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 14.75
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 17.97
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 26.55
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 29
+            }
+          ],
+          "buyoutCount": 1581,
+          "buyoutSum": 2090048,
+          "buyoutPercent": 93,
+          "stockCount": 943,
+          "stockSum": 1221355,
+          "saleRate": {
+            "days": 39,
+            "hours": 17
+          },
+          "avgStockTurnover": {
+            "days": 43,
+            "hours": 9
+          },
+          "toClientCount": 139,
+          "fromClientCount": 19,
+          "officeMissingTime": {
+            "days": 44,
+            "hours": 8
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1295,
+            "maxPrice": 1295
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 238730763,
+        "isDeleted": false,
+        "subjectName": "Маски косметические",
+        "name": "Маска для роста волос с перцем профессиональная",
+        "vendorCode": "i031",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-15.wbbasket.ru/vol2387/part238730/238730763/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 2350,
+          "ordersSum": 2710914,
+          "avgOrders": 27.07,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 22.46
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 26.81
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 26.68
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 30.6
+            }
+          ],
+          "buyoutCount": 1983,
+          "buyoutSum": 2282893,
+          "buyoutPercent": 92,
+          "stockCount": 775,
+          "stockSum": 915415,
+          "saleRate": {
+            "days": 30,
+            "hours": 1
+          },
+          "avgStockTurnover": {
+            "days": 43,
+            "hours": 5
+          },
+          "toClientCount": 153,
+          "fromClientCount": 25,
+          "officeMissingTime": {
+            "days": 50,
+            "hours": 17
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1181,
+            "maxPrice": 1181
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 238729913,
+        "isDeleted": false,
+        "subjectName": "Маски косметические",
+        "name": "Липидная маска для волос. Филлер холодное восстановление",
+        "vendorCode": "i026",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-15.wbbasket.ru/vol2387/part238729/238729913/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 3003,
+          "ordersSum": 4407279,
+          "avgOrders": 29.97,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 17.13
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 46.42
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 33.48
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 23
+            }
+          ],
+          "buyoutCount": 2634,
+          "buyoutSum": 3871539,
+          "buyoutPercent": 91,
+          "stockCount": 1358,
+          "stockSum": 1939957,
+          "saleRate": {
+            "days": 40,
+            "hours": 1
+          },
+          "avgStockTurnover": {
+            "days": 52,
+            "hours": 20
+          },
+          "toClientCount": 104,
+          "fromClientCount": 29,
+          "officeMissingTime": {
+            "days": 53,
+            "hours": 0
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1429,
+            "maxPrice": 1429
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 272510655,
+        "isDeleted": false,
+        "subjectName": "Маски косметические",
+        "name": "Серебристая маска для холодных оттенков блонд, 300 мл",
+        "vendorCode": "i049",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-17.wbbasket.ru/vol2725/part272510/272510655/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 3506,
+          "ordersSum": 5677359,
+          "avgOrders": 35.89,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 32.13
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 46.13
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 37.35
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 29.4
+            }
+          ],
+          "buyoutCount": 3096,
+          "buyoutSum": 5015756,
+          "buyoutPercent": 93,
+          "stockCount": 1224,
+          "stockSum": 1961950,
+          "saleRate": {
+            "days": 29,
+            "hours": 20
+          },
+          "avgStockTurnover": {
+            "days": 42,
+            "hours": 18
+          },
+          "toClientCount": 144,
+          "fromClientCount": 46,
+          "officeMissingTime": {
+            "days": 50,
+            "hours": 7
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1603,
+            "maxPrice": 1603
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 238703460,
+        "isDeleted": false,
+        "subjectName": "Кремы",
+        "name": "Крем для век антивозрастной от морщин и отеков вокруг глаз",
+        "vendorCode": "i029",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-15.wbbasket.ru/vol2387/part238703/238703460/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 3525,
+          "ordersSum": 4255892,
+          "avgOrders": 38.7,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 25.33
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 41.68
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 46.16
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 38.8
+            }
+          ],
+          "buyoutCount": 3104,
+          "buyoutSum": 3761571,
+          "buyoutPercent": 93,
+          "stockCount": 1328,
+          "stockSum": 1491610,
+          "saleRate": {
+            "days": 29,
+            "hours": 14
+          },
+          "avgStockTurnover": {
+            "days": 38,
+            "hours": 5
+          },
+          "toClientCount": 170,
+          "fromClientCount": 32,
+          "officeMissingTime": {
+            "days": 50,
+            "hours": 11
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1123,
+            "maxPrice": 1123
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 203002898,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Антивозрастная сыворотка для лица от и против морщин",
+        "vendorCode": "i017",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-13.wbbasket.ru/vol2030/part203002/203002898/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 4361,
+          "ordersSum": 5774170,
+          "avgOrders": 45.4,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 47.08
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 49.45
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 48.55
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 38.6
+            }
+          ],
+          "buyoutCount": 3820,
+          "buyoutSum": 5062707,
+          "buyoutPercent": 93,
+          "stockCount": 2264,
+          "stockSum": 2917028,
+          "saleRate": {
+            "days": 39,
+            "hours": 8
+          },
+          "avgStockTurnover": {
+            "days": 45,
+            "hours": 15
+          },
+          "toClientCount": 192,
+          "fromClientCount": 25,
+          "officeMissingTime": {
+            "days": 46,
+            "hours": 10
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1288,
+            "maxPrice": 1288
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 216483660,
+        "isDeleted": false,
+        "subjectName": "Сыворотки",
+        "name": "Сыворотка масло для роста и против выпадения волос",
+        "vendorCode": "i022",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-14.wbbasket.ru/vol2164/part216483/216483660/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 4479,
+          "ordersSum": 6178825,
+          "avgOrders": 45.51,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 39.29
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 58.1
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 50.13
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 36.2
+            }
+          ],
+          "buyoutCount": 3624,
+          "buyoutSum": 5001786,
+          "buyoutPercent": 86,
+          "stockCount": 2548,
+          "stockSum": 3455700,
+          "saleRate": {
+            "days": 58,
+            "hours": 4
+          },
+          "avgStockTurnover": {
+            "days": 58,
+            "hours": 11
+          },
+          "toClientCount": 219,
+          "fromClientCount": 40,
+          "officeMissingTime": {
+            "days": 49,
+            "hours": 20
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1356,
+            "maxPrice": 1356
+          },
+          "availability": "deficient"
+        }
+      },
+      {
+        "nmID": 238702078,
+        "isDeleted": false,
+        "subjectName": "Кремы",
+        "name": "Крем для лица увлажняющий антивозрастной питательный Корея",
+        "vendorCode": "i028",
+        "brandName": "11i professional",
+        "mainPhoto": "https://basket-15.wbbasket.ru/vol2387/part238702/238702078/images/c246x328/1.webp",
+        "hasSizes": false,
+        "metrics": {
+          "ordersCount": 10078,
+          "ordersSum": 13907824,
+          "avgOrders": 103.45,
+          "avgOrdersByMonth": [
+            {
+              "start": "2025-06-07",
+              "end": "2025-06-30",
+              "value": 107.62
+            },
+            {
+              "start": "2025-07-01",
+              "end": "2025-07-31",
+              "value": 119.03
+            },
+            {
+              "start": "2025-08-01",
+              "end": "2025-08-31",
+              "value": 109.16
+            },
+            {
+              "start": "2025-09-01",
+              "end": "2025-09-05",
+              "value": 84.2
+            }
+          ],
+          "buyoutCount": 8932,
+          "buyoutSum": 12326303,
+          "buyoutPercent": 94,
+          "stockCount": 5291,
+          "stockSum": 7301580,
+          "saleRate": {
+            "days": 46,
+            "hours": 11
+          },
+          "avgStockTurnover": {
+            "days": 53,
+            "hours": 18
+          },
+          "toClientCount": 438,
+          "fromClientCount": 185,
+          "officeMissingTime": {
+            "days": 52,
+            "hours": 8
+          },
+          "lostOrdersCount": 0,
+          "lostOrdersSum": 0,
+          "lostBuyoutsCount": 0,
+          "lostBuyoutsSum": 0,
+          "currentPrice": {
+            "minPrice": 1380,
+            "maxPrice": 1380
+          },
+          "availability": "deficient"
+        }
+      }
+    ]
+  }
+}

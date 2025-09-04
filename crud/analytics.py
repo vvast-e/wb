@@ -3,10 +3,49 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, date, timedelta
 from sqlalchemy import select, func, and_, or_, desc, asc, case, literal_column, text
 from models.feedback import Feedback, FeedbackTopTracking
+from database import AsyncSessionLocal
 import asyncio
 
 import logging
 logger = logging.getLogger(__name__)
+import os
+from logging.handlers import RotatingFileHandler
+# Отдельный логгер для записи строки фильтрации остатков в файл с ротацией
+_stock_logger = None
+
+def get_stock_filter_logger() -> logging.Logger:
+    global _stock_logger
+    if _stock_logger is not None:
+        return _stock_logger
+
+    logger_name = "wb_stock_filter"
+    log_dir = "logs"
+    log_file = os.path.join(log_dir, "stock_filter.log")
+
+    os.makedirs(log_dir, exist_ok=True)
+
+    stock_logger = logging.getLogger(logger_name)
+    stock_logger.setLevel(logging.INFO)
+    stock_logger.propagate = False
+
+    # не добавляем дублирующий хендлер
+    for h in stock_logger.handlers:
+        if isinstance(h, RotatingFileHandler):
+            try:
+                if os.path.abspath(getattr(h, 'baseFilename', '')) == os.path.abspath(log_file):
+                    _stock_logger = stock_logger
+                    return stock_logger
+            except Exception:
+                continue
+
+    handler = RotatingFileHandler(log_file, maxBytes=1_048_576, backupCount=5, encoding='utf-8')
+    formatter = logging.Formatter('%(asctime)s %(message)s')
+    handler.setFormatter(formatter)
+    handler.setLevel(logging.INFO)
+    stock_logger.addHandler(handler)
+
+    _stock_logger = stock_logger
+    return stock_logger
 
 # Маппинг брендов убран - используем исходные названия напрямую
 
@@ -1528,17 +1567,40 @@ async def process_article_top_tracking_batch(
     logger.info(f"[TOP_TRACKING_BATCH] Обрабатываем артикул {article} ({len(feedbacks)} отзывов)")
     
     try:
-        # Разбиваем отзывы на батчи для параллельной обработки
+        # Предсоздаём записи трекинга для всех отзывов, чтобы избежать add() во время параллельного flush
+        try:
+            for fb in feedbacks:
+                tracking_query = select(FeedbackTopTracking).where(
+                    and_(
+                        FeedbackTopTracking.feedback_id == fb.id,
+                        FeedbackTopTracking.article == article,
+                        FeedbackTopTracking.brand == brand
+                    )
+                )
+                tracking_result = await db.execute(tracking_query)
+                tracking = tracking_result.scalars().first()
+                if not tracking:
+                    tracking = FeedbackTopTracking(
+                        feedback_id=fb.id,
+                        article=article,
+                        brand=brand,
+                        user_id=user_id
+                    )
+                    db.add(tracking)
+            await db.commit()
+        except Exception:
+            # даже если предсоздание частично не удалось, перейдём к обработке
+            await db.rollback()
+        # Разбиваем отзывы на батчи
         BATCH_SIZE = 50
         feedback_batches = [feedbacks[i:i + BATCH_SIZE] for i in range(0, len(feedbacks), BATCH_SIZE)]
         
         logger.info(f"[TOP_TRACKING_BATCH] Разбито на {len(feedback_batches)} батчей по {BATCH_SIZE}")
         
-        # Обрабатываем каждый батч параллельно
+        # Обрабатываем батчи последовательно на одном AsyncSession
         for batch_num, batch in enumerate(feedback_batches):
-            batch_tasks = []
             for feedback in batch:
-                task = update_top_tracking_for_feedback(
+                await update_top_tracking_for_feedback(
                     db,
                     feedback.id,
                     article,
@@ -1546,11 +1608,7 @@ async def process_article_top_tracking_batch(
                     feedback.date or feedback.created_at or datetime.now(),
                     user_id
                 )
-                batch_tasks.append(task)
-            
-            # Выполняем батч параллельно
-            await asyncio.gather(*batch_tasks, return_exceptions=True)
-            logger.info(f"[TOP_TRACKING_BATCH] Обработан батч {batch_num + 1}/{len(feedback_batches)} ({len(batch)} отзывов)")
+            logger.debug(f"[TOP_TRACKING_BATCH] Обработан батч {batch_num + 1}/{len(feedback_batches)} ({len(batch)} отзывов)")
         
         logger.info(f"[TOP_TRACKING_BATCH] Артикул {article} обработан полностью")
         
@@ -1699,10 +1757,10 @@ async def parse_shop_feedbacks_crud(
     logger.setLevel(logging.INFO)
     
     logger.info(f"[PARSE] Начинаем парсинг отзывов для магазина: {shop_id}")
-    logger.info(f"[PARSE] user_id: {user_id}, save_to_db: {save_to_db}")
+    logger.debug(f"[PARSE] user_id: {user_id}, save_to_db: {save_to_db}")
 
     # Используем исходный shop_id напрямую (без маппинга)
-    logger.info(f"[PARSE] Используем бренд: '{shop_id}'")
+    logger.debug(f"[PARSE] Используем бренд: '{shop_id}'")
 
     user_query = select(User).where(User.id == user_id)
     user_result = await db.execute(user_query)
@@ -1717,16 +1775,16 @@ async def parse_shop_feedbacks_crud(
             "error": error_msg
         }
     
-    logger.info(f"[PARSE] Используем API ключ для бренда: {shop_id}")
+    logger.debug(f"[PARSE] Используем API ключ для бренда: {shop_id}")
 
     try:
         # Получаем API ключ для бренда
-        logger.info(f"[PARSE] Получаем API ключ для бренда {shop_id}...")
+        logger.debug(f"[PARSE] Получаем API ключ для бренда {shop_id}...")
         wb_api_key = await get_decrypted_wb_key(db, user, shop_id)
-        logger.info(f"[PARSE] API ключ получен успешно")
+        logger.debug(f"[PARSE] API ключ получен успешно")
 
         # Получаем список товаров бренда с пагинацией
-        logger.info(f"[PARSE] Получаем список товаров бренда {shop_id} с пагинацией...")
+        logger.debug(f"[PARSE] Получаем список товаров бренда {shop_id} с пагинацией...")
         wb_client = WBAPIClient(api_key=wb_api_key)
         items_result = await wb_client.get_all_cards_with_pagination(brand=shop_id)
 
@@ -1739,7 +1797,7 @@ async def parse_shop_feedbacks_crud(
             }
 
         items = items_result.data.get("cards", [])
-        logger.info(f"[PARSE] Получено товаров: {len(items)}")
+        logger.debug(f"[PARSE] Получено товаров: {len(items)}")
         
         if not items:
             error_msg = "Товары не найдены"
@@ -1750,9 +1808,9 @@ async def parse_shop_feedbacks_crud(
             }
 
         # Выводим первые несколько товаров для отладки
-        logger.info(f"[PARSE] Первые 3 товара:")
+        logger.debug(f"[PARSE] Первые 3 товара:")
         for i, item in enumerate(items[:3]):
-            logger.info(f"  {i+1}. nmID: {item.get('nmID')}, vendorCode: {item.get('vendorCode')}, brand: {item.get('brand')}")
+            logger.debug(f"  {i+1}. nmID: {item.get('nmID')}, vendorCode: {item.get('vendorCode')}, brand: {item.get('brand')}")
 
         # Статистика парсинга
         total_products = len(items)
@@ -1766,7 +1824,7 @@ async def parse_shop_feedbacks_crud(
         results = []
         all_feedbacks_data = []  # Собираем все отзывы
 
-        # Перед парсингом — проверяем историю остатков и фильтруем удалённые карточки (isDeleted)
+        # Перед парсингом — проверяем историю остатков
         try:
             # Собираем nmIDs из карточек
             nm_ids = []
@@ -1787,6 +1845,9 @@ async def parse_shop_feedbacks_crud(
                 data_obj = stocks_resp.data.get('data') if isinstance(stocks_resp.data.get('data'), dict) else None
                 items_arr = (data_obj or {}).get('items') if data_obj else None
                 if isinstance(items_arr, list):
+                    # Дополнительный подробный лог per nmID для диагностики остатков
+                    details_logger = get_stock_filter_logger()
+                    logger.info(f"[PARSE] stocks-report вернул items: {len(items_arr)}")
                     for p in items_arr:
                         try:
                             nm = p.get('nmID')
@@ -1798,22 +1859,29 @@ async def parse_shop_feedbacks_crud(
                                 stock_int = int(stock_count)
                             except Exception:
                                 stock_int = 0
-                            if stock_int > 0:
+                            try:
+                                details_logger.info(f"[STOCK_DETAIL] nmID={nm} stockCount={stock_int} included={'YES' if stock_int>3 else 'NO'}")
+                            except Exception:
+                                pass
+                            if stock_int > 3:
                                 in_stock_nm_ids.add(int(nm))
                         except Exception:
                             continue
-
-                if in_stock_nm_ids:
-                    before = len(items)
-                    items = [it for it in items if int(it.get('nmID', 0)) in in_stock_nm_ids]
-                    logger.info(f"[PARSE] Фильтрация по остатку stockCount>0: было {before}, стало {len(items)} (доступно {len(in_stock_nm_ids)})")
+                # Применяем фильтр ВСЕГДА: если мн-во пусто — парсинг не запустится (items станет пустым)
+                before = len(items)
+                items = [it for it in items if int(it.get('nmID', 0)) in in_stock_nm_ids]
+                logger.info(f"[PARSE] Фильтрация по остатку stockCount>3: было {before}, стало {len(items)} (доступно {len(in_stock_nm_ids)})")
+                try:
+                    stock_logger = get_stock_filter_logger()
+                    stock_logger.info(f"[PARSE] Фильтрация по остатку stockCount>3: было {before}, стало {len(items)} (доступно {len(in_stock_nm_ids)})")
+                except Exception:
+                    pass
             else:
-                logger.warning(f"[PARSE] Не удалось получить stocks-report: {stocks_resp.error}; продолжаем без фильтрации isDeleted")
+                logger.warning(f"[PARSE] Не удалось получить stocks-report: {stocks_resp.error}; продолжаем без фильтрации")
         except Exception as e:
-            logger.warning(f"[PARSE] Ошибка при фильтрации по isDeleted: {e}; продолжаем без фильтрации")
+            logger.warning(f"[PARSE] Ошибка при фильтрации остатков: {e}; продолжаем без фильтрации")
 
         # Парсим отзывы для каждого товара (после фильтрации)
-        from datetime import datetime
         max_dt = None
         if max_date:
             try:
@@ -1825,7 +1893,7 @@ async def parse_shop_feedbacks_crud(
             nm_id = item.get("nmID")
             vendor_code = item.get("vendorCode", "")
 
-            logger.info(f"[PARSE] Обрабатываем товар {i+1}/{total_products}: nmID={nm_id}, vendorCode={vendor_code}")
+            logger.debug(f"[PARSE] Обрабатываем товар {i+1}/{total_products}: nmID={nm_id}, vendorCode={vendor_code}")
 
             if not nm_id:
                 failed_products += 1
@@ -1840,7 +1908,7 @@ async def parse_shop_feedbacks_crud(
 
             try:
                 # Парсим отзывы для товара
-                logger.info(f"[PARSE] Парсим отзывы для товара nmID={nm_id}...")
+                logger.debug(f"[PARSE] Парсим отзывы для товара nmID={nm_id}...")
                 feedbacks_data = await parse_feedbacks_optimized(
                     nm_id,
                     max_dt  # Если не задано, парсер сам возьмет дефолт (2 года)
@@ -1857,7 +1925,7 @@ async def parse_shop_feedbacks_crud(
                     })
                     continue
 
-                logger.info(f"[PARSE] Найдено отзывов для товара nmID={nm_id}: {len(feedbacks_data)}")
+                logger.debug(f"[PARSE] Найдено отзывов для товара nmID={nm_id}: {len(feedbacks_data)}")
 
                 # Добавляем артикул и vendor_code к каждому отзыву
                 for feedback in feedbacks_data:
@@ -1945,19 +2013,20 @@ async def parse_shop_feedbacks_crud(
                 logger.info(f"[PARSE] Найдено уникальных артикулов: {len(unique_articles)}")
                 logger.info(f"[PARSE] Артикулы: {unique_articles[:5]}...")  # Показываем первые 5
                 
-                # Обновляем топ-трекинг для всех артикулов параллельно
-                logger.info(f"[PARSE] Начинаем параллельную обработку артикулов...")
-                
-                # Создаем задачи для параллельного выполнения
-                tasks = []
-                for article in unique_articles:
-                    task = update_top_tracking_for_all_feedbacks(db, article, shop_id)
-                    tasks.append(task)
-                
-                # Выполняем все задачи параллельно
-                logger.info(f"[PARSE] Запускаем {len(tasks)} задач параллельно...")
+                # Обновляем топ-трекинг параллельно по артикулам, но с отдельной сессией на задачу
+                logger.info(f"[PARSE] Начинаем параллельную обработку артикулов с отдельными сессиями...")
+                sem = asyncio.Semaphore(5)
+
+                async def _process_article_parallel(art: str):
+                    async with sem:
+                        try:
+                            async with AsyncSessionLocal() as db_parallel:
+                                await update_top_tracking_for_all_feedbacks(db_parallel, art, shop_id, user_id)
+                        except Exception as ex:
+                            logger.error(f"[TOP_TRACKING] Ошибка при параллельной обработке артикула {art}: {ex}")
+
+                tasks = [_process_article_parallel(article) for article in unique_articles]
                 await asyncio.gather(*tasks, return_exceptions=True)
-                
                 logger.info(f"[PARSE] Топ-трекинг обновлен для всех артикулов параллельно")
             except Exception as e:
                 logger.error(f"[PARSE] Ошибка при обновлении топ-трекинга: {e}")
@@ -1998,7 +2067,8 @@ async def parse_shop_feedbacks_crud(
 async def update_top_tracking_for_all_feedbacks(
     db: AsyncSession,
     article: str,
-    brand: str
+    brand: str,
+    user_id: int
 ) -> None:
     """Обновляет топ-трекинг для всех отзывов товара"""
     logger = logging.getLogger(__name__)
@@ -2021,26 +2091,44 @@ async def update_top_tracking_for_all_feedbacks(
             return
         
         # Обрабатываем отзывы батчами для ускорения
-        BATCH_SIZE = 50  # Размер батча для параллельной обработки
+        # Предсоздаём записи трекинга для всех отзывов, чтобы избежать add() во время параллельного flush
+        try:
+            for fb in feedbacks:
+                tracking_query = select(FeedbackTopTracking).where(
+                    and_(
+                        FeedbackTopTracking.feedback_id == fb.id,
+                        FeedbackTopTracking.article == article,
+                        FeedbackTopTracking.brand == brand
+                    )
+                )
+                tracking_result = await db.execute(tracking_query)
+                tracking = tracking_result.scalars().first()
+                if not tracking:
+                    tracking = FeedbackTopTracking(
+                        feedback_id=fb.id,
+                        article=article,
+                        brand=brand,
+                        user_id=user_id
+                    )
+                    db.add(tracking)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
+        BATCH_SIZE = 50  # Размер батча для последовательной обработки
         
         # Разбиваем отзывы на батчи
         feedback_batches = [feedbacks[i:i + BATCH_SIZE] for i in range(0, len(feedbacks), BATCH_SIZE)]
         
         logger.info(f"[TOP_TRACKING] Обрабатываем {len(feedbacks)} отзывов в {len(feedback_batches)} батчах по {BATCH_SIZE}")
         
-        # Обрабатываем каждый батч параллельно
+        # Обрабатываем батчи последовательно на одном AsyncSession
         for batch_num, batch in enumerate(feedback_batches):
-            # Создаем задачи для батча
-            batch_tasks = []
             for feedback in batch:
-                task = update_top_tracking_for_feedback(
-                    db, feedback.id, article, brand, feedback.date
+                await update_top_tracking_for_feedback(
+                    db, feedback.id, article, brand, feedback.date, user_id
                 )
-                batch_tasks.append(task)
-            
-            # Выполняем батч параллельно
-            await asyncio.gather(*batch_tasks, return_exceptions=True)
-            logger.info(f"[TOP_TRACKING] Обработан батч {batch_num + 1}/{len(feedback_batches)} ({len(batch)} отзывов)")
+            logger.debug(f"[TOP_TRACKING] Обработан батч {batch_num + 1}/{len(feedback_batches)} ({len(batch)} отзывов)")
         
         logger.info(f"[TOP_TRACKING] Обновлен топ-трекинг для товара {article} бренда {brand}")
         

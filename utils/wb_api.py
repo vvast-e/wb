@@ -428,23 +428,24 @@ class WBAPIClient:
         headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
 
         # Минимальный валидный payload: nmIDs + даты. Добавляем таймзону по умолчанию
+        nm_list = [int(x) for x in nm_ids if str(x).isdigit()]
         payload = {
-            "nmIDs": [int(x) for x in nm_ids if str(x).isdigit()],
+            "nmIDs": nm_list,
             "currentPeriod": {
                 "start": start_date,
                 "end": end_date
             },
-            "stockType": "",
-            "skipDeletedNm": True,
+            "stockType": "",  # пустое значение по требованию
+            "skipDeletedNm": True,  # использовать удаление карточек WB
             "orderBy": {
-                "field": "avgOrders",
+                "field": "ordersCount",
                 "mode": "asc"
             },
             "availabilityFilters": [
                 "deficient", "actual", "balanced", "nonActual", "nonLiquid", "invalidData"
             ],
             "limit": 1000,
-            "offset": 0
+            "offset": 0  # начало выборки (offset пагинации), при переданных nmIDs должен быть 0
         }
 
         try:
@@ -460,6 +461,19 @@ class WBAPIClient:
 
                 # Успех с первой попытки
                 if resp.is_success:
+                    # Диагностика: сохраняем последний ответ и короткую сводку
+                    try:
+                        import os, json as _json
+                        os.makedirs('logs', exist_ok=True)
+                        with open('logs/stocks_report_last.json', 'w', encoding='utf-8') as f:
+                            _json.dump(data, f, ensure_ascii=False, indent=2)
+                        # Короткая сводка
+                        data_obj = data.get('data') if isinstance(data, dict) else None
+                        items_arr = (data_obj or {}).get('items') if data_obj else None
+                        cnt = len(items_arr) if isinstance(items_arr, list) else 0
+                        logger.info(f"[WB_API] stocks-report items={cnt}")
+                    except Exception:
+                        pass
                     return WBApiResponse(success=True, data=data, wb_response=data)
 
                 logger.warning(f"[WB_API] stocks-report 1st attempt failed: status={resp.status_code}, body={body_text}")
