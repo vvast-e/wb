@@ -54,9 +54,10 @@ async def main():
     print("3. Быстрый тест")
     print("4. HTML парсер (обход 403)")
     print("5. Проверка IP прокси")
-    print("6. Все тесты")
+    print("6. FlareSolverr + Selenium (обход антибота)")
+    print("7. Все тесты")
     
-    choice = input("\nВыберите тест (1-6): ").strip()
+    choice = input("\nВыберите тест (1-7): ").strip()
     
     if choice == "1":
         print("\n🧪 Запуск полного теста парсера...")
@@ -84,6 +85,11 @@ async def main():
         await ip_main()
         
     elif choice == "6":
+        print("\n🔥 Запуск FlareSolverr + Selenium теста...")
+        from test_flaresolverr import main as flaresolverr_main
+        await flaresolverr_main()
+        
+    elif choice == "7":
         print("\n🔄 Запуск всех тестов...")
         
         print("\n1️⃣ Полный тест парсера:")
@@ -101,6 +107,10 @@ async def main():
         print("\n4️⃣ Проверка IP прокси:")
         from test_proxy_ip import main as ip_main
         await ip_main()
+        
+        print("\n5️⃣ FlareSolverr + Selenium:")
+        from test_flaresolverr import main as flaresolverr_main
+        await flaresolverr_main()
         
     else:
         print("❌ Неверный выбор!")
