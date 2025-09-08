@@ -114,9 +114,10 @@ class OzonMobileStealthParser:
                 'https': proxy_url
             }
         
-        # Создаем сессию с эмуляцией Chrome на Android
+        # Создаем сессию с эмуляцией Chrome (значение можно переопределить через OZON_CURL_IMPERSONATE)
+        impersonate_id = os.getenv("OZON_CURL_IMPERSONATE", "chrome120")
         self.session = curl_requests.Session(
-            impersonate="chrome120_android",  # Важно: мобильная эмуляция!
+            impersonate=impersonate_id,
             headers=self.mobile_headers,
             proxies=proxies,
             timeout=30,
@@ -154,7 +155,7 @@ class OzonMobileStealthParser:
             print(f"⚠️ Предупреждение при прогреве сессии: {e}")
     
     async def _safe_request(self, method: str, url: str, **kwargs) -> Optional[Response]:
-        """Безопасный запрос с обработкой ошибок"""
+        """Безопасный запрос с обработкой ошибок. При ошибке impersonate делает фолбэк на httpx."""
         try:
             if method.upper() == 'GET':
                 response = await asyncio.to_thread(self.session.get, url, **kwargs)
@@ -162,14 +163,50 @@ class OzonMobileStealthParser:
                 response = await asyncio.to_thread(self.session.post, url, **kwargs)
             else:
                 raise ValueError(f"Неподдерживаемый метод: {method}")
-            
-            # Обновляем cookies
+
             if hasattr(response, 'cookies'):
                 self.cookies.update(response.cookies)
-            
             return response
         except Exception as e:
-            print(f"❌ Ошибка запроса {method} {url}: {e}")
+            err_msg = str(e)
+            print(f"❌ Ошибка запроса {method} {url}: {err_msg}")
+            # Фолбэк на httpx, если поддержка impersonate отсутствует или иная ошибка curl_cffi
+            if HAS_HTTPX:
+                try:
+                    proxy_url = self._build_proxy_url()
+                    httpx_proxies = None
+                    if proxy_url:
+                        httpx_proxies = {"http://": proxy_url, "https://": proxy_url}
+                    async with httpx.AsyncClient(timeout=30.0, proxies=httpx_proxies) as client:
+                        resp = await client.request(
+                            method=method.upper(),
+                            url=url,
+                            headers=kwargs.get('headers') or self.mobile_headers,
+                            params=kwargs.get('params'),
+                            json=kwargs.get('json'),
+                            data=kwargs.get('data')
+                        )
+                        # Иммитируем объект Response curl_cffi по минимуму для дальнейшей логики
+                        class _Shim:
+                            def __init__(self, r):
+                                self.status_code = r.status_code
+                                self.text = r.text
+                                self.headers = r.headers
+                                self._json = None
+                                try:
+                                    self._json = r.json()
+                                except Exception:
+                                    self._json = None
+                                self.cookies = r.cookies
+                            def json(self):
+                                if self._json is not None:
+                                    return self._json
+                                raise ValueError("No JSON")
+                        shim = _Shim(resp)
+                        return shim
+                except Exception as e2:
+                    print(f"❌ Фолбэк httpx тоже упал: {e2}")
+                    return None
             return None
     
     def _extract_product_id(self, product_url: str) -> Optional[str]:
