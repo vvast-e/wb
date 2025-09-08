@@ -194,6 +194,16 @@ class OzonFlareSolverrParser:
                         if "ozon" in html.lower() and ("product" in html.lower() or "товар" in html.lower()):
                             print("✅ Ozon страница получена успешно!")
                             
+                            # Сохраняем HTML для отладки
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            debug_file = f"ozon_debug_{timestamp}.html"
+                            try:
+                                with open(debug_file, "w", encoding="utf-8") as f:
+                                    f.write(html)
+                                print(f"💾 HTML сохранен для отладки: {debug_file}")
+                            except Exception as e:
+                                print(f"⚠️ Не удалось сохранить HTML: {e}")
+                            
                             # Кэшируем результат
                             if use_cache:
                                 self.html_cache[url] = {
@@ -251,7 +261,35 @@ class OzonFlareSolverrParser:
                 'span[class*="tsBodyNumeric"]',
                 'span[class*="tsHeadlineNumeric"]',
                 '[data-widget="webPrice"]',
-                '[data-widget="price"]'
+                '[data-widget="price"]',
+                # Новые селекторы для Ozon
+                'span[class*="kz8"]',
+                'span[class*="kz9"]',
+                'span[class*="kz10"]',
+                'span[class*="kz11"]',
+                'span[class*="kz12"]',
+                'span[class*="kz13"]',
+                'span[class*="kz14"]',
+                'span[class*="kz15"]',
+                'span[class*="kz16"]',
+                'span[class*="kz17"]',
+                'span[class*="kz18"]',
+                'span[class*="kz19"]',
+                'span[class*="kz20"]',
+                # Селекторы с числами
+                'span[class*="numeric"]',
+                'span[class*="amount"]',
+                'span[class*="cost"]',
+                'span[class*="value"]',
+                # Селекторы с рублями
+                'span:contains("₽")',
+                'span:contains("руб")',
+                'span:contains("рублей")',
+                # Общие селекторы
+                'span[class*="ts"]',
+                'div[class*="price"]',
+                'div[class*="cost"]',
+                'div[class*="amount"]'
             ]
             
             current_price = None
@@ -259,20 +297,52 @@ class OzonFlareSolverrParser:
             
             # Ищем текущую цену
             for selector in price_selectors:
-                elements = soup.select(selector)
-                for elem in elements:
-                    text = elem.get_text().strip()
-                    if text and re.search(r'\d', text):
-                        # Очищаем цену от лишних символов
-                        price_clean = re.sub(r'[^\d]', '', text)
-                        if price_clean and len(price_clean) >= 3:  # Минимум 3 цифры
-                            try:
-                                price_num = int(price_clean)
-                                # Берем самую маленькую цену как текущую
+                try:
+                    elements = soup.select(selector)
+                    for elem in elements:
+                        text = elem.get_text().strip()
+                        if text and re.search(r'\d', text):
+                            # Очищаем цену от лишних символов
+                            price_clean = re.sub(r'[^\d]', '', text)
+                            if price_clean and len(price_clean) >= 3:  # Минимум 3 цифры
+                                try:
+                                    price_num = int(price_clean)
+                                    # Берем самую маленькую цену как текущую
+                                    if not current_price or price_num < current_price:
+                                        current_price = price_num
+                                        print(f"🔍 Найдена цена через селектор '{selector}': {price_num}")
+                                except ValueError:
+                                    continue
+                except Exception as e:
+                    continue
+            
+            # Дополнительный поиск через регулярные выражения
+            if not current_price:
+                print("🔍 Поиск цены через регулярные выражения...")
+                # Ищем цены в тексте HTML
+                price_patterns = [
+                    r'(\d{3,})\s*₽',  # 1234 ₽
+                    r'(\d{3,})\s*руб',  # 1234 руб
+                    r'(\d{3,})\s*рублей',  # 1234 рублей
+                    r'₽\s*(\d{3,})',  # ₽ 1234
+                    r'руб\s*(\d{3,})',  # руб 1234
+                    r'"price":\s*(\d{3,})',  # "price": 1234
+                    r'"amount":\s*(\d{3,})',  # "amount": 1234
+                    r'"value":\s*(\d{3,})',  # "value": 1234
+                    r'"cost":\s*(\d{3,})',  # "cost": 1234
+                ]
+                
+                for pattern in price_patterns:
+                    matches = re.findall(pattern, html, re.IGNORECASE)
+                    for match in matches:
+                        try:
+                            price_num = int(match)
+                            if 100 <= price_num <= 1000000:  # Разумный диапазон цен
                                 if not current_price or price_num < current_price:
                                     current_price = price_num
-                            except ValueError:
-                                continue
+                                    print(f"🔍 Найдена цена через regex '{pattern}': {price_num}")
+                        except ValueError:
+                            continue
             
             # Ищем старую цену (зачеркнутую)
             old_price_selectors = [
@@ -365,15 +435,73 @@ class OzonFlareSolverrParser:
             
             # Если не нашли в JSON, ищем в HTML структуре
             if not reviews:
-                review_elements = soup.select('[class*="review"], [class*="feedback"], [class*="comment"], [class*="отзыв"]')
-                for elem in review_elements[:20]:  # Ограничиваем количество
-                    review = self._parse_review_from_element(elem)
-                    if review:
-                        reviews.append(review)
+                print("🔍 Поиск отзывов в HTML структуре...")
+                review_selectors = [
+                    '[class*="review"]',
+                    '[class*="feedback"]',
+                    '[class*="comment"]',
+                    '[class*="отзыв"]',
+                    '[class*="отзывы"]',
+                    '[class*="reviews"]',
+                    '[class*="rating"]',
+                    '[class*="оценка"]',
+                    '[class*="оценки"]',
+                    '[data-testid*="review"]',
+                    '[data-testid*="feedback"]',
+                    '[data-testid*="comment"]',
+                    '[data-widget*="review"]',
+                    '[data-widget*="feedback"]',
+                    '[data-widget*="comment"]',
+                    'div[class*="item"]',
+                    'div[class*="card"]',
+                    'div[class*="block"]'
+                ]
+                
+                for selector in review_selectors:
+                    try:
+                        review_elements = soup.select(selector)
+                        for elem in review_elements[:10]:  # Ограничиваем количество
+                            review = self._parse_review_from_element(elem)
+                            if review and review['text'] and len(review['text']) > 20:
+                                reviews.append(review)
+                                print(f"🔍 Найден отзыв через селектор '{selector}': {review['author']}")
+                    except Exception as e:
+                        continue
             
             # Дополнительный поиск в widgetStates
             if not reviews:
                 reviews.extend(self._extract_reviews_from_widget_states(html))
+            
+            # Дополнительный поиск через регулярные выражения
+            if not reviews:
+                print("🔍 Поиск отзывов через регулярные выражения...")
+                review_patterns = [
+                    r'"text":\s*"([^"]{20,})"',  # "text": "отзыв"
+                    r'"comment":\s*"([^"]{20,})"',  # "comment": "отзыв"
+                    r'"content":\s*"([^"]{20,})"',  # "content": "отзыв"
+                    r'"review":\s*"([^"]{20,})"',  # "review": "отзыв"
+                    r'"feedback":\s*"([^"]{20,})"',  # "feedback": "отзыв"
+                    r'"message":\s*"([^"]{20,})"',  # "message": "отзыв"
+                ]
+                
+                for pattern in review_patterns:
+                    matches = re.findall(pattern, html, re.IGNORECASE | re.DOTALL)
+                    for i, match in enumerate(matches[:10]):  # Ограничиваем количество
+                        if len(match) > 20:  # Минимальная длина отзыва
+                            review = {
+                                'id': f'regex_{i}',
+                                'author': 'Аноним',
+                                'text': match,
+                                'rating': 0,
+                                'date': '',
+                                'pros': '',
+                                'cons': '',
+                                'useful_count': 0,
+                                'is_anonymous': True,
+                                'status': 'regex_found'
+                            }
+                            reviews.append(review)
+                            print(f"🔍 Найден отзыв через regex '{pattern}': {match[:50]}...")
             
             print(f"📝 Найдено отзывов: {len(reviews)}")
             return reviews
