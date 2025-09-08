@@ -248,6 +248,9 @@ class OzonFlareSolverrParser:
             
             # Ищем цену в различных селекторах Ozon
             price_selectors = [
+                # Точные селекторы для Ozon
+                'span.tsHeadline600Large',  # Основной селектор цены
+                'span[class="tsHeadline600Large"]',
                 # Основные селекторы цен
                 'span[data-testid="price"]',
                 '.price',
@@ -260,6 +263,7 @@ class OzonFlareSolverrParser:
                 # Дополнительные селекторы
                 'span[class*="tsBodyNumeric"]',
                 'span[class*="tsHeadlineNumeric"]',
+                'span[class*="tsHeadline"]',
                 '[data-widget="webPrice"]',
                 '[data-widget="price"]',
                 # Новые селекторы для Ozon
@@ -281,10 +285,6 @@ class OzonFlareSolverrParser:
                 'span[class*="amount"]',
                 'span[class*="cost"]',
                 'span[class*="value"]',
-                # Селекторы с рублями
-                'span:contains("₽")',
-                'span:contains("руб")',
-                'span:contains("рублей")',
                 # Общие селекторы
                 'span[class*="ts"]',
                 'div[class*="price"]',
@@ -436,37 +436,78 @@ class OzonFlareSolverrParser:
             # Если не нашли в JSON, ищем в HTML структуре
             if not reviews:
                 print("🔍 Поиск отзывов в HTML структуре...")
-                review_selectors = [
-                    '[class*="review"]',
-                    '[class*="feedback"]',
-                    '[class*="comment"]',
-                    '[class*="отзыв"]',
-                    '[class*="отзывы"]',
-                    '[class*="reviews"]',
-                    '[class*="rating"]',
-                    '[class*="оценка"]',
-                    '[class*="оценки"]',
-                    '[data-testid*="review"]',
-                    '[data-testid*="feedback"]',
-                    '[data-testid*="comment"]',
-                    '[data-widget*="review"]',
-                    '[data-widget*="feedback"]',
-                    '[data-widget*="comment"]',
-                    'div[class*="item"]',
-                    'div[class*="card"]',
-                    'div[class*="block"]'
-                ]
                 
-                for selector in review_selectors:
-                    try:
-                        review_elements = soup.select(selector)
-                        for elem in review_elements[:10]:  # Ограничиваем количество
-                            review = self._parse_review_from_element(elem)
-                            if review and review['text'] and len(review['text']) > 20:
-                                reviews.append(review)
-                                print(f"🔍 Найден отзыв через селектор '{selector}': {review['author']}")
-                    except Exception as e:
-                        continue
+                # Сначала ищем контейнеры отзывов
+                author_elements = soup.select('div[class*="l7m_29"]')
+                text_elements = soup.select('div[class*="pl6_29"]')
+                date_elements = soup.select('div[class*="lp5_29"]')
+                
+                print(f"🔍 Найдено элементов: авторы={len(author_elements)}, тексты={len(text_elements)}, даты={len(date_elements)}")
+                
+                if text_elements:  # Основываемся на текстах отзывов
+                    for i, text_elem in enumerate(text_elements):
+                        text = text_elem.get_text().strip()
+                        if len(text) > 20:  # Минимальная длина отзыва
+                            # Ищем соответствующие автора и дату
+                            author = 'Аноним'
+                            date = ''
+                            
+                            # Ищем автора (обычно перед текстом)
+                            if i < len(author_elements):
+                                author = author_elements[i].get_text().strip()
+                            
+                            # Ищем дату (обычно после текста)
+                            if i < len(date_elements):
+                                date = date_elements[i].get_text().strip()
+                            
+                            review = {
+                                'id': f'html_{i}',
+                                'author': author,
+                                'text': text,
+                                'rating': 0,
+                                'date': date,
+                                'pros': '',
+                                'cons': '',
+                                'useful_count': 0,
+                                'is_anonymous': False,
+                                'status': 'html_found'
+                            }
+                            reviews.append(review)
+                            print(f"🔍 Найден отзыв: {review['author']} - {review['text'][:50]}...")
+                
+                # Если не нашли через точные селекторы, используем общие
+                if not reviews:
+                    review_selectors = [
+                        '[class*="review"]',
+                        '[class*="feedback"]',
+                        '[class*="comment"]',
+                        '[class*="отзыв"]',
+                        '[class*="отзывы"]',
+                        '[class*="reviews"]',
+                        '[class*="rating"]',
+                        '[class*="оценка"]',
+                        '[class*="оценки"]',
+                        '[data-testid*="review"]',
+                        '[data-testid*="feedback"]',
+                        '[data-testid*="comment"]',
+                        '[data-widget*="review"]',
+                        '[data-widget*="feedback"]',
+                        '[data-widget*="comment"]',
+                        'div[class*="item"]',
+                        'div[class*="card"]',
+                        'div[class*="block"]'
+                    ]
+                    
+                    for selector in review_selectors:
+                        try:
+                            review_elements = soup.select(selector)
+                            for elem in review_elements[:10]:  # Ограничиваем количество
+                                review = self._parse_review_from_element(elem)
+                                if review and review['text'] and len(review['text']) > 20:
+                                    reviews.append(review)
+                                    print(f"🔍 Найден отзыв через селектор '{selector}': {review['author']}")
+                        except Exception as e:
+                            continue
             
             # Дополнительный поиск в widgetStates
             if not reviews:
