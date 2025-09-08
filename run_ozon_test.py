@@ -52,9 +52,11 @@ async def main():
     print("1. Полный тест парсера (рекомендуется)")
     print("2. Тест дампа страницы")
     print("3. Быстрый тест")
-    print("4. Все тесты")
+    print("4. HTML парсер (обход 403)")
+    print("5. Проверка IP прокси")
+    print("6. Все тесты")
     
-    choice = input("\nВыберите тест (1-4): ").strip()
+    choice = input("\nВыберите тест (1-6): ").strip()
     
     if choice == "1":
         print("\n🧪 Запуск полного теста парсера...")
@@ -72,6 +74,16 @@ async def main():
         await quick_test()
         
     elif choice == "4":
+        print("\n🌐 Запуск HTML парсера...")
+        from test_html_parser import main as html_main
+        await html_main()
+        
+    elif choice == "5":
+        print("\n🌐 Запуск проверки IP прокси...")
+        from test_proxy_ip import main as ip_main
+        await ip_main()
+        
+    elif choice == "6":
         print("\n🔄 Запуск всех тестов...")
         
         print("\n1️⃣ Полный тест парсера:")
@@ -81,6 +93,14 @@ async def main():
         print("\n2️⃣ Тест дампа страницы:")
         from test_page_dump import main as dump_main
         await dump_main()
+        
+        print("\n3️⃣ HTML парсер:")
+        from test_html_parser import main as html_main
+        await html_main()
+        
+        print("\n4️⃣ Проверка IP прокси:")
+        from test_proxy_ip import main as ip_main
+        await ip_main()
         
     else:
         print("❌ Неверный выбор!")
