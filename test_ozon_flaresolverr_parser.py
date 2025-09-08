@@ -25,6 +25,38 @@ PROXY_CONFIG = {
 # URL товара для тестирования
 TEST_PRODUCT_URL = "https://www.ozon.ru/product/termozashchitnyy-sprey-dlya-volos-uvlazhnyayushchiy-nesmyvaemyy-uhod-dlya-legkogo-2128381166/?__rr=3&at=EqtkV5nBRhyWXGM9iY1OEWVhDKJLXvsrZVAMkFZK70J2"
 
+async def test_proxy_connection():
+    """Тест подключения прокси"""
+    print("🌐 ТЕСТ ПОДКЛЮЧЕНИЯ ПРОКСИ")
+    print("-" * 50)
+    
+    try:
+        import requests
+        
+        # Тестируем прокси через httpbin.org
+        proxy_url = f"http://{PROXY_CONFIG['username']}:{PROXY_CONFIG['password']}@{PROXY_CONFIG['host']}:{PROXY_CONFIG['port']}"
+        proxies = {
+            'http': proxy_url,
+            'https': proxy_url
+        }
+        
+        print(f"🔍 Тестируем прокси: {PROXY_CONFIG['host']}:{PROXY_CONFIG['port']}")
+        
+        response = requests.get('https://httpbin.org/ip', proxies=proxies, timeout=10)
+        
+        if response.status_code == 200:
+            ip_info = response.json()
+            proxy_ip = ip_info.get('origin', 'Unknown')
+            print(f"✅ Прокси работает! IP: {proxy_ip}")
+            return True, proxy_ip
+        else:
+            print(f"❌ Прокси не работает! Статус: {response.status_code}")
+            return False, None
+            
+    except Exception as e:
+        print(f"❌ Ошибка тестирования прокси: {e}")
+        return False, None
+
 async def test_flaresolverr_connection():
     """Тест подключения к FlareSolverr"""
     print("🔥 ТЕСТ ПОДКЛЮЧЕНИЯ К FLARESOLVERR")
@@ -38,9 +70,22 @@ async def test_flaresolverr_connection():
         print(f"❌ Ошибка подключения к FlareSolverr: {e}")
         return False
 
-async def test_price_parsing():
-    """Тест парсинга цены"""
-    print("\n💰 ТЕСТ ПАРСИНГА ЦЕНЫ")
+async def test_flaresolverr_without_proxy():
+    """Тест FlareSolverr без прокси"""
+    print("🔥 ТЕСТ FLARESOLVERR БЕЗ ПРОКСИ")
+    print("-" * 50)
+    
+    try:
+        async with OzonFlareSolverrParser(None) as parser:  # Без прокси
+            print("✅ FlareSolverr без прокси инициализирован успешно")
+            return True
+    except Exception as e:
+        print(f"❌ Ошибка FlareSolverr без прокси: {e}")
+        return False
+
+async def test_price_parsing_with_proxy():
+    """Тест парсинга цены с прокси"""
+    print("\n💰 ТЕСТ ПАРСИНГА ЦЕНЫ С ПРОКСИ")
     print("-" * 50)
     
     try:
@@ -48,18 +93,42 @@ async def test_price_parsing():
             price_info = await parser.get_product_price(TEST_PRODUCT_URL)
             
             if price_info:
-                print("✅ Цена получена успешно!")
+                print("✅ Цена получена успешно с прокси!")
                 print(f"💰 Текущая цена: {price_info['current_price']} {price_info['currency']}")
                 if price_info.get('original_price'):
                     print(f"💸 Старая цена: {price_info['original_price']} {price_info['currency']}")
                     print(f"🎯 Скидка: {price_info['discount_percent']}%")
                 return True, price_info
             else:
-                print("❌ Цена не получена")
+                print("❌ Цена не получена с прокси")
                 return False, None
                 
     except Exception as e:
-        print(f"❌ Ошибка парсинга цены: {e}")
+        print(f"❌ Ошибка парсинга цены с прокси: {e}")
+        return False, None
+
+async def test_price_parsing_without_proxy():
+    """Тест парсинга цены без прокси"""
+    print("\n💰 ТЕСТ ПАРСИНГА ЦЕНЫ БЕЗ ПРОКСИ")
+    print("-" * 50)
+    
+    try:
+        async with OzonFlareSolverrParser(None) as parser:  # Без прокси
+            price_info = await parser.get_product_price(TEST_PRODUCT_URL)
+            
+            if price_info:
+                print("✅ Цена получена успешно без прокси!")
+                print(f"💰 Текущая цена: {price_info['current_price']} {price_info['currency']}")
+                if price_info.get('original_price'):
+                    print(f"💸 Старая цена: {price_info['original_price']} {price_info['currency']}")
+                    print(f"🎯 Скидка: {price_info['discount_percent']}%")
+                return True, price_info
+            else:
+                print("❌ Цена не получена без прокси")
+                return False, None
+                
+    except Exception as e:
+        print(f"❌ Ошибка парсинга цены без прокси: {e}")
         return False, None
 
 async def test_reviews_parsing():
@@ -164,41 +233,62 @@ async def main():
     
     results = {
         'timestamp': datetime.now().isoformat(),
-        'connection_test': False,
-        'price_test': False,
+        'proxy_test': False,
+        'proxy_ip': None,
+        'flaresolverr_with_proxy': False,
+        'flaresolverr_without_proxy': False,
+        'price_with_proxy': False,
+        'price_without_proxy': False,
         'reviews_test': False,
         'full_test': False,
         'bulk_test': False,
-        'price_data': None,
+        'price_data_with_proxy': None,
+        'price_data_without_proxy': None,
         'reviews_data': None,
         'full_data': None,
         'bulk_data': None
     }
     
-    # Тест 1: Подключение к FlareSolverr
-    results['connection_test'] = await test_flaresolverr_connection()
+    # Тест 1: Проверка прокси
+    proxy_success, proxy_ip = await test_proxy_connection()
+    results['proxy_test'] = proxy_success
+    results['proxy_ip'] = proxy_ip
     
-    if not results['connection_test']:
+    # Тест 2: FlareSolverr с прокси
+    results['flaresolverr_with_proxy'] = await test_flaresolverr_connection()
+    
+    # Тест 3: FlareSolverr без прокси
+    results['flaresolverr_without_proxy'] = await test_flaresolverr_without_proxy()
+    
+    if not results['flaresolverr_with_proxy'] and not results['flaresolverr_without_proxy']:
         print("\n❌ FlareSolverr недоступен! Запустите:")
         print("docker run -p 8191:8191 ghcr.io/flaresolverr/flaresolverr:latest")
         return
     
-    # Тест 2: Парсинг цены
-    price_success, price_data = await test_price_parsing()
-    results['price_test'] = price_success
-    results['price_data'] = price_data
+    # Тест 4: Парсинг цены с прокси
+    if results['flaresolverr_with_proxy']:
+        price_success, price_data = await test_price_parsing_with_proxy()
+        results['price_with_proxy'] = price_success
+        results['price_data_with_proxy'] = price_data
     
-    # Тест 3: Парсинг отзывов
-    reviews_success, reviews_data = await test_reviews_parsing()
-    results['reviews_test'] = reviews_success
-    results['reviews_data'] = reviews_data
+    # Тест 5: Парсинг цены без прокси
+    if results['flaresolverr_without_proxy']:
+        price_success, price_data = await test_price_parsing_without_proxy()
+        results['price_without_proxy'] = price_success
+        results['price_data_without_proxy'] = price_data
     
-    # Тест 4: Полный парсинг
+    # Тест 6: Парсинг отзывов (используем лучший вариант)
+    if results['price_with_proxy'] or results['price_without_proxy']:
+        reviews_success, reviews_data = await test_reviews_parsing()
+        results['reviews_test'] = reviews_success
+        results['reviews_data'] = reviews_data
+    
+    # Тест 7: Полный парсинг
     full_success, full_data = await test_full_parsing()
     results['full_test'] = full_success
     results['full_data'] = full_data
     
-    # Тест 5: Массовый парсинг
+    # Тест 8: Массовый парсинг
     bulk_success, bulk_data = await test_bulk_parsing()
     results['bulk_test'] = bulk_success
     results['bulk_data'] = bulk_data
@@ -209,8 +299,11 @@ async def main():
     print("=" * 60)
     
     tests = [
-        ("Подключение к FlareSolverr", results['connection_test']),
-        ("Парсинг цены", results['price_test']),
+        ("Проверка прокси", results['proxy_test']),
+        ("FlareSolverr с прокси", results['flaresolverr_with_proxy']),
+        ("FlareSolverr без прокси", results['flaresolverr_without_proxy']),
+        ("Парсинг цены с прокси", results['price_with_proxy']),
+        ("Парсинг цены без прокси", results['price_without_proxy']),
         ("Парсинг отзывов", results['reviews_test']),
         ("Полный парсинг", results['full_test']),
         ("Массовый парсинг", results['bulk_test'])
